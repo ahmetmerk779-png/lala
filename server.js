@@ -168,17 +168,22 @@ function startBotInstance(botId) {
             }
         });
 
-        // OTOMATİK LOGIN / REGISTER DİNLEYİCİSİ
+        // OTOMATİK LOGIN / REGISTER DİNLEYİCİSİ (TR/EN Çift Mesaj Korumalı)
+        let lastAuthTime = 0;
+
         bot.on('messagestr', (msg) => {
             if (!msg.trim()) return;
             broadcastLog(botId, msg, 'chat');
 
             const lowerMsg = msg.toLowerCase();
             const pwd = globalConfig.autoPassword;
+            const now = Date.now();
 
-            if (pwd && pwd.trim() !== '') {
+            // Aynı komutun 5 saniye içinde tekrar tetiklenmesini engeller
+            if (pwd && pwd.trim() !== '' && (now - lastAuthTime > 5000)) {
                 // Register Algılama
                 if (lowerMsg.includes('/register') || lowerMsg.includes('kayıt ol') || lowerMsg.includes('kayitol')) {
+                    lastAuthTime = now;
                     setTimeout(() => {
                         if (botData.instance) {
                             botData.instance.chat(`/register ${pwd} ${pwd}`);
@@ -188,6 +193,7 @@ function startBotInstance(botId) {
                 }
                 // Login Algılama
                 else if (lowerMsg.includes('/login') || lowerMsg.includes('giriş yap') || lowerMsg.includes('giris yap')) {
+                    lastAuthTime = now;
                     setTimeout(() => {
                         if (botData.instance) {
                             botData.instance.chat(`/login ${pwd}`);

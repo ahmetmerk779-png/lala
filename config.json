@@ -1,0 +1,15 @@
+{
+  "host": "play.sunucuip.com",
+  "port": 25565,
+  "username": "BotKullanici",
+  "password": "Sifreniz123",
+  "autoLogin": true,
+  "subServerCommand": "/boxpvp",
+  "delayMs": 2000,
+  "useGuiSelect": false,
+  "guiSlotToClick": 11,
+  "autoReconnect": true,
+  "reconnectDelayMs": 5000,
+  "antiAfk": true,
+  "antiAfkIntervalMs": 15000
+}

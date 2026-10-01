@@ -3,6 +3,7 @@ const http = require('http');
 const { Server } = require('socket.io');
 const mineflayer = require('mineflayer');
 const path = require('path');
+const fs = require('fs');
 
 const app = express();
 const server = http.createServer(app);
@@ -10,6 +11,8 @@ const io = new Server(server);
 
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
+
+const DATA_FILE = path.join(__dirname, 'bots.json');
 
 // Bot Yönetim Havuzu
 const botPool = new Map();
@@ -24,22 +27,91 @@ let globalConfig = {
     autoSubServerDelay: 3               // Saniye cinsinden gecikme
 };
 
-// Varsayılan Bot Listesi
+// Varsayılan Bot Listesi (İlk çalıştırmada dosya yoksa kullanılır)
 const defaultBotConfigs = [
     { id: 'bot_1', username: 'Deliyiz_1' },
     { id: 'bot_2', username: 'Deliyiz_2' },
     { id: 'bot_3', username: 'Deliyiz_3' }
 ];
 
-defaultBotConfigs.forEach(cfg => {
-    botPool.set(cfg.id, {
-        id: cfg.id,
-        username: cfg.username,
-        status: 'Offline',
-        instance: null,
-        logs: []
-    });
-});
+// ==========================================
+// HAFIZA (DOSYA KAYIT & YÜKLEME) FONKSİYONLARI
+// ==========================================
+
+function loadSavedData() {
+    if (!fs.existsSync(DATA_FILE)) {
+        defaultBotConfigs.forEach(cfg => {
+            botPool.set(cfg.id, {
+                id: cfg.id,
+                username: cfg.username,
+                status: 'Offline',
+                instance: null,
+                logs: []
+            });
+        });
+        saveDataToFile();
+        return;
+    }
+
+    try {
+        const rawData = fs.readFileSync(DATA_FILE, 'utf8');
+        const parsed = JSON.parse(rawData);
+
+        if (parsed.globalConfig) {
+            globalConfig = { ...globalConfig, ...parsed.globalConfig };
+        }
+
+        if (Array.isArray(parsed.bots) && parsed.bots.length > 0) {
+            botPool.clear();
+            parsed.bots.forEach(b => {
+                botPool.set(b.id, {
+                    id: b.id,
+                    username: b.username,
+                    status: 'Offline',
+                    instance: null,
+                    logs: []
+                });
+            });
+        } else {
+            defaultBotConfigs.forEach(cfg => {
+                botPool.set(cfg.id, {
+                    id: cfg.id,
+                    username: cfg.username,
+                    status: 'Offline',
+                    instance: null,
+                    logs: []
+                });
+            });
+        }
+    } catch (err) {
+        console.error('[Hafıza Hatası] Kayıtlı veriler okunamadı:', err);
+    }
+}
+
+function saveDataToFile() {
+    try {
+        const botList = Array.from(botPool.values()).map(b => ({
+            id: b.id,
+            username: b.username
+        }));
+
+        const dataToSave = {
+            globalConfig,
+            bots: botList
+        };
+
+        fs.writeFileSync(DATA_FILE, JSON.stringify(dataToSave, null, 2));
+    } catch (err) {
+        console.error('[Hafıza Hatası] Veri kaydedilemedi:', err);
+    }
+}
+
+// Sunucu başlarken hafızadaki botları ve ayarları yükle
+loadSavedData();
+
+// ==========================================
+// BOT LOG VE MINEFLAYER MANTIĞI
+// ==========================================
 
 function broadcastLog(botId, text, type = 'info') {
     const timestamp = new Date().toLocaleTimeString('tr-TR');
@@ -160,6 +232,20 @@ function stopBotInstance(botId) {
     }
 }
 
+function startAllBots() {
+    let delay = 0;
+    for (const [id, botData] of botPool.entries()) {
+        if (botData.status === 'Offline') {
+            setTimeout(() => startBotInstance(id), delay);
+            delay += 3500; // Anti-bot korumasını aşmak için 3.5 sn ara
+        }
+    }
+}
+
+// ==========================================
+// SOCKET.IO ARAYÜZ VE SİSTEM OLAYLARI
+// ==========================================
+
 io.on('connection', (socket) => {
     const botList = Array.from(botPool.values()).map(b => ({
         id: b.id,
@@ -174,6 +260,7 @@ io.on('connection', (socket) => {
     // Ayarları Güncelleme
     socket.on('update-config', (newConfig) => {
         globalConfig = { ...globalConfig, ...newConfig };
+        saveDataToFile(); // Ayarları dosyaya kaydet
         io.emit('config-updated', globalConfig);
     });
 
@@ -184,18 +271,13 @@ io.on('connection', (socket) => {
         stopBotInstance(botId);
         if (botPool.has(botId)) {
             botPool.delete(botId);
+            saveDataToFile(); // Silme işlemini dosyaya kaydet
             io.emit('bot-deleted', botId);
         }
     });
 
     socket.on('start-all', () => {
-        let delay = 0;
-        for (const [id, botData] of botPool.entries()) {
-            if (botData.status === 'Offline') {
-                setTimeout(() => startBotInstance(id), delay);
-                delay += 3500; // Anti-bot engeli yememek için 3.5 sn ara
-            }
-        }
+        startAllBots();
     });
 
     socket.on('stop-all', () => {
@@ -214,6 +296,7 @@ io.on('connection', (socket) => {
             instance: null,
             logs: []
         });
+        saveDataToFile(); // Yeni botu dosyaya kaydet
         io.emit('bot-added', { id, username, status: 'Offline', logs: [] });
     });
 
@@ -240,4 +323,8 @@ io.on('connection', (socket) => {
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
     console.log(`Çoklu Bot Paneli http://localhost:${PORT} üzerinde çalışıyor.`);
+    console.log(`[Hafıza] ${botPool.size} adet bot yüklendi. Otomatik başlatılıyor...`);
+    
+    // Sunucu açıldığında/yeniden başladığında kayıtlı botları otomatik oyuna sokar
+    startAllBots();
 });

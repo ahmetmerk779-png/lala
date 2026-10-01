@@ -11,24 +11,26 @@ const io = new Server(server);
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
 
-// Bot Yönetim Havuzu (id -> { instance, config, status, logs })
+// Bot Yönetim Havuzu
 const botPool = new Map();
 
-// Varsayılan Varsayılan Bot Listesi
+// Varsayılan Sunucu ve Otomasyon Ayarları
+let globalConfig = {
+    host: '141.95.82.164',
+    port: 25565,
+    version: '1.20.1',
+    autoPassword: 'deliyizpassword',    // Otomatik Giriş/Kayıt Şifresi
+    autoSubServerCmd: '/server boxpvp', // Otomatik Geçilecek Alt Sunucu Komutu
+    autoSubServerDelay: 3               // Saniye cinsinden gecikme
+};
+
+// Varsayılan Bot Listesi
 const defaultBotConfigs = [
     { id: 'bot_1', username: 'Deliyiz_1' },
     { id: 'bot_2', username: 'Deliyiz_2' },
     { id: 'bot_3', username: 'Deliyiz_3' }
 ];
 
-// Varsayılan Sunucu Ayarları
-let globalConfig = {
-    host: '141.95.82.164', // Sunucu IP / Host adresi
-    port: 25565,
-    version: '1.20.1' // Gerekirse versiyon belirtin
-};
-
-// Bot Listesini Hazırla
 defaultBotConfigs.forEach(cfg => {
     botPool.set(cfg.id, {
         id: cfg.id,
@@ -39,7 +41,6 @@ defaultBotConfigs.forEach(cfg => {
     });
 });
 
-// Log Gönderici
 function broadcastLog(botId, text, type = 'info') {
     const timestamp = new Date().toLocaleTimeString('tr-TR');
     const logEntry = { botId, text, timestamp, type };
@@ -47,13 +48,12 @@ function broadcastLog(botId, text, type = 'info') {
     if (botPool.has(botId)) {
         const botData = botPool.get(botId);
         botData.logs.push(logEntry);
-        if (botData.logs.length > 200) botData.logs.shift(); // Bellek tasarrufu
+        if (botData.logs.length > 200) botData.logs.shift();
     }
 
     io.emit('bot-log', logEntry);
 }
 
-// Bot Başlatma Fonksiyonu
 function startBotInstance(botId) {
     const botData = botPool.get(botId);
     if (!botData) return;
@@ -63,14 +63,14 @@ function startBotInstance(botId) {
         return;
     }
 
-    broadcastLog(botId, `${botData.username} sunucuya bağlanıyor...`, 'info');
+    broadcastLog(botId, `${botData.username} sunucuya bağlanıyor (${globalConfig.host}:${globalConfig.port})...`, 'info');
     botData.status = 'Connecting';
     io.emit('status-update', { botId, status: 'Connecting' });
 
     try {
         const bot = mineflayer.createBot({
             host: globalConfig.host,
-            port: globalConfig.port,
+            port: Number(globalConfig.port),
             username: botData.username,
             version: globalConfig.version || false
         });
@@ -79,13 +79,50 @@ function startBotInstance(botId) {
 
         bot.on('spawn', () => {
             botData.status = 'Online';
-            broadcastLog(botId, `⚡ ${botData.username} oyuna giriş yaptı!`, 'success');
+            broadcastLog(botId, `⚡ ${botData.username} sunucuya girdi!`, 'success');
             io.emit('status-update', { botId, status: 'Online' });
+
+            // Otomatik Alt Sunucuya Geçiş (Gecikmeli)
+            if (globalConfig.autoSubServerCmd && globalConfig.autoSubServerCmd.trim() !== '') {
+                const delayMs = (Number(globalConfig.autoSubServerDelay) || 3) * 1000;
+                broadcastLog(botId, `⏳ ${globalConfig.autoSubServerDelay}sn sonra alt sunucuya geçilecek: ${globalConfig.autoSubServerCmd}`, 'info');
+                
+                setTimeout(() => {
+                    if (botData.instance && botData.status === 'Online') {
+                        botData.instance.chat(globalConfig.autoSubServerCmd);
+                        broadcastLog(botId, `🚀 Alt sunucu komutu gönderildi: ${globalConfig.autoSubServerCmd}`, 'success');
+                    }
+                }, delayMs);
+            }
         });
 
+        // OTOMATİK LOGIN / REGISTER DİNLEYİCİSİ
         bot.on('messagestr', (msg) => {
-            if (msg.trim()) {
-                broadcastLog(botId, msg, 'chat');
+            if (!msg.trim()) return;
+            broadcastLog(botId, msg, 'chat');
+
+            const lowerMsg = msg.toLowerCase();
+            const pwd = globalConfig.autoPassword;
+
+            if (pwd && pwd.trim() !== '') {
+                // Register Algılama
+                if (lowerMsg.includes('/register') || lowerMsg.includes('kayıt ol') || lowerMsg.includes('kayitol')) {
+                    setTimeout(() => {
+                        if (botData.instance) {
+                            botData.instance.chat(`/register ${pwd} ${pwd}`);
+                            broadcastLog(botId, `🔑 Otomatik /register gönderildi.`, 'info');
+                        }
+                    }, 1000);
+                }
+                // Login Algılama
+                else if (lowerMsg.includes('/login') || lowerMsg.includes('giriş yap') || lowerMsg.includes('giris yap')) {
+                    setTimeout(() => {
+                        if (botData.instance) {
+                            botData.instance.chat(`/login ${pwd}`);
+                            broadcastLog(botId, `🔑 Otomatik /login gönderildi.`, 'info');
+                        }
+                    }, 1000);
+                }
             }
         });
 
@@ -112,7 +149,6 @@ function startBotInstance(botId) {
     }
 }
 
-// Bot Durdurma Fonksiyonu
 function stopBotInstance(botId) {
     const botData = botPool.get(botId);
     if (botData && botData.instance) {
@@ -124,40 +160,50 @@ function stopBotInstance(botId) {
     }
 }
 
-// Socket.io Bağlantı Yöneticisi
 io.on('connection', (socket) => {
-    // İlk bağlanan istemciye tüm botların listesini gönder
     const botList = Array.from(botPool.values()).map(b => ({
         id: b.id,
         username: b.username,
         status: b.status,
         logs: b.logs
     }));
+
+    // Başlangıç Verilerini Gönder
     socket.emit('init-data', { botList, globalConfig });
 
-    // Tekli Bot Başlat / Durdur
+    // Ayarları Güncelleme
+    socket.on('update-config', (newConfig) => {
+        globalConfig = { ...globalConfig, ...newConfig };
+        io.emit('config-updated', globalConfig);
+    });
+
     socket.on('start-bot', (botId) => startBotInstance(botId));
     socket.on('stop-bot', (botId) => stopBotInstance(botId));
 
-    // Tüm Botları Başlat (3 saniye arayla - Anti-Bot Takılmaması İçin)
+    socket.on('delete-bot', (botId) => {
+        stopBotInstance(botId);
+        if (botPool.has(botId)) {
+            botPool.delete(botId);
+            io.emit('bot-deleted', botId);
+        }
+    });
+
     socket.on('start-all', () => {
         let delay = 0;
         for (const [id, botData] of botPool.entries()) {
             if (botData.status === 'Offline') {
                 setTimeout(() => startBotInstance(id), delay);
-                delay += 3500; // Her bot arasında 3.5 saniye bekleme
+                delay += 3500; // Anti-bot engeli yememek için 3.5 sn ara
             }
         }
     });
 
-    // Tüm Botları Durdur
     socket.on('stop-all', () => {
         for (const id of botPool.keys()) {
             stopBotInstance(id);
         }
     });
 
-    // Yeni Bot Ekleme
     socket.on('add-bot', (username) => {
         if (!username) return;
         const id = 'bot_' + Date.now();
@@ -171,12 +217,10 @@ io.on('connection', (socket) => {
         io.emit('bot-added', { id, username, status: 'Offline', logs: [] });
     });
 
-    // Komut / Sohbet Gönderme
     socket.on('send-command', ({ targetBotId, command }) => {
         if (!command) return;
 
         if (targetBotId === 'all') {
-            // Tüm aktif botlara komut gönder
             botPool.forEach((botData) => {
                 if (botData.instance && botData.status === 'Online') {
                     botData.instance.chat(command);
@@ -184,7 +228,6 @@ io.on('connection', (socket) => {
                 }
             });
         } else {
-            // Seçili bota komut gönder
             const botData = botPool.get(targetBotId);
             if (botData && botData.instance && botData.status === 'Online') {
                 botData.instance.chat(command);

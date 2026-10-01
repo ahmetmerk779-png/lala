@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Minecraft Bot Kontrol Paneli</title>
+  <script src="/socket.io/socket.io.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background-color: #11111b;
+      color: #cdd6f4;
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      padding: 20px;
+    }
+    h2 { margin-bottom: 20px; color: #89b4fa; }
+    .container { display: flex; gap: 20px; flex-wrap: wrap; }
+    .card {
+      background: #181825;
+      border: 1px solid #313244;
+      padding: 20px;
+      border-radius: 8px;
+      flex: 1;
+      min-width: 320px;
+    }
+    .card h3 { margin-bottom: 15px; color: #a6adc8; border-bottom: 1px solid #313244; padding-bottom: 8px; }
+    label { display: block; margin-top: 10px; margin-bottom: 4px; font-size: 14px; color: #bac2de; }
+    input[type="text"], input[type="password"], input[type="number"], select {
+      width: 100%;
+      background: #1e1e2e;
+      color: #cdd6f4;
+      border: 1px solid #45475a;
+      padding: 10px;
+      border-radius: 6px;
+      font-size: 14px;
+      outline: none;
+    }
+    input:focus, select:focus { border-color: #89b4fa; }
+    .checkbox-group { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
+    .checkbox-group input { width: auto; cursor: pointer; }
+    button {
+      background: #89b4fa;
+      color: #11111b;
+      font-weight: bold;
+      border: none;
+      padding: 10px 15px;
+      border-radius: 6px;
+      cursor: pointer;
+      width: 100%;
+      margin-top: 15px;
+      font-size: 14px;
+      transition: background 0.2s;
+    }
+    button:hover { background: #b4befe; }
+    .btn-start { background: #a6e3a1; color: #11111b; }
+    .btn-start:hover { background: #94e2d5; }
+    .btn-stop { background: #f38ba8; color: #11111b; }
+    .btn-stop:hover { background: #eba0ac; }
+    #console {
+      background: #000000;
+      color: #a6e3a1;
+      height: 400px;
+      overflow-y: auto;
+      padding: 12px;
+      font-family: 'Courier New', Courier, monospace;
+      border-radius: 6px;
+      font-size: 13px;
+      line-height: 1.4;
+      border: 1px solid #313244;
+    }
+    .chat-row { margin-bottom: 4px; word-wrap: break-word; }
+    .type-error { color: #f38ba8; }
+    .type-action { color: #f9e2af; }
+    .type-warn { color: #fab387; }
+    .type-success { color: #a6e3a1; }
+    .type-chat { color: #cdd6f4; }
+    .cmd-bar { display: flex; gap: 10px; margin-top: 10px; }
+    .cmd-bar input { margin: 0; }
+    .cmd-bar button { margin: 0; width: 120px; }
+  </style>
+</head>
+<body>
+
+  <h2>🤖 Minecraft Bot Kontrol Paneli</h2>
+
+  <div class="container">
+    <!-- SOL: AYARLAR PANELİ -->
+    <div class="card">
+      <h3>⚙️ Sunucu & Giriş Ayarları</h3>
+      
+      <label>Sunucu IP:</label>
+      <input type="text" id="host" placeholder="play.sunucuip.com">
+
+      <label>Port:</label>
+      <input type="number" id="port" value="25565">
+
+      <label>Kullanıcı Adı:</label>
+      <input type="text" id="username" placeholder="BotIsim">
+
+      <label>Giriş Şifresi:</label>
+      <input type="password" id="password" placeholder="Sifreniz">
+
+      <h3 style="margin-top:20px;">🎮 Alt Sunucu Geçiş Ayarları</h3>
+
+      <label>Geçiş Yöntemi:</label>
+      <select id="useGuiSelect" onchange="toggleGuiMode()">
+        <option value="false">Komut Kullan (/boxpvp vb.)</option>
+        <option value="true">GUI Menü Slota Tıkla</option>
+      </select>
+
+      <div id="cmdGroup">
+        <label>Alt Sunucu Geçiş Komutu:</label>
+        <input type="text" id="subServerCommand" placeholder="/boxpvp">
+      </div>
+
+      <div id="guiGroup" style="display:none;">
+        <label>Tıklanacak Slot Numarası (0-53):</label>
+        <input type="number" id="guiSlotToClick" placeholder="11">
+      </div>
+
+      <label>Geçiş Gecikmesi (MS):</label>
+      <input type="number" id="delayMs" value="2000">
+
+      <div class="checkbox-group">
+        <input type="checkbox" id="antiAfk" checked>
+        <label for="antiAfk" style="margin:0;">Anti-AFK Aktif Olsun</label>
+      </div>
+
+      <div class="checkbox-group">
+        <input type="checkbox" id="autoReconnect" checked>
+        <label for="autoReconnect" style="margin:0;">Oto Yeniden Bağlanma Aktif</label>
+      </div>
+
+      <button onclick="saveSettings()">💾 Ayarları Kaydet</button>
+
+      <div style="display:flex; gap:10px;">
+        <button onclick="botAction('start')" class="btn-start">▶️ Botu Başlat</button>
+        <button onclick="botAction('stop')" class="btn-stop">⏹ Botu Durdur</button>
+      </div>
+    </div>
+
+    <!-- SAĞ: CANLI KONSOL -->
+    <div class="card">
+      <h3>💻 Canlı Console & Chat</h3>
+      <div id="console"></div>
+      
+      <div class="cmd-bar">
+        <input type="text" id="manualCmd" placeholder="Komut veya sohbet mesajı gönder..." onkeypress="if(event.key==='Enter') sendManualCommand()">
+        <button onclick="sendManualCommand()">Gönder</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const socket = io();
+
+    // Sayfa Yüklendiğinde Ayarları Getir
+    socket.on('init_config', (cfg) => {
+      fillForm(cfg);
+    });
+
+    socket.on('bot_log', (data) => {
+      const consoleDiv = document.getElementById('console');
+      const line = document.createElement('div');
+      line.className = `chat-row type-${data.type}`;
+      line.innerText = `[${data.time}] ${data.text}`;
+      consoleDiv.appendChild(line);
+      consoleDiv.scrollTop = consoleDiv.scrollHeight;
+    });
+
+    function fillForm(cfg) {
+      document.getElementById('host').value = cfg.host || '';
+      document.getElementById('port').value = cfg.port || 25565;
+      document.getElementById('username').value = cfg.username || '';
+      document.getElementById('password').value = cfg.password || '';
+      document.getElementById('useGuiSelect').value = cfg.useGuiSelect ? 'true' : 'false';
+      document.getElementById('subServerCommand').value = cfg.subServerCommand || '';
+      document.getElementById('guiSlotToClick').value = cfg.guiSlotToClick ?? 11;
+      document.getElementById('delayMs').value = cfg.delayMs || 2000;
+      document.getElementById('antiAfk').checked = cfg.antiAfk;
+      document.getElementById('autoReconnect').checked = cfg.autoReconnect;
+      toggleGuiMode();
+    }
+
+    function toggleGuiMode() {
+      const isGui = document.getElementById('useGuiSelect').value === 'true';
+      document.getElementById('cmdGroup').style.display = isGui ? 'none' : 'block';
+      document.getElementById('guiGroup').style.display = isGui ? 'block' : 'none';
+    }
+
+    function sendManualCommand() {
+      const input = document.getElementById('manualCmd');
+      const cmd = input.value.trim();
+      if(cmd) {
+        socket.emit('send_command', cmd);
+        input.value = '';
+      }
+    }
+
+    function botAction(action) {
+      socket.emit('toggle_bot', action);
+    }
+
+    async function saveSettings() {
+      const data = {
+        host: document.getElementById('host').value,
+        port: parseInt(document.getElementById('port').value),
+        username: document.getElementById('username').value,
+        password: document.getElementById('password').value,
+        useGuiSelect: document.getElementById('useGuiSelect').value === 'true',
+        subServerCommand: document.getElementById('subServerCommand').value,
+        guiSlotToClick: parseInt(document.getElementById('guiSlotToClick').value),
+        delayMs: parseInt(document.getElementById('delayMs').value),
+        antiAfk: document.getElementById('antiAfk').checked,
+        autoReconnect: document.getElementById('autoReconnect').checked
+      };
+
+      const res = await fetch('/api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      });
+      const result = await res.json();
+      if(result.success) alert('✅ Ayarlar başarıyla güncellendi!');
+    }
+  </script>
+</body>
+  </html>

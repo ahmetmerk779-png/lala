@@ -1,14 +1,14 @@
 {
   "name": "mineflayer-bot-panel",
   "version": "1.0.0",
-  "description": "Mineflayer Çoklu Bot Yönetim Paneli",
+  "description": "Hafif Minecraft Çoklu Bot Yönetim Paneli",
   "main": "server.js",
   "scripts": {
-    "start": "node --max-old-space-size=350 --expose-gc server.js"
+    "start": "node server.js"
   },
   "dependencies": {
     "express": "^4.19.2",
-    "mineflayer": "^4.20.1",
+    "minecraft-protocol": "^1.46.0",
     "socket.io": "^4.7.5"
   }
 }

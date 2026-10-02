@@ -116,18 +116,18 @@ function sendChat(client, message) {
     }
 }
 
-// ÖZEL PAKET DİNLEYİCİSİ VE OTOMATİK TEPKİLER
+// ÖZEL PAKET DİNLEYİCİSİ VE TEKRARLI OTO-LOGIN MEKANİZMASI
 function setupCustomPacketHandler(client, botId) {
     let isSubServerJoined = false;
-    let lastAuthTime = 0;
-
     const botData = botPool.get(botId);
+
+    if (botData.authInterval) clearInterval(botData.authInterval);
 
     client.on('packet', (data, meta) => {
         if (meta.state !== 'play') return;
 
         switch (meta.name) {
-            // 1. IŞINLANMA ONAYI VE ALT SUNUCU GEÇİŞİ
+            // 1. IŞINLANMA ONAYI & BAŞARILI GİRİŞ (Login Başarılı Olduğunda Tekrarlı Login'i Durdur)
             case 'position':
                 try {
                     if (data.teleportId !== undefined) {
@@ -141,6 +141,13 @@ function setupCustomPacketHandler(client, botId) {
                     });
                 } catch (e) {}
 
+                // Giriş yapıldı/ışınlanıldı: Tekrarlı login döngüsünü kapat
+                if (botData.authInterval) {
+                    clearInterval(botData.authInterval);
+                    botData.authInterval = null;
+                }
+
+                // Alt sunucu komutunu çalıştır
                 const subCmd = botData.autoSubServerCmd !== undefined ? botData.autoSubServerCmd : globalConfig.autoSubServerCmd;
                 const subDelay = Number(botData.autoSubServerDelay !== undefined ? botData.autoSubServerDelay : globalConfig.autoSubServerDelay) || 4;
 
@@ -155,7 +162,7 @@ function setupCustomPacketHandler(client, botId) {
                 }
                 break;
 
-            // 2. SUNUCU CANLILIK VE TIMEOUT KORUMASI
+            // 2. SUNUCU CANLILIK VE PING/PONG
             case 'keep_alive':
                 try {
                     client.write('keep_alive', { keepAliveId: data.keepAliveId });
@@ -168,7 +175,7 @@ function setupCustomPacketHandler(client, botId) {
                 } catch (e) {}
                 break;
 
-            // 3. SUNUCU DOKU PAKETİ ONAYI
+            // 3. DOKU PAKETİ ONAYI
             case 'resource_pack_send':
             case 'resource_pack_push':
                 try {
@@ -176,33 +183,46 @@ function setupCustomPacketHandler(client, botId) {
                 } catch (e) {}
                 break;
 
-            // 4. SOHBET PAKETLERİ VE OTO LOGIN / REGISTER
+            // 4. SOHBET DINLEME VE TEKRARLI LOGIN BAŞLATMA
             case 'player_chat':
             case 'system_chat':
             case 'chat':
                 handleIncomingChat(data, botId, (msg) => {
                     broadcastLog(botId, msg, 'chat');
                     const lowerMsg = msg.toLowerCase();
-                    const now = Date.now();
                     const pwd = botData.autoPassword !== undefined ? botData.autoPassword : globalConfig.autoPassword;
 
-                    if (pwd && pwd.trim() !== '' && (now - lastAuthTime > 5000)) {
+                    if (!pwd || pwd.trim() === '') return;
+
+                    // Eğer kilit/login mesajı algılanırsa ve halihazırda çalışan bir döngü yoksa döngüyü başlat
+                    if (!botData.authInterval) {
                         if (lowerMsg.includes('/register') || lowerMsg.includes('kayıt ol') || lowerMsg.includes('kayitol')) {
-                            lastAuthTime = now;
-                            setTimeout(() => {
+                            broadcastLog(botId, `🔑 Otomatik /register döngüsü başlatıldı (3sn aralıkla)...`, 'info');
+                            
+                            sendChat(client, `/register ${pwd} ${pwd}`);
+                            
+                            botData.authInterval = setInterval(() => {
                                 if (botData.client && botData.status === 'Online') {
                                     sendChat(client, `/register ${pwd} ${pwd}`);
-                                    broadcastLog(botId, `🔑 Otomatik /register gönderildi.`, 'info');
+                                } else {
+                                    clearInterval(botData.authInterval);
+                                    botData.authInterval = null;
                                 }
-                            }, 1200);
+                            }, 3000);
+
                         } else if (lowerMsg.includes('/login') || lowerMsg.includes('giriş yap') || lowerMsg.includes('giris yap')) {
-                            lastAuthTime = now;
-                            setTimeout(() => {
+                            broadcastLog(botId, `🔑 Otomatik /login döngüsü başlatıldı (3sn aralıkla)...`, 'info');
+                            
+                            sendChat(client, `/login ${pwd}`);
+                            
+                            botData.authInterval = setInterval(() => {
                                 if (botData.client && botData.status === 'Online') {
                                     sendChat(client, `/login ${pwd}`);
-                                    broadcastLog(botId, `🔑 Otomatik /login gönderildi.`, 'info');
+                                } else {
+                                    clearInterval(botData.authInterval);
+                                    botData.authInterval = null;
                                 }
-                            }, 1200);
+                            }, 3000);
                         }
                     }
                 });
@@ -249,6 +269,7 @@ function cleanupBot(botId, reason) {
     if (botData.keepAliveInterval) clearInterval(botData.keepAliveInterval);
     if (botData.subCmdTimer) clearTimeout(botData.subCmdTimer);
     if (botData.reconnectTimer) clearTimeout(botData.reconnectTimer);
+    if (botData.authInterval) clearInterval(botData.authInterval);
 
     if (botData.client) {
         try {

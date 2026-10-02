@@ -1,14 +1,17 @@
 {
-  "name": "mineflayer-bot-panel",
+  "name": "minecraft-bot-panel",
   "version": "1.0.0",
-  "description": "Hafif Minecraft Çoklu Bot Yönetim Paneli",
+  "description": "Ultra optimize edilmiş Mineflayer AFK bot ve yönetim paneli",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
     "express": "^4.19.2",
-    "minecraft-protocol": "^1.46.0",
+    "mineflayer": "^4.20.1",
     "socket.io": "^4.7.5"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   }
 }

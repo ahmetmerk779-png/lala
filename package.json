@@ -1,7 +1,7 @@
 {
-  "name": "minecraft-bot-panel",
+  "name": "mineflayer-bot-panel",
   "version": "1.0.0",
-  "description": "Mineflayer Bot Kontrol Paneli",
+  "description": "Mineflayer Çoklu Bot Yönetim Paneli",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"

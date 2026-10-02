@@ -73,12 +73,22 @@ function loadSavedData() {
 function saveDataToFile() {
     try {
         const botList = Array.from(botPool.values()).map(b => ({
-            id: b.id, username: b.username, host: b.host, port: b.port,
-            version: b.version, autoPassword: b.autoPassword,
-            autoSubServerCmd: b.autoSubServerCmd, autoSubServerDelay: b.autoSubServerDelay
+            id: b.id,
+            username: b.username,
+            host: b.host,
+            port: b.port,
+            version: b.version,
+            autoPassword: b.autoPassword,
+            autoSubServerCmd: b.autoSubServerCmd,
+            autoSubServerDelay: b.autoSubServerDelay
         }));
 
-        fs.writeFileSync(DATA_FILE, JSON.stringify({ globalConfig, bots: botList }, null, 2));
+        const dataToSave = {
+            globalConfig,
+            bots: botList
+        };
+
+        fs.writeFileSync(DATA_FILE, JSON.stringify(dataToSave, null, 2));
     } catch (err) {
         console.error('[Hafıza Hatası] Veri kaydedilemedi:', err);
     }
@@ -143,7 +153,6 @@ function startBotInstance(botId) {
             delete bot.entities[entity.id];
         });
 
-        // Tab Listesindeki Oyuncu Kayıtlarını Temizler
         bot.on('playerJoined', (player) => {
             if (player.username !== botData.username) {
                 delete bot.players[player.username];
@@ -229,15 +238,38 @@ function startAllBots() {
     }
 }
 
+// SOCKET.IO EVENTLERİ
 io.on('connection', (socket) => {
     const botList = Array.from(botPool.values()).map(b => ({
-        id: b.id, username: b.username, host: b.host || globalConfig.host,
-        port: b.port || globalConfig.port, version: b.version || globalConfig.version,
-        autoPassword: b.autoPassword, autoSubServerCmd: b.autoSubServerCmd,
-        autoSubServerDelay: b.autoSubServerDelay, status: b.status, logs: b.logs
+        id: b.id,
+        username: b.username,
+        host: b.host || globalConfig.host,
+        port: b.port || globalConfig.port,
+        version: b.version || globalConfig.version,
+        autoPassword: b.autoPassword !== undefined ? b.autoPassword : globalConfig.autoPassword,
+        autoSubServerCmd: b.autoSubServerCmd !== undefined ? b.autoSubServerCmd : globalConfig.autoSubServerCmd,
+        autoSubServerDelay: b.autoSubServerDelay !== undefined ? b.autoSubServerDelay : globalConfig.autoSubServerDelay,
+        status: b.status,
+        logs: b.logs
     }));
 
     socket.emit('init-data', { botList, globalConfig });
+
+    // GENEL AYARLARI KAYDETME DINLEYICISI (EKLENDİ)
+    socket.on('update-config', (newConfig) => {
+        globalConfig = { ...globalConfig, ...newConfig };
+        saveDataToFile();
+        io.emit('config-updated', globalConfig);
+    });
+
+    // BOT ÖZEL AYARLARINI KAYDETME DINLEYICISI (EKLENDİ)
+    socket.on('update-bot-config', ({ botId, config }) => {
+        if (!botPool.has(botId)) return;
+        const botData = botPool.get(botId);
+        Object.assign(botData, config);
+        saveDataToFile();
+        io.emit('bot-updated', { botId, config: botData });
+    });
 
     socket.on('start-bot', (botId) => startBotInstance(botId));
     socket.on('stop-bot', (botId) => stopBotInstance(botId));
@@ -252,10 +284,17 @@ io.on('connection', (socket) => {
 
         const id = 'bot_' + Date.now();
         const newBot = {
-            id, username, host: globalConfig.host, port: globalConfig.port,
-            version: globalConfig.version, autoPassword: globalConfig.autoPassword,
-            autoSubServerCmd: globalConfig.autoSubServerCmd, autoSubServerDelay: globalConfig.autoSubServerDelay,
-            status: 'Offline', instance: null, logs: []
+            id,
+            username,
+            host: typeof data === 'object' && data.host ? data.host : globalConfig.host,
+            port: typeof data === 'object' && data.port ? data.port : globalConfig.port,
+            version: typeof data === 'object' && data.version ? data.version : globalConfig.version,
+            autoPassword: typeof data === 'object' && data.autoPassword !== undefined ? data.autoPassword : globalConfig.autoPassword,
+            autoSubServerCmd: typeof data === 'object' && data.autoSubServerCmd !== undefined ? data.autoSubServerCmd : globalConfig.autoSubServerCmd,
+            autoSubServerDelay: typeof data === 'object' && data.autoSubServerDelay !== undefined ? data.autoSubServerDelay : globalConfig.autoSubServerDelay,
+            status: 'Offline',
+            instance: null,
+            logs: []
         };
 
         botPool.set(id, newBot);

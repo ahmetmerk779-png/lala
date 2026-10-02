@@ -1,7 +1,7 @@
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
-const mineflayer = require('mineflayer');
+const mc = require('minecraft-protocol');
 const path = require('path');
 const fs = require('fs');
 
@@ -20,11 +20,6 @@ process.on('uncaughtException', (err) => {
 process.on('unhandledRejection', (reason) => {
     console.error('[Söz Rejeksiyonu Engellendi]:', reason);
 });
-
-// Periyodik Bellek Temizliği (Her 1 dakikada bir)
-setInterval(() => {
-    if (global.gc) global.gc();
-}, 60000);
 
 const DATA_FILE = path.join(__dirname, 'bots.json');
 const botPool = new Map();
@@ -83,12 +78,7 @@ function saveDataToFile() {
             autoSubServerDelay: b.autoSubServerDelay
         }));
 
-        const dataToSave = {
-            globalConfig,
-            bots: botList
-        };
-
-        fs.writeFileSync(DATA_FILE, JSON.stringify(dataToSave, null, 2));
+        fs.writeFileSync(DATA_FILE, JSON.stringify({ globalConfig, bots: botList }, null, 2));
     } catch (err) {
         console.error('[Hafıza Hatası] Veri kaydedilemedi:', err);
     }
@@ -96,14 +86,16 @@ function saveDataToFile() {
 
 loadSavedData();
 
-// Sohbet Spam Filtresi (Saniyede en fazla 2 sohbet mesajı gönderir)
+// Sohbet Log Yayınlayıcı
 const lastEmitTimes = new Map();
 
 function broadcastLog(botId, text, type = 'info') {
+    if (!text || typeof text !== 'string' || !text.trim()) return;
+
     const now = Date.now();
     const lastTime = lastEmitTimes.get(botId) || 0;
 
-    if (type === 'chat' && (now - lastTime < 500)) return;
+    if (type === 'chat' && (now - lastTime < 300)) return;
     if (type === 'chat') lastEmitTimes.set(botId, now);
 
     const timestamp = new Date().toLocaleTimeString('tr-TR');
@@ -112,10 +104,26 @@ function broadcastLog(botId, text, type = 'info') {
     if (botPool.has(botId)) {
         const botData = botPool.get(botId);
         botData.logs.push(logEntry);
-        if (botData.logs.length > 15) botData.logs.shift();
+        if (botData.logs.length > 20) botData.logs.shift();
     }
 
     io.emit('bot-log', logEntry);
+}
+
+// Gelen Karmaşık Chat Paketlerini Düz Metne Çevirici
+function parseChatMessage(packet) {
+    try {
+        if (packet.content) return packet.content;
+        if (packet.message) {
+            const parsed = JSON.parse(packet.message);
+            if (parsed.text) return parsed.text;
+            if (parsed.extra) return parsed.extra.map(e => e.text || '').join('');
+            return packet.message;
+        }
+    } catch (e) {
+        return packet.message || packet.content || '';
+    }
+    return '';
 }
 
 function startBotInstance(botId) {
@@ -129,83 +137,89 @@ function startBotInstance(botId) {
     const subCmd = botData.autoSubServerCmd !== undefined ? botData.autoSubServerCmd : globalConfig.autoSubServerCmd;
     const subDelay = Number(botData.autoSubServerDelay !== undefined ? botData.autoSubServerDelay : globalConfig.autoSubServerDelay) || 3;
 
-    broadcastLog(botId, `${botData.username} bağlanıyor...`, 'info');
+    broadcastLog(botId, `${botData.username} bağlanıyor (${host}:${port})...`, 'info');
     botData.status = 'Connecting';
     io.emit('status-update', { botId, status: 'Connecting' });
 
     try {
-        const bot = mineflayer.createBot({
+        // ULTRA HAFİF PROTOKOL İSTEMCİSİ
+        const client = mc.createClient({
             host: host,
             port: port,
             username: botData.username,
             version: version || false,
-            viewDistance: 'tiny',
-            physicsEnabled: false,
             checkTimeoutInterval: 60 * 1000,
             hideErrors: true
         });
 
-        botData.instance = bot;
+        botData.instance = client;
 
-        // ENTITY VE OYUNCU ENGELLERİ (Sadece botun kendisi saklanır, diğer tüm yük silinir)
-        bot.on('entitySpawn', (entity) => {
-            if (bot._client && entity.id === bot._client.entityId) return;
-            delete bot.entities[entity.id];
-        });
-
-        bot.on('playerJoined', (player) => {
-            if (player.username !== botData.username) {
-                delete bot.players[player.username];
-            }
-        });
-
-        bot.on('spawn', () => {
+        // Sunucuya Giriş Yapıldığında
+        client.on('login', () => {
             botData.status = 'Online';
-            broadcastLog(botId, `⚡ ${botData.username} oyuna girdi!`, 'success');
+            broadcastLog(botId, `⚡ ${botData.username} sunucuya girdi!`, 'success');
             io.emit('status-update', { botId, status: 'Online' });
 
             if (subCmd && subCmd.trim() !== '') {
                 setTimeout(() => {
                     if (botData.instance && botData.status === 'Online') {
-                        botData.instance.chat(subCmd);
+                        client.chat(subCmd);
+                        broadcastLog(botId, `🚀 Alt sunucu komutu gönderildi: ${subCmd}`, 'success');
                     }
                 }, subDelay * 1000);
             }
         });
 
+        // Gelen Sohbet ve Login/Register Algılama
         let lastAuthTime = 0;
-        bot.on('messagestr', (msg) => {
-            if (!msg.trim()) return;
-            broadcastLog(botId, msg, 'chat');
 
+        const handleChat = (packet) => {
+            const msg = parseChatMessage(packet);
+            if (!msg) return;
+
+            broadcastLog(botId, msg, 'chat');
             const lowerMsg = msg.toLowerCase();
             const now = Date.now();
 
             if (pwd && pwd.trim() !== '' && (now - lastAuthTime > 5000)) {
-                if (lowerMsg.includes('/register') || lowerMsg.includes('kayıt ol')) {
+                if (lowerMsg.includes('/register') || lowerMsg.includes('kayıt ol') || lowerMsg.includes('kayitol')) {
                     lastAuthTime = now;
-                    setTimeout(() => botData.instance && botData.instance.chat(`/register ${pwd} ${pwd}`), 1000);
-                } else if (lowerMsg.includes('/login') || lowerMsg.includes('giriş yap')) {
+                    setTimeout(() => {
+                        if (botData.instance) {
+                            client.chat(`/register ${pwd} ${pwd}`);
+                            broadcastLog(botId, `🔑 Otomatik /register gönderildi.`, 'info');
+                        }
+                    }, 1000);
+                } else if (lowerMsg.includes('/login') || lowerMsg.includes('giriş yap') || lowerMsg.includes('giris yap')) {
                     lastAuthTime = now;
-                    setTimeout(() => botData.instance && botData.instance.chat(`/login ${pwd}`), 1000);
+                    setTimeout(() => {
+                        if (botData.instance) {
+                            client.chat(`/login ${pwd}`);
+                            broadcastLog(botId, `🔑 Otomatik /login gönderildi.`, 'info');
+                        }
+                    }, 1000);
                 }
             }
-        });
+        };
+
+        // Farklı Minecraft Sürümlerindeki Chat Paket Türleri
+        client.on('chat', handleChat);
+        client.on('system_chat', handleChat);
+        client.on('player_chat', handleChat);
 
         const cleanupBot = (reason) => {
             if (!botData.instance) return;
-            bot.removeAllListeners();
+            client.removeAllListeners();
             botData.instance = null;
             botData.status = 'Offline';
 
             broadcastLog(botId, `🔴 ${reason}`, 'error');
             io.emit('status-update', { botId, status: 'Offline' });
-            if (global.gc) global.gc();
         };
 
-        bot.on('error', (err) => cleanupBot(`Hata: ${err.message}`));
-        bot.on('kicked', (reason) => cleanupBot(`Atıldı: ${reason}`));
-        bot.on('end', () => cleanupBot(`Bağlantı kesildi.`));
+        client.on('error', (err) => cleanupBot(`Hata: ${err.message}`));
+        client.on('kicked', (reason) => cleanupBot(`Atıldı: ${typeof reason === 'object' ? JSON.stringify(reason) : reason}`));
+        client.on('end', () => cleanupBot(`Bağlantı kesildi.`));
 
     } catch (err) {
         botData.status = 'Offline';
@@ -218,13 +232,12 @@ function startBotInstance(botId) {
 function stopBotInstance(botId) {
     const botData = botPool.get(botId);
     if (botData && botData.instance) {
-        botData.instance.quit();
+        botData.instance.end();
         botData.instance.removeAllListeners();
         botData.instance = null;
         botData.status = 'Offline';
         broadcastLog(botId, 'Bot durduruldu.', 'warn');
         io.emit('status-update', { botId, status: 'Offline' });
-        if (global.gc) global.gc();
     }
 }
 
@@ -233,12 +246,12 @@ function startAllBots() {
     for (const [id, botData] of botPool.entries()) {
         if (botData.status === 'Offline') {
             setTimeout(() => startBotInstance(id), delay);
-            delay += 8000;
+            delay += 2000; // Paket yapısı çok hafif olduğu için 2 saniye aralık yeterlidir
         }
     }
 }
 
-// SOCKET.IO EVENTLERİ
+// SOCKET.IO PANEL OLAYLARI
 io.on('connection', (socket) => {
     const botList = Array.from(botPool.values()).map(b => ({
         id: b.id,
@@ -255,14 +268,12 @@ io.on('connection', (socket) => {
 
     socket.emit('init-data', { botList, globalConfig });
 
-    // GENEL AYARLARI KAYDETME DINLEYICISI (EKLENDİ)
     socket.on('update-config', (newConfig) => {
         globalConfig = { ...globalConfig, ...newConfig };
         saveDataToFile();
         io.emit('config-updated', globalConfig);
     });
 
-    // BOT ÖZEL AYARLARINI KAYDETME DINLEYICISI (EKLENDİ)
     socket.on('update-bot-config', ({ botId, config }) => {
         if (!botPool.has(botId)) return;
         const botData = botPool.get(botId);

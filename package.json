@@ -1,14 +1,14 @@
 {
   "name": "minecraft-bot-panel",
   "version": "1.0.0",
-  "description": "Ultra optimize edilmiş Mineflayer AFK bot ve yönetim paneli",
+  "description": "Ultra hafif Minecraft Protocol Bot Paneli",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
     "express": "^4.19.2",
-    "mineflayer": "^4.20.1",
+    "minecraft-protocol": "^1.47.0",
     "socket.io": "^4.7.5"
   },
   "engines": {

@@ -4,7 +4,7 @@
   "description": "Mineflayer Çoklu Bot Yönetim Paneli",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node --max-old-space-size=350 --expose-gc server.js"
   },
   "dependencies": {
     "express": "^4.19.2",

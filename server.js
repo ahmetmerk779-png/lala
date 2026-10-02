@@ -39,6 +39,56 @@ const defaultBotConfigs = [
     { id: 'bot_3', username: 'Deliyiz_3', host: '141.95.82.164', port: 25565, autoPassword: 'deliyizpassword' }
 ];
 
+// Gelen Karmaşık JSON Sohbet Paketlerinden Düz Metni Ayıklayıcı
+function extractText(obj) {
+    if (!obj) return '';
+    
+    if (typeof obj === 'string') {
+        if (obj.startsWith('{') || obj.startsWith('[')) {
+            try {
+                return extractText(JSON.parse(obj));
+            } catch (e) {
+                return obj;
+            }
+        }
+        return obj;
+    }
+    
+    let result = '';
+    
+    if (obj.text) {
+        result += obj.text;
+    }
+    
+    if (Array.isArray(obj.extra)) {
+        for (const child of obj.extra) {
+            result += extractText(child);
+        }
+    }
+    
+    if (Array.isArray(obj.with)) {
+        for (const child of obj.with) {
+            result += extractText(child);
+        }
+    }
+
+    return result;
+}
+
+function parseChatMessage(packet) {
+    try {
+        if (!packet) return '';
+        
+        if (packet.content) return extractText(packet.content);
+        if (packet.message) return extractText(packet.message);
+        if (packet.unsignedContent) return extractText(packet.unsignedContent);
+        
+        return extractText(packet);
+    } catch (e) {
+        return '';
+    }
+}
+
 function loadSavedData() {
     if (!fs.existsSync(DATA_FILE)) {
         defaultBotConfigs.forEach(cfg => {
@@ -86,7 +136,6 @@ function saveDataToFile() {
 
 loadSavedData();
 
-// Sohbet Log Yayınlayıcı
 const lastEmitTimes = new Map();
 
 function broadcastLog(botId, text, type = 'info') {
@@ -110,22 +159,6 @@ function broadcastLog(botId, text, type = 'info') {
     io.emit('bot-log', logEntry);
 }
 
-// Gelen Karmaşık Chat Paketlerini Düz Metne Çevirici
-function parseChatMessage(packet) {
-    try {
-        if (packet.content) return packet.content;
-        if (packet.message) {
-            const parsed = JSON.parse(packet.message);
-            if (parsed.text) return parsed.text;
-            if (parsed.extra) return parsed.extra.map(e => e.text || '').join('');
-            return packet.message;
-        }
-    } catch (e) {
-        return packet.message || packet.content || '';
-    }
-    return '';
-}
-
 function startBotInstance(botId) {
     const botData = botPool.get(botId);
     if (!botData || botData.instance) return;
@@ -142,7 +175,6 @@ function startBotInstance(botId) {
     io.emit('status-update', { botId, status: 'Connecting' });
 
     try {
-        // ULTRA HAFİF PROTOKOL İSTEMCİSİ
         const client = mc.createClient({
             host: host,
             port: port,
@@ -154,7 +186,6 @@ function startBotInstance(botId) {
 
         botData.instance = client;
 
-        // Sunucuya Giriş Yapıldığında
         client.on('login', () => {
             botData.status = 'Online';
             broadcastLog(botId, `⚡ ${botData.username} sunucuya girdi!`, 'success');
@@ -170,12 +201,11 @@ function startBotInstance(botId) {
             }
         });
 
-        // Gelen Sohbet ve Login/Register Algılama
         let lastAuthTime = 0;
 
         const handleChat = (packet) => {
             const msg = parseChatMessage(packet);
-            if (!msg) return;
+            if (!msg || !msg.trim()) return;
 
             broadcastLog(botId, msg, 'chat');
             const lowerMsg = msg.toLowerCase();
@@ -202,7 +232,6 @@ function startBotInstance(botId) {
             }
         };
 
-        // Farklı Minecraft Sürümlerindeki Chat Paket Türleri
         client.on('chat', handleChat);
         client.on('system_chat', handleChat);
         client.on('player_chat', handleChat);
@@ -246,12 +275,11 @@ function startAllBots() {
     for (const [id, botData] of botPool.entries()) {
         if (botData.status === 'Offline') {
             setTimeout(() => startBotInstance(id), delay);
-            delay += 2000; // Paket yapısı çok hafif olduğu için 2 saniye aralık yeterlidir
+            delay += 2000;
         }
     }
 }
 
-// SOCKET.IO PANEL OLAYLARI
 io.on('connection', (socket) => {
     const botList = Array.from(botPool.values()).map(b => ({
         id: b.id,

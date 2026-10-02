@@ -12,7 +12,7 @@ const io = new Server(server);
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
 
-// RAM Taşması ve Global Çökme Engelleyiciler
+// Global Çökme ve RAM Taşması Korumaları
 process.on('uncaughtException', (err) => console.error('[Hata Engellendi]:', err.message));
 process.on('unhandledRejection', (reason) => console.error('[Söz Rejeksiyonu Engellendi]:', reason));
 
@@ -86,25 +86,37 @@ function broadcastLog(botId, text, type = 'info') {
     io.emit('bot-log', logEntry);
 }
 
+// 1.20.1 PROTOKOL UYUMLU SOHBET VE KOMUT SÜRÜCÜSÜ
 function sendChat(client, message) {
     if (!client) return;
     try {
-        client.write('chat_message', {
-            message: message,
-            timestamp: BigInt(Date.now()),
-            salt: BigInt(0),
-            signature: Buffer.alloc(0),
-            signedPreview: false,
-            previousMessages: []
-        });
+        if (message.startsWith('/')) {
+            // 1.20.1 Komut Paketi (Baştaki / işareti olmadan gönderilir)
+            client.write('chat_command', {
+                command: message.slice(1),
+                timestamp: BigInt(Date.now()),
+                salt: BigInt(0),
+                argumentSignatures: [],
+                messageCount: 0,
+                acknowledged: Buffer.alloc(3)
+            });
+        } else {
+            // 1.20.1 Normal Sohbet Paketi
+            client.write('chat_message', {
+                message: message,
+                timestamp: BigInt(Date.now()),
+                salt: BigInt(0),
+                signature: Buffer.alloc(0),
+                offset: 0,
+                acknowledged: Buffer.alloc(3)
+            });
+        }
     } catch (e) {
-        try {
-            client.write('chat', { message: message });
-        } catch (err) {}
+        console.error('[Sohbet Hatası]:', e.message);
     }
 }
 
-// TÜM PAKETLERİ HAM DÜZEYDE YÖNETEN MEKANİZMA
+// ÖZEL PAKET DİNLEYİCİSİ VE OTOMATİK TEPKİLER
 function setupCustomPacketHandler(client, botId) {
     let isSubServerJoined = false;
     let lastAuthTime = 0;
@@ -115,7 +127,7 @@ function setupCustomPacketHandler(client, botId) {
         if (meta.state !== 'play') return;
 
         switch (meta.name) {
-            // 1. IŞINLANMA VE GEÇİŞ ONAYLARI (Teleport & Position ACK)
+            // 1. IŞINLANMA ONAYI VE ALT SUNUCU GEÇİŞİ
             case 'position':
                 try {
                     if (data.teleportId !== undefined) {
@@ -129,7 +141,6 @@ function setupCustomPacketHandler(client, botId) {
                     });
                 } catch (e) {}
 
-                // Alt sunucu komutunu gecikmeli tetikle
                 const subCmd = botData.autoSubServerCmd !== undefined ? botData.autoSubServerCmd : globalConfig.autoSubServerCmd;
                 const subDelay = Number(botData.autoSubServerDelay !== undefined ? botData.autoSubServerDelay : globalConfig.autoSubServerDelay) || 4;
 
@@ -144,7 +155,7 @@ function setupCustomPacketHandler(client, botId) {
                 }
                 break;
 
-            // 2. TIMEOUT / KICK ÖNLENMESİ (Keep Alive & Ping/Pong)
+            // 2. SUNUCU CANLILIK VE TIMEOUT KORUMASI
             case 'keep_alive':
                 try {
                     client.write('keep_alive', { keepAliveId: data.keepAliveId });
@@ -157,7 +168,7 @@ function setupCustomPacketHandler(client, botId) {
                 } catch (e) {}
                 break;
 
-            // 3. SUNUCU DOKU PAKETİ DOGRULAMASI
+            // 3. SUNUCU DOKU PAKETİ ONAYI
             case 'resource_pack_send':
             case 'resource_pack_push':
                 try {
@@ -165,7 +176,7 @@ function setupCustomPacketHandler(client, botId) {
                 } catch (e) {}
                 break;
 
-            // 4. SOHBET PAKETLERİ VE OTO LOGIN
+            // 4. SOHBET PAKETLERİ VE OTO LOGIN / REGISTER
             case 'player_chat':
             case 'system_chat':
             case 'chat':
@@ -175,7 +186,7 @@ function setupCustomPacketHandler(client, botId) {
                     const now = Date.now();
                     const pwd = botData.autoPassword !== undefined ? botData.autoPassword : globalConfig.autoPassword;
 
-                    if (pwd && pwd.trim() !== '' && (now - lastAuthTime > 4000)) {
+                    if (pwd && pwd.trim() !== '' && (now - lastAuthTime > 5000)) {
                         if (lowerMsg.includes('/register') || lowerMsg.includes('kayıt ol') || lowerMsg.includes('kayitol')) {
                             lastAuthTime = now;
                             setTimeout(() => {
@@ -183,7 +194,7 @@ function setupCustomPacketHandler(client, botId) {
                                     sendChat(client, `/register ${pwd} ${pwd}`);
                                     broadcastLog(botId, `🔑 Otomatik /register gönderildi.`, 'info');
                                 }
-                            }, 1000);
+                            }, 1200);
                         } else if (lowerMsg.includes('/login') || lowerMsg.includes('giriş yap') || lowerMsg.includes('giris yap')) {
                             lastAuthTime = now;
                             setTimeout(() => {
@@ -191,14 +202,13 @@ function setupCustomPacketHandler(client, botId) {
                                     sendChat(client, `/login ${pwd}`);
                                     broadcastLog(botId, `🔑 Otomatik /login gönderildi.`, 'info');
                                 }
-                            }, 1000);
+                            }, 1200);
                         }
                     }
                 });
                 break;
 
             default:
-                // Diğer tüm chunk, entity, particle paketleri yok sayılır (RAM koruması)
                 break;
         }
     });
@@ -287,7 +297,6 @@ function startBotInstance(botId) {
 
         botData.client = client;
 
-        // Özel Paket Yönetimini Bağla
         setupCustomPacketHandler(client, botId);
 
         client.on('success', () => {
@@ -297,7 +306,6 @@ function startBotInstance(botId) {
         });
 
         client.on('login', () => {
-            // Bakış Paketiyle AFK Kalmayı Ve Düşmeyi Önleme
             if (botData.keepAliveInterval) clearInterval(botData.keepAliveInterval);
             botData.keepAliveInterval = setInterval(() => {
                 if (botData.client && botData.status === 'Online') {
@@ -336,7 +344,7 @@ function startAllBots() {
     }
 }
 
-// SOCKET.IO PANEL YÖNETİMİ
+// SOCKET.IO ARAYÜZ YÖNETİMİ
 io.on('connection', (socket) => {
     const botList = Array.from(botPool.values()).map(b => ({
         id: b.id,

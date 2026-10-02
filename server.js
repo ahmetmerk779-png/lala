@@ -17,7 +17,7 @@ const DATA_FILE = path.join(__dirname, 'bots.json');
 // Bot Yönetim Havuzu
 const botPool = new Map();
 
-// Varsayılan Sunucu ve Otomasyon Ayarları
+// Varsayılan Sunucu ve Otomasyon Ayarları (Yedek Genel Ayarlar)
 let globalConfig = {
     host: '141.95.82.164',
     port: 25565,
@@ -29,9 +29,9 @@ let globalConfig = {
 
 // Varsayılan Bot Listesi (İlk çalıştırmada dosya yoksa kullanılır)
 const defaultBotConfigs = [
-    { id: 'bot_1', username: 'Deliyiz_1' },
-    { id: 'bot_2', username: 'Deliyiz_2' },
-    { id: 'bot_3', username: 'Deliyiz_3' }
+    { id: 'bot_1', username: 'Deliyiz_1', host: '141.95.82.164', port: 25565, autoPassword: 'deliyizpassword' },
+    { id: 'bot_2', username: 'Deliyiz_2', host: '141.95.82.164', port: 25565, autoPassword: 'deliyizpassword' },
+    { id: 'bot_3', username: 'Deliyiz_3', host: '141.95.82.164', port: 25565, autoPassword: 'deliyizpassword' }
 ];
 
 // ==========================================
@@ -42,8 +42,7 @@ function loadSavedData() {
     if (!fs.existsSync(DATA_FILE)) {
         defaultBotConfigs.forEach(cfg => {
             botPool.set(cfg.id, {
-                id: cfg.id,
-                username: cfg.username,
+                ...cfg,
                 status: 'Offline',
                 instance: null,
                 logs: []
@@ -65,8 +64,7 @@ function loadSavedData() {
             botPool.clear();
             parsed.bots.forEach(b => {
                 botPool.set(b.id, {
-                    id: b.id,
-                    username: b.username,
+                    ...b,
                     status: 'Offline',
                     instance: null,
                     logs: []
@@ -75,8 +73,7 @@ function loadSavedData() {
         } else {
             defaultBotConfigs.forEach(cfg => {
                 botPool.set(cfg.id, {
-                    id: cfg.id,
-                    username: cfg.username,
+                    ...cfg,
                     status: 'Offline',
                     instance: null,
                     logs: []
@@ -92,7 +89,13 @@ function saveDataToFile() {
     try {
         const botList = Array.from(botPool.values()).map(b => ({
             id: b.id,
-            username: b.username
+            username: b.username,
+            host: b.host,
+            port: b.port,
+            version: b.version,
+            autoPassword: b.autoPassword,
+            autoSubServerCmd: b.autoSubServerCmd,
+            autoSubServerDelay: b.autoSubServerDelay
         }));
 
         const dataToSave = {
@@ -135,16 +138,24 @@ function startBotInstance(botId) {
         return;
     }
 
-    broadcastLog(botId, `${botData.username} sunucuya bağlanıyor (${globalConfig.host}:${globalConfig.port})...`, 'info');
+    // Bota özel ayarlar varsa al, yoksa genel ayarları kullan
+    const host = botData.host || globalConfig.host;
+    const port = Number(botData.port || globalConfig.port);
+    const version = botData.version || globalConfig.version;
+    const pwd = botData.autoPassword !== undefined ? botData.autoPassword : globalConfig.autoPassword;
+    const subCmd = botData.autoSubServerCmd !== undefined ? botData.autoSubServerCmd : globalConfig.autoSubServerCmd;
+    const subDelay = Number(botData.autoSubServerDelay !== undefined ? botData.autoSubServerDelay : globalConfig.autoSubServerDelay) || 3;
+
+    broadcastLog(botId, `${botData.username} sunucuya bağlanıyor (${host}:${port})...`, 'info');
     botData.status = 'Connecting';
     io.emit('status-update', { botId, status: 'Connecting' });
 
     try {
         const bot = mineflayer.createBot({
-            host: globalConfig.host,
-            port: Number(globalConfig.port),
+            host: host,
+            port: port,
             username: botData.username,
-            version: globalConfig.version || false
+            version: version || false
         });
 
         botData.instance = bot;
@@ -155,20 +166,20 @@ function startBotInstance(botId) {
             io.emit('status-update', { botId, status: 'Online' });
 
             // Otomatik Alt Sunucuya Geçiş (Gecikmeli)
-            if (globalConfig.autoSubServerCmd && globalConfig.autoSubServerCmd.trim() !== '') {
-                const delayMs = (Number(globalConfig.autoSubServerDelay) || 3) * 1000;
-                broadcastLog(botId, `⏳ ${globalConfig.autoSubServerDelay}sn sonra alt sunucuya geçilecek: ${globalConfig.autoSubServerCmd}`, 'info');
+            if (subCmd && subCmd.trim() !== '') {
+                const delayMs = subDelay * 1000;
+                broadcastLog(botId, `⏳ ${subDelay}sn sonra alt sunucuya geçilecek: ${subCmd}`, 'info');
                 
                 setTimeout(() => {
                     if (botData.instance && botData.status === 'Online') {
-                        botData.instance.chat(globalConfig.autoSubServerCmd);
-                        broadcastLog(botId, `🚀 Alt sunucu komutu gönderildi: ${globalConfig.autoSubServerCmd}`, 'success');
+                        botData.instance.chat(subCmd);
+                        broadcastLog(botId, `🚀 Alt sunucu komutu gönderildi: ${subCmd}`, 'success');
                     }
                 }, delayMs);
             }
         });
 
-        // OTOMATİK LOGIN / REGISTER DİNLEYİCİSİ (TR/EN Çift Mesaj Korumalı)
+        // OTOMATİK LOGIN / REGISTER DİNLEYİCİSİ (Çift Gönderim Korumalı)
         let lastAuthTime = 0;
 
         bot.on('messagestr', (msg) => {
@@ -176,10 +187,9 @@ function startBotInstance(botId) {
             broadcastLog(botId, msg, 'chat');
 
             const lowerMsg = msg.toLowerCase();
-            const pwd = globalConfig.autoPassword;
             const now = Date.now();
 
-            // Aynı komutun 5 saniye içinde tekrar tetiklenmesini engeller
+            // Aynı komutun 5 saniye içinde tekrar tetiklenmesini engeller (TR/EN Çift Mesaj Koruması)
             if (pwd && pwd.trim() !== '' && (now - lastAuthTime > 5000)) {
                 // Register Algılama
                 if (lowerMsg.includes('/register') || lowerMsg.includes('kayıt ol') || lowerMsg.includes('kayitol')) {
@@ -256,6 +266,12 @@ io.on('connection', (socket) => {
     const botList = Array.from(botPool.values()).map(b => ({
         id: b.id,
         username: b.username,
+        host: b.host || globalConfig.host,
+        port: b.port || globalConfig.port,
+        version: b.version || globalConfig.version,
+        autoPassword: b.autoPassword !== undefined ? b.autoPassword : globalConfig.autoPassword,
+        autoSubServerCmd: b.autoSubServerCmd !== undefined ? b.autoSubServerCmd : globalConfig.autoSubServerCmd,
+        autoSubServerDelay: b.autoSubServerDelay !== undefined ? b.autoSubServerDelay : globalConfig.autoSubServerDelay,
         status: b.status,
         logs: b.logs
     }));
@@ -263,11 +279,22 @@ io.on('connection', (socket) => {
     // Başlangıç Verilerini Gönder
     socket.emit('init-data', { botList, globalConfig });
 
-    // Ayarları Güncelleme
+    // Genel Ayarları Güncelleme
     socket.on('update-config', (newConfig) => {
         globalConfig = { ...globalConfig, ...newConfig };
-        saveDataToFile(); // Ayarları dosyaya kaydet
+        saveDataToFile();
         io.emit('config-updated', globalConfig);
+    });
+
+    // TEK BİR BOTUN ÖZEL AYARLARINI GÜNCELLEME
+    socket.on('update-bot-config', ({ botId, config }) => {
+        if (!botPool.has(botId)) return;
+        const botData = botPool.get(botId);
+        
+        Object.assign(botData, config);
+        saveDataToFile();
+
+        io.emit('bot-updated', { botId, config: botData });
     });
 
     socket.on('start-bot', (botId) => startBotInstance(botId));
@@ -277,7 +304,7 @@ io.on('connection', (socket) => {
         stopBotInstance(botId);
         if (botPool.has(botId)) {
             botPool.delete(botId);
-            saveDataToFile(); // Silme işlemini dosyaya kaydet
+            saveDataToFile();
             io.emit('bot-deleted', botId);
         }
     });
@@ -292,18 +319,28 @@ io.on('connection', (socket) => {
         }
     });
 
-    socket.on('add-bot', (username) => {
+    socket.on('add-bot', (data) => {
+        const username = typeof data === 'string' ? data : data.username;
         if (!username) return;
+
         const id = 'bot_' + Date.now();
-        botPool.set(id, {
+        const newBot = {
             id,
             username,
+            host: typeof data === 'object' && data.host ? data.host : globalConfig.host,
+            port: typeof data === 'object' && data.port ? data.port : globalConfig.port,
+            version: typeof data === 'object' && data.version ? data.version : globalConfig.version,
+            autoPassword: typeof data === 'object' && data.autoPassword !== undefined ? data.autoPassword : globalConfig.autoPassword,
+            autoSubServerCmd: typeof data === 'object' && data.autoSubServerCmd !== undefined ? data.autoSubServerCmd : globalConfig.autoSubServerCmd,
+            autoSubServerDelay: typeof data === 'object' && data.autoSubServerDelay !== undefined ? data.autoSubServerDelay : globalConfig.autoSubServerDelay,
             status: 'Offline',
             instance: null,
             logs: []
-        });
-        saveDataToFile(); // Yeni botu dosyaya kaydet
-        io.emit('bot-added', { id, username, status: 'Offline', logs: [] });
+        };
+
+        botPool.set(id, newBot);
+        saveDataToFile();
+        io.emit('bot-added', newBot);
     });
 
     socket.on('send-command', ({ targetBotId, command }) => {
@@ -331,6 +368,5 @@ server.listen(PORT, () => {
     console.log(`Çoklu Bot Paneli http://localhost:${PORT} üzerinde çalışıyor.`);
     console.log(`[Hafıza] ${botPool.size} adet bot yüklendi. Otomatik başlatılıyor...`);
     
-    // Sunucu açıldığında/yeniden başladığında kayıtlı botları otomatik oyuna sokar
     startAllBots();
 });

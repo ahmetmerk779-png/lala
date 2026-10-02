@@ -13,11 +13,11 @@
         h1 { color: #569cd6; font-size: 20px; margin-bottom: 15px; border-bottom: 1px solid #3c3c3c; padding-bottom: 8px; }
         
         .card { background: #252526; border: 1px solid #3c3c3c; padding: 15px; border-radius: 4px; margin-bottom: 15px; }
-        .card h2 { font-size: 15px; margin-bottom: 10px; color: #4ec9b0; }
+        .card h2 { font-size: 14px; margin-bottom: 10px; color: #4ec9b0; text-transform: uppercase; letter-spacing: 0.5px; }
         
         .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; margin-bottom: 10px; }
-        input { background: #1e1e1e; border: 1px solid #3c3c3c; color: #ce9178; padding: 8px 10px; border-radius: 2px; font-size: 13px; width: 100%; }
-        input:focus { outline: 1px solid #007acc; border-color: #007acc; }
+        input, select { background: #1e1e1e; border: 1px solid #3c3c3c; color: #ce9178; padding: 8px 10px; border-radius: 2px; font-size: 13px; width: 100%; }
+        input:focus, select:focus { outline: 1px solid #007acc; border-color: #007acc; }
         label { font-size: 11px; color: #808080; display: block; margin-bottom: 3px; }
         
         button { background: #0e639c; color: white; border: none; padding: 8px 12px; border-radius: 2px; cursor: pointer; font-weight: bold; font-size: 12px; transition: 0.1s; }
@@ -31,8 +31,13 @@
 
         .btn-group { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
 
+        /* Konsol / Chat Alanı */
+        .console-flex { display: flex; gap: 8px; }
+        .console-flex select { width: 160px; flex-shrink: 0; }
+        .console-flex input { flex-grow: 1; }
+
         /* Bot Listesi */
-        .bot-card { background: #1e1e1e; border: 1px solid #3c3c3c; border-left: 4px solid #555; padding: 12px; border-radius: 3px; margin-bottom: 10px; }
+        .bot-card { background: #1e1e1e; border: 1px solid #3c3c3c; border-left: 4px solid #555; padding: 12px; border-radius: 3px; margin-bottom: 12px; }
         .bot-card.Online { border-left-color: #4ec9b0; }
         .bot-card.Connecting { border-left-color: #ce9178; }
         .bot-card.Offline { border-left-color: #f14c4c; }
@@ -46,13 +51,16 @@
         .badge.Offline { background: #481414; color: #f14c4c; }
 
         /* Log Paneli */
-        .log-box { background: #111; border: 1px solid #2d2d2d; height: 100px; overflow-y: auto; padding: 6px; font-size: 11px; border-radius: 2px; margin-top: 6px; }
+        .log-box { background: #111; border: 1px solid #2d2d2d; height: 120px; overflow-y: auto; padding: 6px; font-size: 11px; border-radius: 2px; margin-top: 6px; margin-bottom: 6px; }
         .log-entry { margin-bottom: 2px; word-break: break-all; }
         .log-entry.chat { color: #d4d4d4; }
+        .log-entry.command { color: #d7ba7d; font-weight: bold; }
         .log-entry.info { color: #569cd6; }
         .log-entry.success { color: #4ec9b0; }
         .log-entry.error { color: #f14c4c; }
         .log-entry.warn { color: #ce9178; }
+
+        .bot-cmd-box { display: flex; gap: 6px; margin-top: 4px; }
 
         /* Ayar Modalı */
         .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.75); justify-content: center; align-items: center; z-index: 1000; }
@@ -66,11 +74,23 @@
     <div class="container">
         <h1>> Mineflayer_Multi_Bot_Manager</h1>
 
-        <!-- Genel Komutlar ve Ekleme -->
+        <!-- OYUN İÇİ SOHBET VE KOMUT KONSOLU -->
         <div class="card">
-            <h2>[+] Bot Ekle & Toplu İşlemler</h2>
+            <h2>💬 Oyun İçi Sohbet & Komut Konsolu</h2>
+            <div class="console-flex">
+                <select id="global-target">
+                    <option value="all">Tüm Botlar (All)</option>
+                </select>
+                <input type="text" id="global-cmd-input" placeholder="Oyun içi mesaj veya komut yazın (Örn: /tpa nick, Sa, /sell all)..." onkeydown="if(event.key==='Enter') sendGlobalCommand()" />
+                <button class="success" onclick="sendGlobalCommand()">Gönder</button>
+            </div>
+        </div>
+
+        <!-- Bot Ekleme ve Toplu Kontrol -->
+        <div class="card">
+            <h2>[+] Bot Yönetimi</h2>
             <div style="display: flex; gap: 8px; margin-bottom: 10px;">
-                <input type="text" id="new-username" placeholder="Bot Kullanıcı Adı" />
+                <input type="text" id="new-username" placeholder="Yeni Bot Kullanıcı Adı" onkeydown="if(event.key==='Enter') addBot()" />
                 <button class="success" onclick="addBot()">Bot Ekle</button>
             </div>
             <div class="btn-group">
@@ -89,7 +109,7 @@
     <!-- BOT AYARLARI MODALI -->
     <div class="modal-overlay" id="settings-modal">
         <div class="modal">
-            <h3>⚙️ Bot Ayarları: <span id="modal-bot-name" style="color: #9cdcfe;"></span></h3>
+            <h3>⚙️️ Bot Ayarları: <span id="modal-bot-name" style="color: #9cdcfe;"></span></h3>
             <input type="hidden" id="modal-bot-id" />
             
             <div class="form-grid" style="grid-template-columns: 1fr 1fr;">
@@ -138,16 +158,19 @@
         socket.on('init-data', (data) => {
             bots = data.botList;
             renderBots();
+            updateTargetDropdown();
         });
 
         socket.on('bot-added', (bot) => {
             bots.push(bot);
             renderBots();
+            updateTargetDropdown();
         });
 
         socket.on('bot-deleted', (botId) => {
             bots = bots.filter(b => b.id !== botId);
             renderBots();
+            updateTargetDropdown();
         });
 
         socket.on('status-update', ({ botId, status }) => {
@@ -163,6 +186,7 @@
             if (index !== -1) {
                 bots[index] = { ...bots[index], ...config };
                 renderBots();
+                updateTargetDropdown();
             }
         });
 
@@ -205,11 +229,57 @@
                             <button class="danger" onclick="socket.emit('delete-bot', '${b.id}')">Sil</button>
                         </div>
                     </div>
+
+                    <!-- Canlı Sohbet ve Log Kutusu -->
                     <div class="log-box" id="logs-${b.id}">
                         ${(b.logs || []).map(l => `<div class="log-entry ${l.type}">[${l.timestamp}]${l.text}</div>`).join('')}
                     </div>
+
+                    <!-- Bot Baza Özel Hızlı Komut/Sohbet Girişi -->
+                    <div class="bot-cmd-box">
+                        <input type="text" id="cmd-input-${b.id}" placeholder="${b.username} için mesaj/komut..." onkeydown="if(event.key==='Enter') sendBotCommand('${b.id}')" />
+                        <button onclick="sendBotCommand('${b.id}')">Gönder</button>
+                    </div>
                 </div>
             `).join('');
+        }
+
+        function updateTargetDropdown() {
+            const select = document.getElementById('global-target');
+            const currentVal = select.value;
+            select.innerHTML = '<option value="all">Tüm Botlar (All)</option>';
+            
+            bots.forEach(b => {
+                const opt = document.createElement('option');
+                opt.value = b.id;
+                opt.innerText = b.username;
+                select.appendChild(opt);
+            });
+
+            select.value = currentVal || 'all';
+        }
+
+        // --- KOMUT GÖNDERME FONKSİYONLARI ---
+        function sendGlobalCommand() {
+            const input = document.getElementById('global-cmd-input');
+            const targetBotId = document.getElementById('global-target').value;
+            const command = input.value.trim();
+
+            if (!command) return;
+
+            socket.emit('send-command', { targetBotId, command });
+            input.value = '';
+        }
+
+        function sendBotCommand(botId) {
+            const input = document.getElementById(`cmd-input-${botId}`);
+            if (!input) return;
+            const command = input.value.trim();
+
+            if (!command) return;
+
+            socket.emit('send-command', { targetBotId: botId, command });
+            input.value = '';
         }
 
         function addBot() {

@@ -29,7 +29,7 @@ let globalConfig = {
     port: 25565,
     version: '1.20.1',
     autoPassword: 'deliyizpassword',
-    autoSubServerCmd: '/server boxpvp',
+    autoSubServerCmd: '/gir asmp',
     autoSubServerDelay: 5
 };
 
@@ -186,43 +186,73 @@ function startBotInstance(botId) {
 
         botData.instance = client;
 
-        let positionInterval = null;
+        let currentPos = { x: 0, y: 64, z: 0, yaw: 0, pitch: 0 };
+        let antiAfkInterval = null;
 
-        // 1. Işınlanma ve Konum Onay Paketleri (Lobiye Fırlatılmayı Önler)
+        // 1. Sunucudan Işınlanma/Konum Geldiğinde Anında Yanıt Ver (AesirGuard Onayı)
         client.on('position', (packet) => {
             try {
+                currentPos.x = packet.x;
+                currentPos.y = packet.y;
+                currentPos.z = packet.z;
+                currentPos.yaw = packet.yaw !== undefined ? packet.yaw : currentPos.yaw;
+                currentPos.pitch = packet.pitch !== undefined ? packet.pitch : currentPos.pitch;
+
                 if (packet.teleportId !== undefined) {
-                    client.write('teleport_confirm', {
-                        teleportId: packet.teleportId
-                    });
+                    client.write('teleport_confirm', { teleportId: packet.teleportId });
                 }
-                client.write('position', {
-                    x: packet.x,
-                    y: packet.y,
-                    z: packet.z,
+
+                client.write('position_look', {
+                    x: currentPos.x,
+                    y: currentPos.y,
+                    z: currentPos.z,
+                    yaw: currentPos.yaw,
+                    pitch: currentPos.pitch,
                     onGround: true
                 });
             } catch (e) {}
         });
 
-        // 2. Zaman Aşımı ve Anti-AFK Engelleyici Can Paketi (10 saniyede bir)
-        positionInterval = setInterval(() => {
-            if (botData.instance && botData.status === 'Online') {
-                try {
-                    client.write('flying', { onGround: true });
-                } catch (e) {
-                    if (positionInterval) clearInterval(positionInterval);
-                }
-            } else {
-                if (positionInterval) clearInterval(positionInterval);
-            }
-        }, 10000);
+        // 2. Alt Sunucuya Geçerken (Respawn) Koordinatları Güvenle Temizle
+        client.on('respawn', () => {
+            broadcastLog(botId, `🔄 Alt sunucuya aktarılıyor...`, 'info');
+        });
 
+        // 3. Giriş Bilgileri ve İstemci Kimliği (Vanilla İstemci Taklidi)
         client.on('login', () => {
+            try {
+                client.write('client_information', {
+                    locale: 'en_US',
+                    viewDistance: 8,
+                    chatFlags: 0,
+                    chatColors: true,
+                    skinParts: 127,
+                    mainHand: 1,
+                    enableTextFiltering: false,
+                    allowServerListings: true
+                });
+            } catch (e) {}
+
             botData.status = 'Online';
             broadcastLog(botId, `⚡ ${botData.username} sunucuya girdi!`, 'success');
             io.emit('status-update', { botId, status: 'Online' });
 
+            // 4. Güvenli Anti-AFK Döngüsü (4 Saniyede bir hafif canlılık paketi)
+            antiAfkInterval = setInterval(() => {
+                if (!botData.instance || botData.status !== 'Online') {
+                    if (antiAfkInterval) clearInterval(antiAfkInterval);
+                    return;
+                }
+
+                try {
+                    // Sadece havada/yerde olduğunu belirten hafif paket
+                    client.write('flying', { onGround: true });
+                } catch (e) {
+                    if (antiAfkInterval) clearInterval(antiAfkInterval);
+                }
+            }, 4000);
+
+            // Alt Sunucu Komutunu Gönder
             if (subCmd && subCmd.trim() !== '') {
                 setTimeout(() => {
                     if (botData.instance && botData.status === 'Online') {
@@ -269,7 +299,7 @@ function startBotInstance(botId) {
         client.on('player_chat', handleChat);
 
         const cleanupBot = (reason) => {
-            if (positionInterval) clearInterval(positionInterval);
+            if (antiAfkInterval) clearInterval(antiAfkInterval);
             if (!botData.instance) return;
             client.removeAllListeners();
             botData.instance = null;
@@ -308,7 +338,7 @@ function startAllBots() {
     for (const [id, botData] of botPool.entries()) {
         if (botData.status === 'Offline') {
             setTimeout(() => startBotInstance(id), delay);
-            delay += 2500;
+            delay += 3000;
         }
     }
 }

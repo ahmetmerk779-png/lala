@@ -275,11 +275,12 @@ function setupCustomPacketHandler(client, botId) {
             if (botData.waitingForAfkGui && botData.client && botData.status === 'Online') {
                 afkFailCount++;
                 if (afkFailCount >= 3) {
-                    broadcastLog(botId, '⚠️ Lobiye düşülmüş olabilir. Alt sunucuya tekrar giriliyor...', 'error');
+                    broadcastLog(botId, '⚠️ /afk menüsü açılamadı, alt sunucuya (/gir asmp) komutu tekrar gönderiliyor...', 'error');
                     afkFailCount = 0;
                     isSequenceStarted = false;
                     const subCmd = botData.autoSubServerCmd !== undefined ? botData.autoSubServerCmd : globalConfig.autoSubServerCmd;
                     if (subCmd) sendChat(client, subCmd);
+                    botData.afkTimer = setTimeout(() => triggerAfkWithRetry(), 5000);
                 } else {
                     broadcastLog(botId, `⚠ Menü açılmadı, /afk tekrar deneniyor... (${afkFailCount}/3)`, 'warn');
                     triggerAfkWithRetry();
@@ -306,6 +307,62 @@ function setupCustomPacketHandler(client, botId) {
                 afkFailCount = 0;
                 broadcastLog(botId, '🔄 Sunucu değişimi algılandı. AFK ve harita yenileniyor...', 'warn');
                 botData.afkTimer = setTimeout(() => triggerAfkWithRetry(), 4000);
+                break;
+
+            case 'scoreboard_objective':
+                if (data.action === 0 || data.action === 2) {
+                    botData.scoreboardData.objectives[data.name] = {
+                        title: parseMcText(data.displayText || data.title || data.name),
+                        type: data.type
+                    };
+                    if (data.action === 0 && data.position === 1) {
+                        botData.scoreboardData.sidebarObjective = data.name;
+                    }
+                } else if (data.action === 1) {
+                    delete botData.scoreboardData.objectives[data.name];
+                    if (botData.scoreboardData.sidebarObjective === data.name) {
+                        botData.scoreboardData.sidebarObjective = null;
+                    }
+                }
+                queueScoreboardUpdate();
+                break;
+
+            case 'scoreboard_display_objective':
+                if (data.position === 1) {
+                    botData.scoreboardData.sidebarObjective = data.name;
+                    queueScoreboardUpdate();
+                }
+                break;
+
+            case 'scoreboard_score':
+                const objName = data.itemName || data.objectiveName;
+                const scoreName = data.scoreName || data.name;
+                if (!botData.scoreboardData.scores[objName]) {
+                    botData.scoreboardData.scores[objName] = {};
+                }
+                if (data.action === 0 || data.action === undefined) {
+                    botData.scoreboardData.scores[objName][scoreName] = {
+                        val: data.value !== undefined ? data.value : data.score,
+                        customName: data.customName ? parseMcText(data.customName) : null
+                    };
+                } else if (data.action === 1) {
+                    delete botData.scoreboardData.scores[objName][scoreName];
+                }
+                queueScoreboardUpdate();
+                break;
+
+            case 'scoreboard_team':
+                const teamName = data.team;
+                if (data.action === 0 || data.action === 2) {
+                    botData.scoreboardData.teams[teamName] = {
+                        prefix: parseMcText(data.prefix || data.teamPrefix || ''),
+                        suffix: parseMcText(data.suffix || data.teamSuffix || ''),
+                        players: data.players || []
+                    };
+                } else if (data.action === 1) {
+                    delete botData.scoreboardData.teams[teamName];
+                }
+                queueScoreboardUpdate();
                 break;
 
             case 'window_items':
@@ -431,7 +488,16 @@ function setupCustomPacketHandler(client, botId) {
             case 'spawn_entity':
             case 'named_entity_spawn':
                 if (data.entityId !== undefined) {
-                    let entityName = meta.name === 'named_entity_spawn' ? (data.username || `Oyuncu #${data.entityId}`) : `Varlık #${data.entityId}`;
+                    let entityName = '';
+                    if (meta.name === 'named_entity_spawn') {
+                        entityName = data.username || `Oyuncu #${data.entityId}`;
+                    } else {
+                        // Eğer entity bir tab list oyuncusuyla eşleşiyorsa adını kurtaralım
+                        entityName = `Varlık #${data.entityId}`;
+                        Object.values(botData.tabList).forEach(p => {
+                            if (p.entityId === data.entityId) entityName = p.name;
+                        });
+                    }
                     botData.entities[data.entityId] = {
                         id: data.entityId,
                         name: entityName,
@@ -546,7 +612,7 @@ function cleanupBot(botId, reason) {
 
     botData.status = 'Offline';
     botData.onlineSince = null;
-    botData.inventory = {}; // Bot offline olunca envanter sıfırlanıyor
+    botData.inventory = {};
     botData.scoreboard = null;
     botData.tabList = {};
     botData.entities = {};

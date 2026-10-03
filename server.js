@@ -152,20 +152,12 @@ function safeClientWrite(client, packetName, packetData) {
     }
 }
 
-// ⚡ Protokol Serileştirme Hatasını Önleyen Güvenli Sohbet / Komut Gönderimi
+// ⚡ Protokol Hatasını Kesin Olarak Önleyen Saf ve Güvenli Sohbet / Komut Yöntemi
 function sendChat(client, message) {
     if (!client) return;
     try {
         if (typeof client.chat === 'function') {
             client.chat(message);
-            return;
-        }
-        try {
-            client.write('chat', { message: message });
-        } catch (e1) {
-            try {
-                client.write('chat_message', { message: message });
-            } catch (e2) {}
         }
     } catch (e) {}
 }
@@ -279,7 +271,7 @@ function setupCustomPacketHandler(client, botId) {
         if (!activeObjName) {
             const keys = Object.keys(sb.objectives);
             if (keys.length > 0) {
-                activeObjName = keys[keys.length - 1]; // En son gelen güncel objective seçilir
+                activeObjName = keys[keys.length - 1];
             }
         }
 

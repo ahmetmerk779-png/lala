@@ -139,16 +139,9 @@ function broadcastLog(botId, text, type = 'info') {
     if (botPool.has(botId)) {
         const botData = botPool.get(botId);
         botData.logs.push(logEntry);
-        if (botData.logs.length > 20) botData.logs.shift();
+        if (botData.logs.length > 30) botData.logs.shift();
     }
     io.emit('bot-log', logEntry);
-}
-
-function broadcastInventory(botId) {
-    const botData = botPool.get(botId);
-    if (botData) {
-        io.emit('bot-inventory', { botId, inventory: botData.inventory || {} });
-    }
 }
 
 function sendChat(client, message) {
@@ -188,6 +181,7 @@ function setupCustomPacketHandler(client, botId) {
         if (botData.sbUpdateTimer) clearTimeout(botData.sbUpdateTimer);
         if (botData.tabUpdateTimer) clearTimeout(botData.tabUpdateTimer);
         if (botData.mapUpdateTimer) clearTimeout(botData.mapUpdateTimer);
+        if (botData.invUpdateTimer) clearTimeout(botData.invUpdateTimer);
         
         botData.subCmdInterval = null;
         botData.afkTimer = null;
@@ -195,6 +189,7 @@ function setupCustomPacketHandler(client, botId) {
         botData.sbUpdateTimer = null;
         botData.tabUpdateTimer = null;
         botData.mapUpdateTimer = null;
+        botData.invUpdateTimer = null;
     }
 
     clearBotTimers();
@@ -213,6 +208,14 @@ function setupCustomPacketHandler(client, botId) {
         teams: {}
     };
 
+    function queueInventoryUpdate() {
+        if (botData.invUpdateTimer) return;
+        botData.invUpdateTimer = setTimeout(() => {
+            botData.invUpdateTimer = null;
+            io.emit('bot-inventory', { botId, inventory: botData.inventory, currentWindowId: botData.currentWindowId });
+        }, 300);
+    }
+
     function queueScoreboardUpdate() {
         if (botData.sbUpdateTimer) return;
         botData.sbUpdateTimer = setTimeout(() => {
@@ -227,7 +230,7 @@ function setupCustomPacketHandler(client, botId) {
             botData.tabUpdateTimer = null;
             const players = Object.values(botData.tabList);
             io.emit('bot-tablist', { botId, players });
-        }, 1000);
+        }, 500);
     }
 
     function queueMapUpdate() {
@@ -276,7 +279,6 @@ function setupCustomPacketHandler(client, botId) {
             let fullText = (prefix + cleanEntry + suffix).trim();
             if (!fullText) fullText = cleanEntry;
             
-            // Scoreboard altındaki IP adreslerinin ve reklamların kayma yapmasını önlemek için filtrelenmesi[span_1](start_span)[span_1](end_span)
             if (fullText.includes('OYNA.') || fullText.includes('.COM') || fullText.toLowerCase().includes('play.')) {
                 return;
             }
@@ -332,6 +334,62 @@ function setupCustomPacketHandler(client, botId) {
                 botData.afkTimer = setTimeout(() => triggerAfkWithRetry(), 4000);
                 break;
 
+            case 'open_window':
+                botData.currentWindowId = data.windowId;
+                botData.inventory = {};
+                queueInventoryUpdate();
+                if (botData.waitingForAfkGui) {
+                    botData.waitingForAfkGui = false;
+                    if (botData.afkRetryTimer) clearTimeout(botData.afkRetryTimer);
+                    broadcastLog(botId, '✅ /afk menüsü başarıyla açıldı.', 'success');
+                }
+                break;
+
+            case 'close_window':
+                if (data.windowId === botData.currentWindowId) {
+                    botData.currentWindowId = 0;
+                }
+                break;
+
+            case 'window_items':
+                if (data.windowId === botData.currentWindowId || data.windowId === 0) {
+                    const items = data.items || [];
+                    const invMap = {};
+                    items.forEach((item, index) => {
+                        if (item && item.itemCount > 0 && item.itemId !== undefined && item.itemId !== -1) {
+                            const details = getItemDetails(client.version, item.itemId);
+                            invMap[index] = {
+                                slot: index,
+                                count: item.itemCount,
+                                name: details ? details.name : 'unknown',
+                                displayName: details ? details.displayName : `ID: ${item.itemId}`
+                            };
+                        }
+                    });
+                    botData.inventory = invMap;
+                    queueInventoryUpdate();
+                }
+                break;
+
+            case 'set_slot':
+                if (data.windowId === botData.currentWindowId || data.windowId === 0) {
+                    const item = data.item;
+                    const slot = data.slot;
+                    if (item && item.itemCount > 0 && item.itemId !== undefined && item.itemId !== -1) {
+                        const details = getItemDetails(client.version, item.itemId);
+                        botData.inventory[slot] = {
+                            slot: slot,
+                            count: item.itemCount,
+                            name: details ? details.name : 'unknown',
+                            displayName: details ? details.displayName : `ID: ${item.itemId}`
+                        };
+                    } else {
+                        delete botData.inventory[slot];
+                    }
+                    queueInventoryUpdate();
+                }
+                break;
+
             case 'player_info':
             case 'player_info_update': {
                 const playersArray = data.data || data.players || [];
@@ -346,21 +404,25 @@ function setupCustomPacketHandler(client, botId) {
                     if (p.name) botData.tabList[uuid].name = p.name;
                     if (p.player && p.player.name) botData.tabList[uuid].name = p.player.name;
                     
-                    if (p.displayName) {
-                        botData.tabList[uuid].displayName = parseMcText(p.displayName);
-                    } else if (p.player && p.player.displayName) {
-                        botData.tabList[uuid].displayName = parseMcText(p.player.displayName);
+                    const disp = p.displayName || (p.player && p.player.displayName);
+                    if (disp) {
+                        botData.tabList[uuid].displayName = parseMcText(disp);
                     }
 
-                    if (p.latency !== undefined) botData.tabList[uuid].ping = p.latency;
+                    const lat = p.latency !== undefined ? p.latency : p.ping;
+                    if (lat !== undefined) botData.tabList[uuid].ping = lat;
                 });
                 queueTabListUpdate();
                 break;
             }
 
             case 'player_info_remove': {
-                if (Array.isArray(data.UUIDs)) {
-                    data.UUIDs.forEach(uuid => delete botData.tabList[uuid]);
+                const uids = data.UUIDs || data.players;
+                if (Array.isArray(uids)) {
+                    uids.forEach(item => {
+                        const uid = typeof item === 'object' ? (item.uuid || item.UUID) : item;
+                        if (uid) delete botData.tabList[uid];
+                    });
                     queueTabListUpdate();
                 }
                 break;
@@ -388,10 +450,18 @@ function setupCustomPacketHandler(client, botId) {
 
                     setTimeout(() => {
                         if (!botData.client) return;
-                        if (pwd && pwd.trim() !== '') sendChat(client, `/login ${pwd}`);
+                        if (pwd && pwd.trim() !== '') {
+                            sendChat(client, `/login ${pwd}`);
+                            broadcastLog(botId, `🔑 /login gönderildi.`, 'info');
+                        }
                         if (subCmd && subCmd.trim() !== '') {
-                            sendChat(client, subCmd);
-                            botData.afkTimer = setTimeout(() => triggerAfkWithRetry(), 10000);
+                            setTimeout(() => {
+                                if (botData.client) {
+                                    sendChat(client, subCmd);
+                                    broadcastLog(botId, `🔀 ${subCmd} komutu ile sunucuya geçiliyor...`, 'info');
+                                }
+                            }, 1500);
+                            botData.afkTimer = setTimeout(() => triggerAfkWithRetry(), 8000);
                         } else {
                             botData.afkTimer = setTimeout(() => triggerAfkWithRetry(), 4000);
                         }
@@ -520,6 +590,7 @@ function cleanupBot(botId, reason) {
     if (botData.sbUpdateTimer) clearTimeout(botData.sbUpdateTimer);
     if (botData.tabUpdateTimer) clearTimeout(botData.tabUpdateTimer);
     if (botData.mapUpdateTimer) clearTimeout(botData.mapUpdateTimer);
+    if (botData.invUpdateTimer) clearTimeout(botData.invUpdateTimer);
     if (botData.reconnectTimer) clearTimeout(botData.reconnectTimer);
 
     if (botData.client) {
@@ -535,11 +606,13 @@ function cleanupBot(botId, reason) {
     botData.tabList = {};
     botData.entities = {};
     botData.pos = { x: 0, y: 0, z: 0 };
+    botData.inventory = {};
 
     broadcastLog(botId, `🔴 ${reason}`, 'error');
     io.emit('status-update', { botId, status: 'Offline', onlineSince: null });
     io.emit('bot-scoreboard', { botId, scoreboard: null });
     io.emit('bot-tablist', { botId, players: [] });
+    io.emit('bot-inventory', { botId, inventory: {}, currentWindowId: 0 });
 
     if (!botData.isManualStop && globalConfig.autoReconnect) {
         botData.reconnectTimer = setTimeout(() => {
@@ -701,6 +774,23 @@ io.on('connection', (socket) => {
                 broadcastLog(targetBotId, `> ${command}`, 'command');
             }
         }
+    });
+
+    socket.on('window-click', ({ botId, slot, mode, button }) => {
+        const botData = botPool.get(botId);
+        if (!botData || !botData.client || botData.status !== 'Online') return;
+        try {
+            botData.currentStateId = (botData.currentStateId + 1) % 32767;
+            botData.client.write('window_click', {
+                windowId: botData.currentWindowId,
+                stateId: botData.currentStateId,
+                slot: slot,
+                mouseButton: button !== undefined ? button : 0,
+                mode: mode !== undefined ? mode : 0,
+                changedSlots: [],
+                item: { itemCount: 0, itemId: -1 }
+            });
+        } catch (e) {}
     });
 });
 

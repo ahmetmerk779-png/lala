@@ -65,7 +65,7 @@ function getItemDetails(version, itemId) {
     if (itemId === undefined || itemId === null || itemId === -1) return null;
     
     const data = getMcData(version);
-    if (data && data.itemsByName) {
+    if (data && data.items) {
         const item = data.items[itemId];
         if (item) {
             const cleanName = item.displayName || item.name.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
@@ -308,7 +308,7 @@ function setupCustomPacketHandler(client, botId) {
                 afkFailCount++;
 
                 if (afkFailCount >= 3) {
-                    broadcastLog(botId, '⚠️️ Lobiye düşülmüş olabilir. Tekrar alt sunucuya giriliyor...', 'error');
+                    broadcastLog(botId, '⚠️ Lobiye düşülmüş olabilir. Tekrar alt sunucuya giriliyor...', 'error');
                     afkFailCount = 0;
                     isSequenceStarted = false;
                     const subCmd = botData.autoSubServerCmd !== undefined ? botData.autoSubServerCmd : globalConfig.autoSubServerCmd;
@@ -341,11 +341,6 @@ function setupCustomPacketHandler(client, botId) {
                 botData.afkTimer = setTimeout(() => triggerAfkWithRetry(), 4000);
                 break;
 
-            case 'open_window':
-                botData.currentWindowId = data.windowId;
-                broadcastLog(botId, `📦 Menü açıldı (ID: ${data.windowId})`, 'info');
-                break;
-
             case 'window_items':
                 if (data.windowId === 0) {
                     botData.inventory = {};
@@ -364,38 +359,42 @@ function setupCustomPacketHandler(client, botId) {
                         });
                     }
                     broadcastInventory(botId);
-                } else if (data.windowId === botData.currentWindowId && botData.waitingForAfkGui) {
-                    botData.currentStateId = data.stateId || 0;
-                    botData.waitingForAfkGui = false;
-                    afkFailCount = 0;
-                    if (botData.afkRetryTimer) clearTimeout(botData.afkRetryTimer);
+                } else {
+                    botData.currentWindowId = data.windowId;
+                    botData.currentStateId = data.stateId;
 
-                    setTimeout(() => {
-                        if (botData.client && botData.status === 'Online') {
-                            try {
-                                client.write('window_click', {
-                                    windowId: botData.currentWindowId,
-                                    stateId: botData.currentStateId,
-                                    slot: 12,
-                                    mouseButton: 0,
-                                    mode: 0,
-                                    changedSlots: [],
-                                    cursorItem: { present: false }
-                                });
-                                broadcastLog(botId, `🎯 AFK Menüsü Başarıyla Tıklandı! (Slot: 12)`, 'success');
-                            } catch (e) {
-                                broadcastLog(botId, `Menü tıklama hatası: ${e.message}`, 'error');
-                                setTimeout(() => triggerAfkWithRetry(), 3000);
+                    if (botData.waitingForAfkGui) {
+                        botData.waitingForAfkGui = false;
+                        afkFailCount = 0;
+                        if (botData.afkRetryTimer) clearTimeout(botData.afkRetryTimer);
+
+                        setTimeout(() => {
+                            if (botData.client && botData.status === 'Online') {
+                                try {
+                                    client.write('window_click', {
+                                        windowId: botData.currentWindowId,
+                                        stateId: botData.currentStateId,
+                                        slot: 12,
+                                        mouseButton: 1,
+                                        mode: 0,
+                                        changedSlots: [],
+                                        cursorItem: { present: false }
+                                    });
+                                    broadcastLog(botId, `🎯 AFK Menüsü Başarıyla Tıklandı! (Slot: 12)`, 'success');
+                                } catch (e) {
+                                    broadcastLog(botId, `Menü tıklama hatası: ${e.message}`, 'error');
+                                    setTimeout(() => triggerAfkWithRetry(), 3000);
+                                }
                             }
-                        }
-                    }, 800);
+                        }, 1000);
+                    }
                 }
                 break;
 
             case 'set_slot':
                 if (data.windowId === 0) {
                     const item = data.item;
-                    if (!item || item.present === false || item.itemId === undefined || item.itemId === -1) {
+                    if (!item || item.present === false || item.itemId !== undefined || item.itemId !== -1) {
                         delete botData.inventory[data.slot];
                     } else {
                         const details = getItemDetails(botData.version || globalConfig.version, item.itemId);
@@ -409,6 +408,10 @@ function setupCustomPacketHandler(client, botId) {
                     }
                     broadcastInventory(botId);
                 }
+                break;
+
+            case 'open_window':
+                botData.currentWindowId = data.windowId;
                 break;
 
             case 'position':

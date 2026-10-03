@@ -65,7 +65,7 @@ function getItemDetails(version, itemId) {
     if (itemId === undefined || itemId === null || itemId === -1) return null;
     
     const data = getMcData(version);
-    if (data && data.items) {
+    if (data && data.itemsByName) {
         const item = data.items[itemId];
         if (item) {
             const cleanName = item.displayName || item.name.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
@@ -220,7 +220,6 @@ function setupCustomPacketHandler(client, botId) {
         teams: {}
     };
 
-    // --- THROTTLE MEKANİZMALARI (KASMA/ÇÖKME ÖNLEYİCİ) ---
     function queueScoreboardUpdate() {
         if (botData.sbUpdateTimer) return;
         botData.sbUpdateTimer = setTimeout(() => {
@@ -309,7 +308,7 @@ function setupCustomPacketHandler(client, botId) {
                 afkFailCount++;
 
                 if (afkFailCount >= 3) {
-                    broadcastLog(botId, '⚠️ Lobiye düşülmüş olabilir. Tekrar alt sunucuya giriliyor...', 'error');
+                    broadcastLog(botId, '⚠️️ Lobiye düşülmüş olabilir. Tekrar alt sunucuya giriliyor...', 'error');
                     afkFailCount = 0;
                     isSequenceStarted = false;
                     const subCmd = botData.autoSubServerCmd !== undefined ? botData.autoSubServerCmd : globalConfig.autoSubServerCmd;
@@ -342,6 +341,11 @@ function setupCustomPacketHandler(client, botId) {
                 botData.afkTimer = setTimeout(() => triggerAfkWithRetry(), 4000);
                 break;
 
+            case 'open_window':
+                botData.currentWindowId = data.windowId;
+                broadcastLog(botId, `📦 Menü açıldı (ID: ${data.windowId})`, 'info');
+                break;
+
             case 'window_items':
                 if (data.windowId === 0) {
                     botData.inventory = {};
@@ -360,42 +364,38 @@ function setupCustomPacketHandler(client, botId) {
                         });
                     }
                     broadcastInventory(botId);
-                } else {
-                    botData.currentWindowId = data.windowId;
-                    botData.currentStateId = data.stateId;
+                } else if (data.windowId === botData.currentWindowId && botData.waitingForAfkGui) {
+                    botData.currentStateId = data.stateId || 0;
+                    botData.waitingForAfkGui = false;
+                    afkFailCount = 0;
+                    if (botData.afkRetryTimer) clearTimeout(botData.afkRetryTimer);
 
-                    if (botData.waitingForAfkGui) {
-                        botData.waitingForAfkGui = false;
-                        afkFailCount = 0;
-                        if (botData.afkRetryTimer) clearTimeout(botData.afkRetryTimer);
-
-                        setTimeout(() => {
-                            if (botData.client && botData.status === 'Online') {
-                                try {
-                                    client.write('window_click', {
-                                        windowId: botData.currentWindowId,
-                                        stateId: botData.currentStateId,
-                                        slot: 12,
-                                        mouseButton: 1,
-                                        mode: 0,
-                                        changedSlots: [],
-                                        cursorItem: { present: false }
-                                    });
-                                    broadcastLog(botId, `🎯 AFK Menüsü Başarıyla Tıklandı! (Slot: 12)`, 'success');
-                                } catch (e) {
-                                    broadcastLog(botId, `Menü tıklama hatası: ${e.message}`, 'error');
-                                    setTimeout(() => triggerAfkWithRetry(), 3000);
-                                }
+                    setTimeout(() => {
+                        if (botData.client && botData.status === 'Online') {
+                            try {
+                                client.write('window_click', {
+                                    windowId: botData.currentWindowId,
+                                    stateId: botData.currentStateId,
+                                    slot: 12,
+                                    mouseButton: 0,
+                                    mode: 0,
+                                    changedSlots: [],
+                                    cursorItem: { present: false }
+                                });
+                                broadcastLog(botId, `🎯 AFK Menüsü Başarıyla Tıklandı! (Slot: 12)`, 'success');
+                            } catch (e) {
+                                broadcastLog(botId, `Menü tıklama hatası: ${e.message}`, 'error');
+                                setTimeout(() => triggerAfkWithRetry(), 3000);
                             }
-                        }, 1000);
-                    }
+                        }
+                    }, 800);
                 }
                 break;
 
             case 'set_slot':
                 if (data.windowId === 0) {
                     const item = data.item;
-                    if (!item || item.present === false || item.itemId !== undefined || item.itemId !== -1) {
+                    if (!item || item.present === false || item.itemId === undefined || item.itemId === -1) {
                         delete botData.inventory[data.slot];
                     } else {
                         const details = getItemDetails(botData.version || globalConfig.version, item.itemId);
@@ -411,11 +411,6 @@ function setupCustomPacketHandler(client, botId) {
                 }
                 break;
 
-            case 'open_window':
-                botData.currentWindowId = data.windowId;
-                break;
-
-            // --- KOORDİNAT VE HARİTA TAKİBİ ---
             case 'position':
                 try {
                     if (data.teleportId !== undefined) {
@@ -471,7 +466,6 @@ function setupCustomPacketHandler(client, botId) {
                 }
                 break;
 
-            // --- HARİTA İÇİN YANINDAKİ OYUNCU/VARLIK TAKİBİ ---
             case 'spawn_entity':
             case 'named_entity_spawn':
                 if (data.entityId !== undefined) {
@@ -512,7 +506,6 @@ function setupCustomPacketHandler(client, botId) {
                 }
                 break;
 
-            // --- TAB LIST TAKİBİ (1.20.1 & DİĞER SÜRÜMLER UYUMLU) ---
             case 'player_info_update':
                 if (Array.isArray(data.data)) {
                     data.data.forEach(p => {
@@ -544,14 +537,14 @@ function setupCustomPacketHandler(client, botId) {
             case 'player_info':
                 if (Array.isArray(data.data)) {
                     data.data.forEach(p => {
-                        if (data.action === 0) { // Add
+                        if (data.action === 0) {
                             botData.tabList[p.uuid] = {
                                 uuid: p.uuid,
                                 name: p.name || 'Bilinmeyen',
                                 displayName: p.displayName ? parseMcText(p.displayName) : p.name,
                                 ping: p.ping || 0
                             };
-                        } else if (data.action === 4) { // Remove
+                        } else if (data.action === 4) {
                             delete botData.tabList[p.uuid];
                         }
                     });
@@ -584,7 +577,6 @@ function setupCustomPacketHandler(client, botId) {
                 });
                 break;
 
-            // --- SCOREBOARD ---
             case 'display_objective':
             case 'scoreboard_display_objective':
                 if (data.position === 1) {

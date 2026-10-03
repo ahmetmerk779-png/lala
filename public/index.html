@@ -753,7 +753,6 @@
                 if (rx >= 0 && rx <= w && ry >= 0 && ry <= h) {
                     let displayName = ent.name || `Varlık #${ent.id}`;
                     
-                    // Eğer entity ismi sayısal veya genel bir varlık adıysa, tab listesindeki oyuncu adlarıyla eşleştirmeyi dene
                     if (tabPlayers.length > 0) {
                         const matchedPlayer = tabPlayers.find(p => p.name && (displayName.includes(p.name) || p.name.includes(ent.id)));
                         if (matchedPlayer) {
@@ -944,7 +943,7 @@
             host: document.getElementById('gModalHost').value.trim(),
             port: Number(document.getElementById('gModalPort').value),
             version: document.getElementById('gModalVersion').value.trim(),
-            autoPassword: document.getElementById('gModalPassword'].value.trim() || '',
+            autoPassword: document.getElementById('gModalPassword').value.trim() || '', // Düzeltildi ()
             autoSubServerCmd: document.getElementById('gModalSubCmd').value.trim()
         };
         socket.emit('update-config', newConfig);

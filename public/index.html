@@ -159,12 +159,13 @@
         .log-chat { color: #e879f9; }
         .log-command { color: #a7f3d0; font-weight: bold; }
 
-        /* GELİŞMİŞ ENVANTER TASARIMI */
+        /* ENVANTER TASARIMI */
         .inventory-wrapper {
             background: #090d16;
             border: 1px solid #1e293b;
             padding: 10px;
             border-radius: 10px;
+            margin-bottom: 10px;
         }
 
         .inventory-header {
@@ -178,9 +179,6 @@
             font-size: 12px;
             color: #a5b4fc;
             font-weight: 700;
-            display: flex;
-            align-items: center;
-            gap: 5px;
         }
 
         .inventory-grid {
@@ -265,6 +263,36 @@
 
         .inv-info-name { font-weight: 700; color: #38bdf8; }
         .inv-info-slot { color: #94a3b8; font-size: 10px; }
+
+        /* SCOREBOARD TASARIMI */
+        .scoreboard-box {
+            background: #090d16;
+            border: 1px solid #1e293b;
+            border-radius: 10px;
+            padding: 10px;
+            font-family: 'Fira Code', monospace;
+        }
+
+        .scoreboard-title {
+            text-align: center;
+            font-weight: bold;
+            color: #facc15;
+            border-bottom: 1px solid #1e293b;
+            padding-bottom: 6px;
+            margin-bottom: 8px;
+            font-size: 12px;
+        }
+
+        .scoreboard-line {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 3px;
+            font-size: 11px;
+        }
+
+        .scoreboard-text { color: #e2e8f0; }
+        .scoreboard-val { color: #ef4444; font-weight: bold; margin-left: 8px; }
 
         .modal-overlay {
             position: fixed;
@@ -428,6 +456,34 @@
         }
     });
 
+    socket.on('bot-scoreboard', ({ botId, scoreboard }) => {
+        const titleEl = document.getElementById(`sb-title-${botId}`);
+        const linesEl = document.getElementById(`sb-lines-${botId}`);
+        if (!linesEl) return;
+
+        if (!scoreboard || !scoreboard.lines || scoreboard.lines.length === 0) {
+            if (titleEl) titleEl.innerText = '📊 Scoreboard';
+            linesEl.innerHTML = `<div style="color: #64748b; text-align: center; padding: 4px;">Sunucuda aktif Scoreboard yok</div>`;
+            return;
+        }
+
+        if (titleEl && scoreboard.title) {
+            titleEl.innerText = `📊 ${scoreboard.title}`;
+        }
+
+        linesEl.innerHTML = '';
+
+        scoreboard.lines.forEach(item => {
+            const row = document.createElement('div');
+            row.className = 'scoreboard-line';
+            row.innerHTML = `
+                <span class="scoreboard-text">${item.text}</span>
+                <span class="scoreboard-val">${item.score}</span>
+            `;
+            linesEl.appendChild(row);
+        });
+    });
+
     function renderBotList() {
         const container = document.getElementById('botListContainer');
         const select = document.getElementById('targetBotSelect');
@@ -470,16 +526,17 @@
                     <div class="inventory-header">
                         <div class="inventory-title">🎒 Envanter Görünümü</div>
                     </div>
-                    
-                    <!-- Zırh Slotları (5-8) ve Sol El (45) -->
                     <div class="armor-grid" id="armor-grid-${bot.id}"></div>
-
-                    <!-- Ana Envanter Slotları (9-44) -->
                     <div class="inventory-grid" id="inv-grid-${bot.id}"></div>
-
-                    <!-- Bilgi Çubuğu (Detaylar) -->
                     <div class="inv-info-bar" id="inv-info-${bot.id}">
                         <span>Detaylarını görmek için eşyaya dokunun</span>
+                    </div>
+                </div>
+
+                <div class="scoreboard-box">
+                    <div class="scoreboard-title" id="sb-title-${bot.id}">📊 Scoreboard</div>
+                    <div id="sb-lines-${bot.id}">
+                        <div style="color: #64748b; text-align: center;">Skor verisi bekleniyor...</div>
                     </div>
                 </div>
             `;
@@ -494,7 +551,6 @@
 
     function getItemImageUrl(itemName) {
         if (!itemName || itemName === 'unknown') return null;
-        // Inventivetalent kütüphanesinden Minecraft 1.20 dokuları
         return `https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20.1/assets/minecraft/textures/item/${itemName}.png`;
     }
 
@@ -510,7 +566,6 @@
         grid.innerHTML = '';
         armorGrid.innerHTML = '';
 
-        // Zırh & Sol El Slotları Mapping (5: Kask, 6: Göğüslük, 7: Pantolon, 8: Bot, 45: Sol El)
         const armorSlots = [
             { slotId: 5, label: '🪖 Kask' },
             { slotId: 6, label: '👕 Göğüslük' },
@@ -525,7 +580,6 @@
             armorGrid.appendChild(slotEl);
         });
 
-        // Ana Envanter (9-44: 36 Slot)
         for (let i = 9; i <= 44; i++) {
             const item = inventory[i];
             const slotEl = createSlotElement(botId, i, item);
@@ -569,9 +623,7 @@
                 <span class="inv-info-slot">Adet: <b>${count}</b> | Slot: ${slot}</span>
             `;
         } else {
-            infoBar.innerHTML = `
-                <span style="color: #64748b;">Boş Slot (${slot})</span>
-            `;
+            infoBar.innerHTML = `<span style="color: #64748b;">Boş Slot (${slot})</span>`;
         }
     }
 

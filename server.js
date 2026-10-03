@@ -38,7 +38,7 @@ const defaultBotConfigs = [
 function loadSavedData() {
     if (!fs.existsSync(DATA_FILE)) {
         defaultBotConfigs.forEach(cfg => {
-            botPool.set(cfg.id, { ...cfg, status: 'Offline', client: null, logs: [], isManualStop: false });
+            botPool.set(cfg.id, { ...cfg, status: 'Offline', client: null, logs: [], inventory: {}, isManualStop: false });
         });
         saveDataToFile();
         return;
@@ -50,7 +50,7 @@ function loadSavedData() {
         if (Array.isArray(parsed.bots) && parsed.bots.length > 0) {
             botPool.clear();
             parsed.bots.forEach(b => {
-                botPool.set(b.id, { ...b, status: 'Offline', client: null, logs: [], isManualStop: false });
+                botPool.set(b.id, { ...b, status: 'Offline', client: null, logs: [], inventory: {}, isManualStop: false });
             });
         }
     } catch (err) {
@@ -86,6 +86,13 @@ function broadcastLog(botId, text, type = 'info') {
     io.emit('bot-log', logEntry);
 }
 
+function broadcastInventory(botId) {
+    const botData = botPool.get(botId);
+    if (botData) {
+        io.emit('bot-inventory', { botId, inventory: botData.inventory || {} });
+    }
+}
+
 function sendChat(client, message) {
     if (!client) return;
     try {
@@ -112,11 +119,11 @@ function sendChat(client, message) {
 }
 
 // -------------------------------------------------------------
-// OTOMATİK DOĞMA (RESPAWN) VE MENÜ YÖNETİCİSİ
+// MINECRAFT PROTOCOL PAKET VE ENVANTER YÖNETİCİSİ
 // -------------------------------------------------------------
 function setupCustomPacketHandler(client, botId) {
     let isSequenceStarted = false;
-    let afkFailCount = 0; 
+    let afkFailCount = 0;
     const botData = botPool.get(botId);
 
     function clearBotTimers() {
@@ -132,6 +139,7 @@ function setupCustomPacketHandler(client, botId) {
     botData.waitingForAfkGui = false;
     botData.currentWindowId = 0;
     botData.currentStateId = 0;
+    botData.inventory = {};
 
     function triggerAfkWithRetry() {
         if (!botData.client || botData.status !== 'Online') return;
@@ -147,9 +155,9 @@ function setupCustomPacketHandler(client, botId) {
                 afkFailCount++;
 
                 if (afkFailCount >= 3) {
-                    broadcastLog(botId, '⚠️️ Menü açılmadı! Lobiye düşülmüş olabilir. Tekrar ASMP\'ye giriliyor...', 'error');
+                    broadcastLog(botId, '⚠️ Menü açılmadı! Lobiye düşülmüş olabilir. Tekrar ASMP\'ye giriliyor...', 'error');
                     afkFailCount = 0;
-                    isSequenceStarted = false; 
+                    isSequenceStarted = false;
                     const subCmd = botData.autoSubServerCmd !== undefined ? botData.autoSubServerCmd : globalConfig.autoSubServerCmd;
                     if (subCmd) sendChat(client, subCmd);
                 } else {
@@ -164,56 +172,65 @@ function setupCustomPacketHandler(client, botId) {
         if (meta.state !== 'play') return;
 
         switch (meta.name) {
-            // CAN KONTROLÜ (ÖLÜM EKRANI ALGILAMA VE DOĞMA)
+            // CAN KONTROLÜ VE OTOMATİK DOĞMA (RESPAWN)
             case 'update_health':
                 if (data.health <= 0) {
-                    broadcastLog(botId, '☠️ Bot öldü! Otomatik Yeniden Doğma (Respawn) basılıyor...', 'error');
+                    broadcastLog(botId, '☠️ Bot öldü! Otomatik Yeniden Doğma (Respawn) gönderiliyor...', 'error');
                     try {
-                        // 0: Perform respawn (Yeniden Doğ butonuna tıklar)
                         client.write('client_command', { actionId: 0 });
                     } catch (e) {}
                 }
                 break;
 
-            // LOBİYE DÜŞME / DOĞMA / DÜNYA DEĞİŞİMİ
+            // LOBİYE DÜŞME / RESPAWN / SUNUCU DEĞİŞİMİ
             case 'respawn':
                 clearBotTimers();
                 botData.waitingForAfkGui = false;
                 afkFailCount = 0;
 
-                broadcastLog(botId, '🔄 Yeniden doğma/Sunucu değişimi algılandı. AFK alanına tekrar gidiliyor...', 'warn');
+                broadcastLog(botId, '🔄 Sunucu değişimi/Yeniden doğma algılandı. AFK süreci yeniden başlatılıyor...', 'warn');
 
                 botData.afkTimer = setTimeout(() => {
                     triggerAfkWithRetry();
                 }, 4000);
                 break;
 
-            // MENÜ AÇILMA PAKETİ
-            case 'open_window':
-                botData.currentWindowId = data.windowId;
-                break;
-
-            // MENÜ EŞYALARI YÜKLENDİ PAKETİ (TIKLAMA)
+            // ENVANTER GÜNCELLEMESİ VEYA MENÜ AÇILMASI
             case 'window_items':
-                if (data.windowId !== 0) { 
+                if (data.windowId === 0) {
+                    // Botun Ana Envanteri
+                    botData.inventory = {};
+                    if (Array.isArray(data.items)) {
+                        data.items.forEach((item, index) => {
+                            if (item && item.present !== false && item.itemId !== undefined && item.itemId !== -1) {
+                                botData.inventory[index] = {
+                                    slot: index,
+                                    id: item.itemId,
+                                    count: item.itemCount || 1
+                                };
+                            }
+                        });
+                    }
+                    broadcastInventory(botId);
+                } else {
+                    // Sanal Menü
                     botData.currentWindowId = data.windowId;
                     botData.currentStateId = data.stateId;
 
                     if (botData.waitingForAfkGui) {
-                        botData.waitingForAfkGui = false; 
-                        afkFailCount = 0; 
+                        botData.waitingForAfkGui = false;
+                        afkFailCount = 0;
                         if (botData.afkRetryTimer) clearTimeout(botData.afkRetryTimer);
 
                         setTimeout(() => {
                             if (botData.client && botData.status === 'Online') {
                                 try {
-                                    const targetSlot = 12; // AFK BOLGESI 1
-
+                                    const targetSlot = 12; // AFK BÖLGESİ 1
                                     client.write('window_click', {
                                         windowId: botData.currentWindowId,
                                         stateId: botData.currentStateId,
                                         slot: targetSlot,
-                                        mouseButton: 1, // Sağ Tık
+                                        mouseButton: 1,
                                         mode: 0,
                                         changedSlots: [],
                                         cursorItem: { present: false }
@@ -229,6 +246,27 @@ function setupCustomPacketHandler(client, botId) {
                 }
                 break;
 
+            // ENVANTER TEK SLOT DEĞİŞİMİ
+            case 'set_slot':
+                if (data.windowId === 0) {
+                    const item = data.item;
+                    if (!item || item.present === false || item.itemId === undefined || item.itemId === -1) {
+                        delete botData.inventory[data.slot];
+                    } else {
+                        botData.inventory[data.slot] = {
+                            slot: data.slot,
+                            id: item.itemId,
+                            count: item.itemCount || 1
+                        };
+                    }
+                    broadcastInventory(botId);
+                }
+                break;
+
+            case 'open_window':
+                botData.currentWindowId = data.windowId;
+                break;
+
             case 'position':
                 try {
                     if (data.teleportId !== undefined) {
@@ -237,7 +275,6 @@ function setupCustomPacketHandler(client, botId) {
                     client.write('position', { x: data.x, y: data.y, z: data.z, onGround: true });
                 } catch (e) {}
 
-                // İLK GİRİŞ SIRALAMASI: Login -> ASMP -> AFK
                 if (!isSequenceStarted) {
                     isSequenceStarted = true;
 
@@ -345,7 +382,6 @@ function cleanupBot(botId, reason) {
     if (!botData) return;
 
     if (botData.keepAliveInterval) clearInterval(botData.keepAliveInterval);
-    if (botData.subCmdTimer) clearTimeout(botData.subCmdTimer);
     if (botData.subCmdInterval) clearInterval(botData.subCmdInterval);
     if (botData.afkTimer) clearTimeout(botData.afkTimer);
     if (botData.afkRetryTimer) clearTimeout(botData.afkRetryTimer);
@@ -360,6 +396,7 @@ function cleanupBot(botId, reason) {
     }
 
     botData.status = 'Offline';
+    botData.inventory = {};
     broadcastLog(botId, `🔴 ${reason}`, 'error');
     io.emit('status-update', { botId, status: 'Offline' });
 
@@ -460,7 +497,7 @@ io.on('connection', (socket) => {
         autoPassword: b.autoPassword !== undefined ? b.autoPassword : globalConfig.autoPassword,
         autoSubServerCmd: b.autoSubServerCmd !== undefined ? b.autoSubServerCmd : globalConfig.autoSubServerCmd,
         autoSubServerDelay: b.autoSubServerDelay !== undefined ? b.autoSubServerDelay : globalConfig.autoSubServerDelay,
-        status: b.status, logs: b.logs
+        status: b.status, logs: b.logs, inventory: b.inventory || {}
     }));
 
     socket.emit('init-data', { botList, globalConfig });
@@ -496,7 +533,7 @@ io.on('connection', (socket) => {
             autoPassword: typeof data === 'object' && data.autoPassword !== undefined ? data.autoPassword : globalConfig.autoPassword,
             autoSubServerCmd: typeof data === 'object' && data.autoSubServerCmd !== undefined ? data.autoSubServerCmd : globalConfig.autoSubServerCmd,
             autoSubServerDelay: typeof data === 'object' && data.autoSubServerDelay !== undefined ? data.autoSubServerDelay : globalConfig.autoSubServerDelay,
-            status: 'Offline', client: null, logs: [], isManualStop: false
+            status: 'Offline', client: null, logs: [], inventory: {}, isManualStop: false
         };
         botPool.set(id, newBot);
         saveDataToFile();

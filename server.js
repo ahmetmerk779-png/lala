@@ -93,7 +93,7 @@ function loadSavedData() {
             botPool.set(cfg.id, { 
                 ...cfg, status: 'Offline', onlineSince: null, client: null, logs: [], inventory: {}, 
                 scoreboardData: { sidebarObjective: null, objectives: {}, scores: {}, teams: {} }, 
-                isManualStop: false, pos: { x: 0, y: 0, z: 0 }, tabList: {}, entities: {} 
+                lastScoreboard: null, isManualStop: false, pos: { x: 0, y: 0, z: 0 }, tabList: {}, entities: {} 
             });
         });
         saveDataToFile();
@@ -109,7 +109,7 @@ function loadSavedData() {
                 botPool.set(b.id, { 
                     ...b, status: 'Offline', onlineSince: null, client: null, logs: [], inventory: {}, 
                     scoreboardData: { sidebarObjective: null, objectives: {}, scores: {}, teams: {} }, 
-                    isManualStop: false, pos: { x: 0, y: 0, z: 0 }, tabList: {}, entities: {} 
+                    lastScoreboard: null, isManualStop: false, pos: { x: 0, y: 0, z: 0 }, tabList: {}, entities: {} 
                 });
             });
         }
@@ -209,6 +209,7 @@ function setupCustomPacketHandler(client, botId) {
     botData.entities = {};
     botData.pos = { x: 0, y: 0, z: 0 };
     botData.scoreboardData = { sidebarObjective: null, objectives: {}, scores: {}, teams: {} };
+    botData.lastScoreboard = null;
 
     function resetBotSession(reason = 'Oturum Sıfırlandı') {
         try {
@@ -216,6 +217,7 @@ function setupCustomPacketHandler(client, botId) {
             botData.entities = {};
             botData.inventory = {};
             botData.scoreboardData = { sidebarObjective: null, objectives: {}, scores: {}, teams: {} };
+            botData.lastScoreboard = null;
             broadcastLog(botId, `🔄 [Dinamik Temizlik] ${reason}`, 'info');
             io.emit('bot-scoreboard', { botId, scoreboard: null });
             io.emit('bot-tablist', { botId, players: [] });
@@ -264,7 +266,6 @@ function setupCustomPacketHandler(client, botId) {
         const sb = botData.scoreboardData;
         let activeObjName = null;
 
-        // 1. Önce açıkça Sidebar (position 1) olarak işaretlenmiş olanı bul
         for (const [objName, objVal] of Object.entries(sb.objectives)) {
             if (objVal.position === 1) {
                 activeObjName = objName;
@@ -272,8 +273,6 @@ function setupCustomPacketHandler(client, botId) {
             }
         }
         
-        // 2. Eğer açıkça belirtilmemişse, oyuncu listesi / leaderboard (15'ten fazla satırı olan) 
-        // haricindeki normal kişisel scoreboard objective'ini seç
         if (!activeObjName) {
             for (const [objName, scoresObj] of Object.entries(sb.scores)) {
                 const count = Object.keys(scoresObj).length;
@@ -284,7 +283,6 @@ function setupCustomPacketHandler(client, botId) {
             }
         }
 
-        // 3. Hala bulunamadıysa ilk objective'i al
         if (!activeObjName) {
             const keys = Object.keys(sb.objectives);
             if (keys.length > 0) {
@@ -293,7 +291,11 @@ function setupCustomPacketHandler(client, botId) {
         }
 
         if (!activeObjName || !sb.objectives[activeObjName]) {
-            io.emit('bot-scoreboard', { botId, scoreboard: null });
+            if (botData.lastScoreboard) {
+                io.emit('bot-scoreboard', { botId, scoreboard: botData.lastScoreboard });
+            } else {
+                io.emit('bot-scoreboard', { botId, scoreboard: null });
+            }
             return;
         }
 
@@ -326,10 +328,12 @@ function setupCustomPacketHandler(client, botId) {
 
         lines.sort((a, b) => b.score - a.score);
         
-        // Sağ menüde en fazla 15 satır gösterilir
+        // ⚡ MAKSIMUM 15 SATIR OLARAK ARTTIRILDI
         const cleanLines = lines.slice(0, 15);
-
-        io.emit('bot-scoreboard', { botId, scoreboard: { title, lines: cleanLines } });
+        const scoreboardObj = { title, lines: cleanLines };
+        
+        botData.lastScoreboard = scoreboardObj;
+        io.emit('bot-scoreboard', { botId, scoreboard: scoreboardObj });
     }
 
     function triggerAfkWithRetry() {
@@ -385,7 +389,23 @@ function setupCustomPacketHandler(client, botId) {
                     if (botData.waitingForAfkGui) {
                         botData.waitingForAfkGui = false;
                         if (botData.afkRetryTimer) clearTimeout(botData.afkRetryTimer);
-                        broadcastLog(botId, '✅ /afk menüsü başarıyla açıldı.', 'success');
+                        broadcastLog(botId, '✅ /afk menüsü açıldı, 12. slota sağ tıklanıyor...', 'success');
+                        
+                        setTimeout(() => {
+                            if (botData.client && botData.status === 'Online') {
+                                botData.currentStateId = (botData.currentStateId + 1) % 32767;
+                                safeClientWrite(client, 'window_click', {
+                                    windowId: data.windowId,
+                                    stateId: botData.currentStateId,
+                                    slot: 12,
+                                    mouseButton: 1, // Sağ tık
+                                    mode: 0,
+                                    changedSlots: [],
+                                    item: { itemCount: 0, itemId: -1 }
+                                });
+                                broadcastLog(botId, '🖱️ AFK menüsü 12. slota sağ tıklandı.', 'success');
+                            }
+                        }, 400);
                     }
                     break;
 
@@ -667,6 +687,7 @@ function cleanupBot(botId, reason) {
     botData.pos = { x: 0, y: 0, z: 0 };
     botData.inventory = {};
     botData.scoreboardData = { sidebarObjective: null, objectives: {}, scores: {}, teams: {} };
+    botData.lastScoreboard = null;
 
     broadcastLog(botId, `🔴 ${reason}`, 'error');
     io.emit('status-update', { botId, status: 'Offline', onlineSince: null });
@@ -804,7 +825,7 @@ io.on('connection', (socket) => {
             autoPassword: typeof data === 'object' && data.autoPassword !== undefined ? data.autoPassword : globalConfig.autoPassword,
             autoSubServerCmd: typeof data === 'object' && data.autoSubServerCmd !== undefined ? data.autoSubServerCmd : globalConfig.autoSubServerCmd,
             status: 'Offline', onlineSince: null, pos: { x: 0, y: 0, z: 0 },
-            client: null, logs: [], inventory: {}, scoreboardData: { sidebarObjective: null, objectives: {}, scores: {}, teams: {} }, tabList: {}, entities: {}, isManualStop: false
+            client: null, logs: [], inventory: {}, scoreboardData: { sidebarObjective: null, objectives: {}, scores: {}, teams: {} }, lastScoreboard: null, tabList: {}, entities: {}, isManualStop: false
         };
         botPool.set(id, newBot);
         saveDataToFile();
@@ -826,6 +847,7 @@ io.on('connection', (socket) => {
                     if (command.startsWith('/gir') || command.startsWith('/server')) {
                         botData.tabList = {};
                         botData.scoreboardData = { sidebarObjective: null, objectives: {}, scores: {}, teams: {} };
+                        botData.lastScoreboard = null;
                     }
                     sendChat(botData.client, command);
                     broadcastLog(botData.id, `> ${command}`, 'command');
@@ -837,6 +859,7 @@ io.on('connection', (socket) => {
                 if (command.startsWith('/gir') || command.startsWith('/server')) {
                     botData.tabList = {};
                     botData.scoreboardData = { sidebarObjective: null, objectives: {}, scores: {}, teams: {} };
+                    botData.lastScoreboard = null;
                 }
                 sendChat(botData.client, command);
                 broadcastLog(targetBotId, `> ${command}`, 'command');

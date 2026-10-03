@@ -225,7 +225,7 @@ function setupCustomPacketHandler(client, botId) {
         botData.sbUpdateTimer = setTimeout(() => {
             botData.sbUpdateTimer = null;
             broadcastDynamicScoreboard();
-        }, 300);
+        }, 500);
     }
 
     function queueTabListUpdate() {
@@ -234,7 +234,7 @@ function setupCustomPacketHandler(client, botId) {
             botData.tabUpdateTimer = null;
             const players = Object.values(botData.tabList);
             io.emit('bot-tablist', { botId, players });
-        }, 300);
+        }, 1000);
     }
 
     function queueMapUpdate() {
@@ -243,7 +243,7 @@ function setupCustomPacketHandler(client, botId) {
             botData.mapUpdateTimer = null;
             const entityArray = Object.values(botData.entities);
             io.emit('bot-map-update', { botId, pos: botData.pos, entities: entityArray });
-        }, 300);
+        }, 400);
     }
 
     function broadcastDynamicScoreboard() {

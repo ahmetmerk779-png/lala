@@ -13,7 +13,6 @@ const io = new Server(server);
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
 
-// Global Çökme Korumaları
 process.on('uncaughtException', (err) => console.error('[Hata Engellendi]:', err.message));
 process.on('unhandledRejection', (reason) => console.error('[Söz Rejeksiyonu Engellendi]:', reason));
 
@@ -36,7 +35,6 @@ const defaultBotConfigs = [
     { id: 'bot_3', username: 'Deliyiz_3', host: '141.95.82.164', port: 25565, autoPassword: 'deliyizpassword' }
 ];
 
-// === MC DATA YEDEKLEMELİ YÜKLEYİCİ ===
 const mcDataCache = {};
 
 function getMcData(version) {
@@ -59,7 +57,6 @@ function getMcData(version) {
         }
         return mcDataCache['1.20.1'];
     } catch (e) {
-        console.error('[mcData HATA] minecraft-data kütüphanesi yüklenemedi!');
         return null;
     }
 }
@@ -71,9 +68,10 @@ function getItemDetails(version, itemId) {
     if (data && data.items) {
         const item = data.items[itemId];
         if (item) {
+            const cleanName = item.displayName || item.name.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
             return {
                 name: item.name,
-                displayName: item.displayName || item.name
+                displayName: cleanName
             };
         }
     }
@@ -188,7 +186,7 @@ function setupCustomPacketHandler(client, botId) {
 
         botData.waitingForAfkGui = true;
         sendChat(client, '/afk');
-        broadcastLog(botId, '🚶 AFK alanına gitmek için /afk yazıldı, menü bekleniyor...', 'info');
+        broadcastLog(botId, '🚶 /afk yazıldı, menü bekleniyor...', 'info');
 
         if (botData.afkRetryTimer) clearTimeout(botData.afkRetryTimer);
 
@@ -197,7 +195,7 @@ function setupCustomPacketHandler(client, botId) {
                 afkFailCount++;
 
                 if (afkFailCount >= 3) {
-                    broadcastLog(botId, '⚠️ Menü açılmadı! Lobiye düşülmüş olabilir. Tekrar alt sunucuya giriliyor...', 'error');
+                    broadcastLog(botId, '⚠️ Lobiye düşülmüş olabilir. Tekrar alt sunucuya giriliyor...', 'error');
                     afkFailCount = 0;
                     isSequenceStarted = false;
                     const subCmd = botData.autoSubServerCmd !== undefined ? botData.autoSubServerCmd : globalConfig.autoSubServerCmd;
@@ -217,9 +215,7 @@ function setupCustomPacketHandler(client, botId) {
             case 'update_health':
                 if (data.health <= 0) {
                     broadcastLog(botId, '☠️ Bot öldü! Otomatik Respawn gönderiliyor...', 'error');
-                    try {
-                        client.write('client_command', { actionId: 0 });
-                    } catch (e) {}
+                    try { client.write('client_command', { actionId: 0 }); } catch (e) {}
                 }
                 break;
 
@@ -227,7 +223,7 @@ function setupCustomPacketHandler(client, botId) {
                 clearBotTimers();
                 botData.waitingForAfkGui = false;
                 afkFailCount = 0;
-                broadcastLog(botId, '🔄 Sunucu değişimi/Yeniden doğma algılandı. AFK süreci yeniden başlatılıyor...', 'warn');
+                broadcastLog(botId, '🔄 Sunucu değişimi algılandı. AFK süreci yenileniyor...', 'warn');
                 botData.afkTimer = setTimeout(() => triggerAfkWithRetry(), 4000);
                 break;
 
@@ -261,17 +257,16 @@ function setupCustomPacketHandler(client, botId) {
                         setTimeout(() => {
                             if (botData.client && botData.status === 'Online') {
                                 try {
-                                    const targetSlot = 12;
                                     client.write('window_click', {
                                         windowId: botData.currentWindowId,
                                         stateId: botData.currentStateId,
-                                        slot: targetSlot,
+                                        slot: 12,
                                         mouseButton: 1,
                                         mode: 0,
                                         changedSlots: [],
                                         cursorItem: { present: false }
                                     });
-                                    broadcastLog(botId, `🎯 AFK Menüsü Başarıyla Tıklandı! (Slot: ${targetSlot})`, 'success');
+                                    broadcastLog(botId, `🎯 AFK Menüsü Başarıyla Tıklandı! (Slot: 12)`, 'success');
                                 } catch (e) {
                                     broadcastLog(botId, `Menü tıklama hatası: ${e.message}`, 'error');
                                     setTimeout(() => triggerAfkWithRetry(), 3000);
@@ -433,7 +428,6 @@ function cleanupBot(botId, reason) {
     io.emit('status-update', { botId, status: 'Offline' });
 
     if (!botData.isManualStop && globalConfig.autoReconnect) {
-        broadcastLog(botId, `⏳ 5 saniye içinde otomatik yeniden bağlanılıyor...`, 'warn');
         botData.reconnectTimer = setTimeout(() => {
             if (botPool.has(botId) && !botData.isManualStop && botData.status === 'Offline') {
                 startBotInstance(botId);

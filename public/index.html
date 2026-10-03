@@ -476,8 +476,7 @@
     let botsMap = new Map();
     let globalConfig = {};
 
-    // Radar üzerinde tıklama ve varlık eşleme verileri için
-    const radarEntitiesMap = new Map(); // botId -> Map(entityId -> {x, z, name})
+    const radarEntitiesMap = new Map();
 
     setInterval(() => {
         botsMap.forEach((bot, botId) => {
@@ -671,7 +670,7 @@
                     <div class="radar-box">
                         <div class="radar-title">
                             <span>🗺️ 2D Radar</span>
-                            <span style="font-size:10px; color:#64748b;">(Tıklayarak İsim Gör)</span>
+                            <span style="font-size:10px; color:#64748b;">(Tıklayarak Oyuncu Gör)</span>
                         </div>
                         <canvas id="map-canvas-${bot.id}" class="radar-canvas" width="220" height="220"></canvas>
                         <div class="radar-tooltip" id="radar-tip-${bot.id}">Noktaya tıklayın</div>
@@ -741,6 +740,9 @@
         const currentBotRadarMap = radarEntitiesMap.get(botId);
         currentBotRadarMap.clear();
 
+        const botObj = botsMap.get(botId);
+        const tabPlayers = botObj && Array.isArray(botObj.tabList) ? botObj.tabList : [];
+
         if (Array.isArray(entities)) {
             entities.forEach(ent => {
                 const dx = (ent.x - pos.x) * scale;
@@ -749,7 +751,18 @@
                 const ry = cy + dz;
 
                 if (rx >= 0 && rx <= w && ry >= 0 && ry <= h) {
-                    currentBotRadarMap.set(`${Math.round(rx)}_${Math.round(ry)}`, ent.name || `Varlık #${ent.id}`);
+                    let displayName = ent.name || `Varlık #${ent.id}`;
+                    
+                    // Eğer entity ismi sayısal veya genel bir varlık adıysa, tab listesindeki oyuncu adlarıyla eşleştirmeyi dene
+                    if (tabPlayers.length > 0) {
+                        const matchedPlayer = tabPlayers.find(p => p.name && (displayName.includes(p.name) || p.name.includes(ent.id)));
+                        if (matchedPlayer) {
+                            displayName = matchedPlayer.displayName || matchedPlayer.name;
+                        }
+                    }
+
+                    currentBotRadarMap.set(`${Math.round(rx)}_${Math.round(ry)}`, displayName);
+                    
                     ctx.fillStyle = '#ef4444';
                     ctx.beginPath();
                     ctx.arc(rx, ry, 4, 0, Math.PI * 2);
@@ -758,7 +771,6 @@
             });
         }
 
-        // Botun kendi konumu
         ctx.fillStyle = '#10b981';
         ctx.beginPath();
         ctx.arc(cx, cy, 5, 0, Math.PI * 2);
@@ -767,7 +779,6 @@
         ctx.lineWidth = 2;
         ctx.stroke();
 
-        // Radara tıklama olayı (Haritadaki şeylere tıklatınca oyuncunun ismi gözükmesi için)
         canvas.onclick = (e) => {
             const rect = canvas.getBoundingClientRect();
             const clickX = e.clientX - rect.left;
@@ -780,7 +791,7 @@
             currentBotRadarMap.forEach((name, key) => {
                 const [ex, ey] = key.split('_').map(Number);
                 const dist = Math.hypot(ex - clickX, ey - clickY);
-                if (dist < 12 && dist < minDist) {
+                if (dist < 14 && dist < minDist) {
                     minDist = dist;
                     foundName = name;
                 }
@@ -788,10 +799,10 @@
 
             if (tipEl) {
                 if (foundName) {
-                    tipEl.innerText = `🔍 Seçilen: ${foundName}`;
+                    tipEl.innerText = `👤 Oyuncu: ${foundName}`;
                     tipEl.style.color = '#4ade80';
                 } else {
-                    tipEl.innerText = `Kordinat: X:${pos.x}, Z:${pos.z}`;
+                    tipEl.innerText = `Koordinat: X:${pos.x}, Z:${pos.z}`;
                     tipEl.style.color = '#38bdf8';
                 }
             }
@@ -933,7 +944,7 @@
             host: document.getElementById('gModalHost').value.trim(),
             port: Number(document.getElementById('gModalPort').value),
             version: document.getElementById('gModalVersion').value.trim(),
-            autoPassword: document.getElementById('gModalPassword').value.trim(),
+            autoPassword: document.getElementById('gModalPassword'].value.trim() || '',
             autoSubServerCmd: document.getElementById('gModalSubCmd').value.trim()
         };
         socket.emit('update-config', newConfig);

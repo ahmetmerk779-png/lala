@@ -943,7 +943,7 @@
             host: document.getElementById('gModalHost').value.trim(),
             port: Number(document.getElementById('gModalPort').value),
             version: document.getElementById('gModalVersion').value.trim(),
-            autoPassword: document.getElementById('gModalPassword').value.trim() || '', // Düzeltildi ()
+            autoPassword: document.getElementById('gModalPassword').value.trim() || '',
             autoSubServerCmd: document.getElementById('gModalSubCmd').value.trim()
         };
         socket.emit('update-config', newConfig);

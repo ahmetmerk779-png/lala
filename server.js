@@ -152,31 +152,20 @@ function safeClientWrite(client, packetName, packetData) {
     }
 }
 
+// ⚡ Protokol Serileştirme Hatasını Önleyen Güvenli Sohbet / Komut Gönderimi
 function sendChat(client, message) {
     if (!client) return;
     try {
         if (typeof client.chat === 'function') {
             client.chat(message);
-        } else {
-            if (message.startsWith('/')) {
-                safeClientWrite(client, 'chat_command', {
-                    command: message.slice(1),
-                    timestamp: BigInt(Date.now()),
-                    salt: BigInt(0),
-                    argumentSignatures: [],
-                    messageCount: 0,
-                    acknowledged: Buffer.alloc(3)
-                });
-            } else {
-                safeClientWrite(client, 'chat_message', {
-                    message: message,
-                    timestamp: BigInt(Date.now()),
-                    salt: BigInt(0),
-                    signature: Buffer.alloc(0),
-                    offset: 0,
-                    acknowledged: Buffer.alloc(3)
-                });
-            }
+            return;
+        }
+        try {
+            client.write('chat', { message: message });
+        } catch (e1) {
+            try {
+                client.write('chat_message', { message: message });
+            } catch (e2) {}
         }
     } catch (e) {}
 }
@@ -290,7 +279,7 @@ function setupCustomPacketHandler(client, botId) {
         if (!activeObjName) {
             const keys = Object.keys(sb.objectives);
             if (keys.length > 0) {
-                activeObjName = keys[0];
+                activeObjName = keys[keys.length - 1]; // En son gelen güncel objective seçilir
             }
         }
 
@@ -332,7 +321,6 @@ function setupCustomPacketHandler(client, botId) {
 
         lines.sort((a, b) => b.score - a.score);
         
-        // ⚡ MAKSIMUM 25 SATIR OLARAK ARTTIRILDI
         const cleanLines = lines.slice(0, 25);
         const scoreboardObj = { title, lines: cleanLines };
         
@@ -379,8 +367,10 @@ function setupCustomPacketHandler(client, botId) {
                     break;
 
                 case 'respawn':
+                case 'login':
+                case 'join_game':
                     clearBotTimers();
-                    resetBotSession('Sunucuda yeniden doğuldu, veriler temizlendi.');
+                    resetBotSession('Sunucu aktarımı/yeniden doğuma bağlı scoreboard ve oturum sıfırlandı.');
                     botData.waitingForAfkGui = false;
                     afkFailCount = 0;
                     botData.afkTimer = setTimeout(() => triggerAfkWithRetry(), 4000);
@@ -407,7 +397,7 @@ function setupCustomPacketHandler(client, botId) {
                                     changedSlots: [],
                                     item: { itemCount: 0, itemId: -1 }
                                 });
-                                broadcastLog(botId, '🖱️️ AFK menüsü 12. slota sağ tıklandı.', 'success');
+                                broadcastLog(botId, '🖱 AFK menüsü 12. slota sağ tıklandı.', 'success');
                             }
                         }, 400);
                     }
@@ -852,6 +842,7 @@ io.on('connection', (socket) => {
                         botData.tabList = {};
                         botData.scoreboardData = { sidebarObjective: null, objectives: {}, scores: {}, teams: {} };
                         botData.lastScoreboard = null;
+                        io.emit('bot-scoreboard', { botId: botData.id, scoreboard: null });
                     }
                     sendChat(botData.client, command);
                     broadcastLog(botData.id, `> ${command}`, 'command');
@@ -864,6 +855,7 @@ io.on('connection', (socket) => {
                     botData.tabList = {};
                     botData.scoreboardData = { sidebarObjective: null, objectives: {}, scores: {}, teams: {} };
                     botData.lastScoreboard = null;
+                    io.emit('bot-scoreboard', { botId: botData.id, scoreboard: null });
                 }
                 sendChat(botData.client, command);
                 broadcastLog(targetBotId, `> ${command}`, 'command');

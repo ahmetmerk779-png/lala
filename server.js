@@ -286,7 +286,6 @@ function setupCustomPacketHandler(client, botId) {
 
         Object.keys(rawScores).forEach(entryKey => {
             const scoreItem = rawScores[entryKey];
-            // Sunucudan gelen ham veriyi bozmadan doğrudan kullanıyoruz
             let cleanEntry = scoreItem.customName || parseMcText(scoreItem.realName || entryKey);
             if (!cleanEntry) cleanEntry = parseMcText(entryKey);
             
@@ -328,22 +327,25 @@ function setupCustomPacketHandler(client, botId) {
                     queueInventoryUpdate();
                     broadcastLog(botId, '📦 Sunucu penceresi/menüsü açıldı.', 'info');
                     
-                    // Pencere (menü) açıldığında otomatik 12. slota güvenli tıklama yap
+                    // StateID'nin window_items'dan alınabilmesi için kısa bir gecikme
                     setTimeout(() => {
                         if (botData.client && botData.status === 'Online') {
-                            botData.currentStateId = (botData.currentStateId + 1) % 32767;
+                            const emptySlot = { present: false }; 
+                            
                             safeClientWrite(botData.client, 'window_click', {
                                 windowId: botData.currentWindowId,
                                 stateId: botData.currentStateId,
                                 slot: 12,
-                                mouseButton: 0,
+                                mouseButton: 1, // 0 Sol tık, 1 Sağ tık! (Sağ tık olarak güncellendi)
                                 mode: 0,
                                 changedSlots: [],
-                                item: { present: false }
+                                item: emptySlot,          // Eski sürümler için
+                                clickedItem: emptySlot,   // 1.20 için zorunlu olan alan
+                                cursorItem: emptySlot     // Bazı modifiye paketler için
                             });
-                            broadcastLog(botId, '🖱️ AFK menüsü 12. slota tıklandı.', 'info');
+                            broadcastLog(botId, '🖱️ AFK menüsü 12. slota SAĞ tıklandı.', 'info');
                         }
-                    }, 500);
+                    }, 800);
                     break;
 
                 case 'close_window':
@@ -353,6 +355,11 @@ function setupCustomPacketHandler(client, botId) {
                     break;
 
                 case 'window_items':
+                    // Sunucunun beklediği geçerli click durumu ID'sini yakala
+                    if (data.stateId !== undefined) {
+                        botData.currentStateId = data.stateId;
+                    }
+
                     if (data.windowId === botData.currentWindowId || data.windowId === 0) {
                         const items = data.items || [];
                         const invMap = {};
@@ -374,6 +381,10 @@ function setupCustomPacketHandler(client, botId) {
                     break;
 
                 case 'set_slot':
+                    if (data.stateId !== undefined) {
+                        botData.currentStateId = data.stateId;
+                    }
+
                     if (data.windowId === botData.currentWindowId || data.windowId === 0) {
                         const item = data.item;
                         const slot = data.slot;
@@ -802,7 +813,6 @@ io.on('connection', (socket) => {
         const botData = botPool.get(botId);
         if (!botData || !botData.client || botData.status !== 'Online') return;
         try {
-            botData.currentStateId = (botData.currentStateId + 1) % 32767;
             const invItem = botData.inventory[slot];
             const slotItem = invItem ? { present: true, itemId: invItem.itemId, itemCount: invItem.count } : { present: false };
 
@@ -813,7 +823,9 @@ io.on('connection', (socket) => {
                 mouseButton: button !== undefined ? button : 0,
                 mode: mode !== undefined ? mode : 0,
                 changedSlots: [],
-                item: slotItem
+                item: slotItem,          // Temel alan
+                clickedItem: slotItem,   // Yeni paket formatı zorunluluğu
+                cursorItem: slotItem     // Alternatif paket varyasyonları
             });
         } catch (e) {}
     });

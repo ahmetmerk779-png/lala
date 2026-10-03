@@ -320,10 +320,6 @@ function setupCustomPacketHandler(client, botId) {
     client.on('packet', (data, meta) => {
         if (meta.state !== 'play') return;
 
-        if (meta.name.includes('scoreboard') || meta.name.includes('objective') || meta.name.includes('display') || meta.name.includes('score')) {
-            console.log(`[DEBUG PAKET] [${botData.username}] --> ${meta.name}:`, JSON.stringify(data));
-        }
-
         switch (meta.name) {
             case 'update_health':
                 if (data.health <= 0) {
@@ -336,8 +332,15 @@ function setupCustomPacketHandler(client, botId) {
                 clearBotTimers();
                 botData.waitingForAfkGui = false;
                 botData.entities = {};
+                botData.tabList = {};
+                botData.scoreboardData = {
+                    sidebarObjective: null,
+                    objectives: {},
+                    scores: {},
+                    teams: {}
+                };
                 afkFailCount = 0;
-                broadcastLog(botId, '🔄 Sunucu değişimi algılandı. AFK ve Harita verileri yenileniyor...', 'warn');
+                broadcastLog(botId, '🔄 Sunucu değişimi algılandı. Eski veriler tamamen temizlendi, AFK ve Harita yenileniyor...', 'warn');
                 botData.afkTimer = setTimeout(() => triggerAfkWithRetry(), 4000);
                 break;
 
@@ -548,16 +551,21 @@ function setupCustomPacketHandler(client, botId) {
                 
                 if (action === 0 || action === 2 || data.displayText || data.title) {
                     const titleText = data.displayText || data.title || name;
+                    
+                    if (data.position === 1 || name === 'TAB-Scoreboard') {
+                        botData.scoreboardData.objectives = {};
+                        botData.scoreboardData.scores = {};
+                    }
+
                     botData.scoreboardData.objectives[name] = {
                         title: parseMcText(titleText),
                         type: data.type || 0,
                         position: data.position
                     };
-                    if (!botData.scoreboardData.sidebarObjective) {
-                        botData.scoreboardData.sidebarObjective = name;
-                    }
+                    botData.scoreboardData.sidebarObjective = name;
                 } else if (action === 1) {
                     delete botData.scoreboardData.objectives[name];
+                    delete botData.scoreboardData.scores[name];
                     if (botData.scoreboardData.sidebarObjective === name) {
                         botData.scoreboardData.sidebarObjective = null;
                     }

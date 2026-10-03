@@ -286,24 +286,13 @@ function setupCustomPacketHandler(client, botId) {
 
         Object.keys(rawScores).forEach(entryKey => {
             const scoreItem = rawScores[entryKey];
-            let prefix = '', suffix = '';
+            // Sunucudan gelen ham veriyi bozmadan doğrudan kullanıyoruz
+            let cleanEntry = scoreItem.customName || parseMcText(scoreItem.realName || entryKey);
+            if (!cleanEntry) cleanEntry = parseMcText(entryKey);
             
-            Object.values(sb.teams).forEach(t => {
-                if (t.players && (t.players.includes(entryKey) || t.players.includes(scoreItem.realName))) {
-                    prefix = t.prefix || '';
-                    suffix = t.suffix || '';
-                }
-            });
+            if (!cleanEntry) return;
 
-            let cleanEntry = scoreItem.customName || parseMcText(entryKey);
-            let fullText = (prefix + cleanEntry + suffix).trim();
-            if (!fullText) fullText = cleanEntry;
-            
-            if (fullText.includes('OYNA.') || fullText.includes('.COM') || fullText.toLowerCase().includes('play.') || fullText.toLowerCase().includes('lobi')) {
-                return;
-            }
-
-            lines.push({ text: fullText, score: scoreItem.val });
+            lines.push({ text: cleanEntry, score: scoreItem.val });
         });
 
         lines.sort((a, b) => b.score - a.score);
@@ -338,6 +327,23 @@ function setupCustomPacketHandler(client, botId) {
                     botData.inventory = {};
                     queueInventoryUpdate();
                     broadcastLog(botId, '📦 Sunucu penceresi/menüsü açıldı.', 'info');
+                    
+                    // Pencere (menü) açıldığında otomatik 12. slota güvenli tıklama yap
+                    setTimeout(() => {
+                        if (botData.client && botData.status === 'Online') {
+                            botData.currentStateId = (botData.currentStateId + 1) % 32767;
+                            safeClientWrite(botData.client, 'window_click', {
+                                windowId: botData.currentWindowId,
+                                stateId: botData.currentStateId,
+                                slot: 12,
+                                mouseButton: 0,
+                                mode: 0,
+                                changedSlots: [],
+                                item: { present: false }
+                            });
+                            broadcastLog(botId, '🖱️ AFK menüsü 12. slota tıklandı.', 'info');
+                        }
+                    }, 500);
                     break;
 
                 case 'close_window':
@@ -458,20 +464,31 @@ function setupCustomPacketHandler(client, botId) {
                         const pwd = botData.autoPassword !== undefined ? botData.autoPassword : globalConfig.autoPassword;
                         const subCmd = botData.autoSubServerCmd !== undefined ? botData.autoSubServerCmd : globalConfig.autoSubServerCmd;
 
+                        // 1. Adım: Giriş yap
                         setTimeout(() => {
                             if (!botData.client) return;
                             if (pwd && pwd.trim() !== '') {
                                 sendChat(client, `/login ${pwd}`);
                                 broadcastLog(botId, `🔑 /login gönderildi.`, 'info');
                             }
+                            
+                            // 2. Adım: Alt sunucuya geç (/gir asmp)
                             if (subCmd && subCmd.trim() !== '') {
                                 setTimeout(() => {
                                     if (botData.client) {
                                         resetBotSession(`${subCmd} komutu ile alt sunucuya geçiliyor.`);
                                         sendChat(client, subCmd);
                                         broadcastLog(botId, `🔀 ${subCmd} komutu ile sunucuya geçiliyor...`, 'info');
+                                        
+                                        // 3. Adım: Alt sunucuya girdikten sonra /afk komutunu gönder
+                                        setTimeout(() => {
+                                            if (botData.client) {
+                                                sendChat(client, '/afk');
+                                                broadcastLog(botId, `💤 /afk komutu gönderildi.`, 'info');
+                                            }
+                                        }, 4000);
                                     }
-                                }, 1500);
+                                }, 2500);
                             }
                         }, 2000);
                     }
@@ -563,23 +580,6 @@ function setupCustomPacketHandler(client, botId) {
                         botData.scoreboardData.sidebarObjective = objName;
                     }
 
-                    queueScoreboardUpdate();
-                    break;
-                }
-
-                case 'teams':
-                case 'scoreboard_team': {
-                    const teamName = data.team || data.teamName;
-                    const action = data.action !== undefined ? data.action : (data.mode !== undefined ? data.mode : 0);
-                    if (action === 0 || action === 2) {
-                        botData.scoreboardData.teams[teamName] = {
-                            prefix: parseMcText(data.prefix || data.teamPrefix || ''),
-                            suffix: parseMcText(data.suffix || data.teamSuffix || ''),
-                            players: data.players || []
-                        };
-                    } else if (action === 1) {
-                        delete botData.scoreboardData.teams[teamName];
-                    }
                     queueScoreboardUpdate();
                     break;
                 }
@@ -804,8 +804,6 @@ io.on('connection', (socket) => {
         try {
             botData.currentStateId = (botData.currentStateId + 1) % 32767;
             const invItem = botData.inventory[slot];
-            
-            // Modern protokol uyumlu güvenli item nesnesi (present alanı eklendi)
             const slotItem = invItem ? { present: true, itemId: invItem.itemId, itemCount: invItem.count } : { present: false };
 
             safeClientWrite(botData.client, 'window_click', {

@@ -305,7 +305,7 @@ function setupCustomPacketHandler(client, botId) {
                 botData.waitingForAfkGui = false;
                 botData.entities = {};
                 afkFailCount = 0;
-                broadcastLog(botId, '🔄 Sunucu değişimi algılandı. AFK ve harita yenileniyor...', 'warn');
+                broadcastLog(botId, '🔄 Sunucu değişimi algılandı. AFK eksperyansı yenileniyor...', 'warn');
                 botData.afkTimer = setTimeout(() => triggerAfkWithRetry(), 4000);
                 break;
 
@@ -492,7 +492,6 @@ function setupCustomPacketHandler(client, botId) {
                     if (meta.name === 'named_entity_spawn') {
                         entityName = data.username || `Oyuncu #${data.entityId}`;
                     } else {
-                        // Eğer entity bir tab list oyuncusuyla eşleşiyorsa adını kurtaralım
                         entityName = `Varlık #${data.entityId}`;
                         Object.values(botData.tabList).forEach(p => {
                             if (p.entityId === data.entityId) entityName = p.name;

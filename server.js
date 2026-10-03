@@ -112,14 +112,13 @@ function sendChat(client, message) {
 }
 
 // -------------------------------------------------------------
-// AKILLI KURTARMA DESTEKLİ MENÜ VE SUNUCU YÖNETİCİSİ
+// OTOMATİK DOĞMA (RESPAWN) VE MENÜ YÖNETİCİSİ
 // -------------------------------------------------------------
 function setupCustomPacketHandler(client, botId) {
     let isSequenceStarted = false;
-    let afkFailCount = 0; // AFK menüsü açılmama sayacı
+    let afkFailCount = 0; 
     const botData = botPool.get(botId);
 
-    // Tüm zamanlayıcıları temizleme yardımcı fonksiyonu
     function clearBotTimers() {
         if (botData.subCmdInterval) clearInterval(botData.subCmdInterval);
         if (botData.afkTimer) clearTimeout(botData.afkTimer);
@@ -134,7 +133,6 @@ function setupCustomPacketHandler(client, botId) {
     botData.currentWindowId = 0;
     botData.currentStateId = 0;
 
-    // AFK Menüsünü Tetikleme ve Kurtarma Döngüsü
     function triggerAfkWithRetry() {
         if (!botData.client || botData.status !== 'Online') return;
 
@@ -148,11 +146,10 @@ function setupCustomPacketHandler(client, botId) {
             if (botData.waitingForAfkGui && botData.client && botData.status === 'Online') {
                 afkFailCount++;
 
-                // Eğer 3 defa /afk yazılmasına rağmen menü gelmediyse bot Lobiye düşmüş demektir!
                 if (afkFailCount >= 3) {
-                    broadcastLog(botId, '⚠️ Menü açılmadı! Lobiye düşülmüş olabilir. Tekrar ASMP\'ye giriliyor...', 'error');
+                    broadcastLog(botId, '⚠️️ Menü açılmadı! Lobiye düşülmüş olabilir. Tekrar ASMP\'ye giriliyor...', 'error');
                     afkFailCount = 0;
-                    isSequenceStarted = false; // Giriş sekansını tekrar tetikle
+                    isSequenceStarted = false; 
                     const subCmd = botData.autoSubServerCmd !== undefined ? botData.autoSubServerCmd : globalConfig.autoSubServerCmd;
                     if (subCmd) sendChat(client, subCmd);
                 } else {
@@ -167,18 +164,28 @@ function setupCustomPacketHandler(client, botId) {
         if (meta.state !== 'play') return;
 
         switch (meta.name) {
-            // LOBİYE DÜŞME / DÜNYA DEĞİŞİMİ
+            // CAN KONTROLÜ (ÖLÜM EKRANI ALGILAMA VE DOĞMA)
+            case 'update_health':
+                if (data.health <= 0) {
+                    broadcastLog(botId, '☠️ Bot öldü! Otomatik Yeniden Doğma (Respawn) basılıyor...', 'error');
+                    try {
+                        // 0: Perform respawn (Yeniden Doğ butonuna tıklar)
+                        client.write('client_command', { actionId: 0 });
+                    } catch (e) {}
+                }
+                break;
+
+            // LOBİYE DÜŞME / DOĞMA / DÜNYA DEĞİŞİMİ
             case 'respawn':
                 clearBotTimers();
                 botData.waitingForAfkGui = false;
                 afkFailCount = 0;
 
-                broadcastLog(botId, '🔄 Sunucu değişimi/Lobiye düşüş algılandı. AFK süreci yeniden hazırlanıyor...', 'warn');
+                broadcastLog(botId, '🔄 Yeniden doğma/Sunucu değişimi algılandı. AFK alanına tekrar gidiliyor...', 'warn');
 
-                // Sunucu değiştikten 5 saniye sonra tekrar /afk dener
                 botData.afkTimer = setTimeout(() => {
                     triggerAfkWithRetry();
-                }, 5000);
+                }, 4000);
                 break;
 
             // MENÜ AÇILMA PAKETİ
@@ -188,19 +195,19 @@ function setupCustomPacketHandler(client, botId) {
 
             // MENÜ EŞYALARI YÜKLENDİ PAKETİ (TIKLAMA)
             case 'window_items':
-                if (data.windowId !== 0) { // Envanter dışı sanal menü
+                if (data.windowId !== 0) { 
                     botData.currentWindowId = data.windowId;
                     botData.currentStateId = data.stateId;
 
                     if (botData.waitingForAfkGui) {
-                        botData.waitingForAfkGui = false; // Tıklama başladı, beklemeyi kapat
-                        afkFailCount = 0; // Başarılı olduğu için sayacı sıfırla
+                        botData.waitingForAfkGui = false; 
+                        afkFailCount = 0; 
                         if (botData.afkRetryTimer) clearTimeout(botData.afkRetryTimer);
 
                         setTimeout(() => {
                             if (botData.client && botData.status === 'Online') {
                                 try {
-                                    const targetSlot = 12; // AFK BOLGESI 1 (Fotoğraftaki Slot)
+                                    const targetSlot = 12; // AFK BOLGESI 1
 
                                     client.write('window_click', {
                                         windowId: botData.currentWindowId,
@@ -240,13 +247,11 @@ function setupCustomPacketHandler(client, botId) {
                     setTimeout(() => {
                         if (!botData.client) return;
 
-                        // 1. Şifre
                         if (pwd && pwd.trim() !== '') {
                             sendChat(client, `/login ${pwd}`);
                             broadcastLog(botId, `🔑 /login gönderildi.`, 'info');
                         }
 
-                        // 2. Alt Sunucu Komutu
                         if (subCmd && subCmd.trim() !== '') {
                             let tryCount = 1;
                             const maxTries = 3;
@@ -265,7 +270,6 @@ function setupCustomPacketHandler(client, botId) {
                                 }
                             }, 3000);
 
-                            // 3. ASMP'ye girdikten 10 saniye sonra AFK başlat
                             botData.afkTimer = setTimeout(() => {
                                 triggerAfkWithRetry();
                             }, 10000);

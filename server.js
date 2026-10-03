@@ -47,9 +47,7 @@ function getMcData(version) {
             mcDataCache[verStr] = data;
             return data;
         }
-    } catch (e) {
-        console.warn(`[mcData Warning] '${verStr}' yüklenemedi, 1.20.1 deneniyor...`);
-    }
+    } catch (e) {}
 
     try {
         if (!mcDataCache['1.20.1']) {
@@ -63,7 +61,6 @@ function getMcData(version) {
 
 function getItemDetails(version, itemId) {
     if (itemId === undefined || itemId === null || itemId === -1) return null;
-    
     const data = getMcData(version);
     if (data && data.items) {
         const item = data.items[itemId];
@@ -118,9 +115,7 @@ function loadSavedData() {
                 });
             });
         }
-    } catch (err) {
-        console.error('[Hafıza Okuma Hatası]', err.message);
-    }
+    } catch (err) {}
 }
 
 function saveDataToFile() {
@@ -131,9 +126,7 @@ function saveDataToFile() {
             autoSubServerCmd: b.autoSubServerCmd, autoSubServerDelay: b.autoSubServerDelay
         }));
         fs.writeFileSync(DATA_FILE, JSON.stringify({ globalConfig, bots: botList }, null, 2));
-    } catch (err) {
-        console.error('[Hafıza Kayıt Hatası]', err.message);
-    }
+    } catch (err) {}
 }
 
 loadSavedData();
@@ -212,13 +205,7 @@ function setupCustomPacketHandler(client, botId) {
     botData.tabList = {};
     botData.entities = {};
     botData.pos = { x: 0, y: 0, z: 0 };
-
-    botData.scoreboardData = {
-        sidebarObjective: null,
-        objectives: {},
-        scores: {},
-        teams: {}
-    };
+    botData.scoreboardData = { sidebarObjective: null, objectives: {}, scores: {}, teams: {} };
 
     function queueScoreboardUpdate() {
         if (botData.sbUpdateTimer) return;
@@ -234,7 +221,7 @@ function setupCustomPacketHandler(client, botId) {
             botData.tabUpdateTimer = null;
             const players = Object.values(botData.tabList);
             io.emit('bot-tablist', { botId, players });
-        }, 600);
+        }, 300);
     }
 
     function queueMapUpdate() {
@@ -242,11 +229,7 @@ function setupCustomPacketHandler(client, botId) {
         botData.mapUpdateTimer = setTimeout(() => {
             botData.mapUpdateTimer = null;
             const entityArray = Object.values(botData.entities);
-            io.emit('bot-map-update', { 
-                botId, 
-                pos: botData.pos, 
-                entities: entityArray 
-            });
+            io.emit('bot-map-update', { botId, pos: botData.pos, entities: entityArray });
         }, 300);
     }
 
@@ -256,59 +239,43 @@ function setupCustomPacketHandler(client, botId) {
             io.emit('bot-scoreboard', { botId, scoreboard: null });
             return;
         }
-
         const activeObjName = sb.sidebarObjective;
         const objInfo = sb.objectives[activeObjName];
         const rawScores = sb.scores[activeObjName] || {};
-
         const title = objInfo ? objInfo.title : 'Scoreboard';
         const lines = [];
 
         Object.keys(rawScores).forEach(entryKey => {
             const scoreItem = rawScores[entryKey];
-            let prefix = '';
-            let suffix = '';
-
+            let prefix = '', suffix = '';
             Object.values(sb.teams).forEach(t => {
                 if (t.players && t.players.includes(entryKey)) {
                     prefix = t.prefix || '';
                     suffix = t.suffix || '';
                 }
             });
-
             let cleanEntry = scoreItem.customName || parseMcText(entryKey);
             let fullText = (prefix + cleanEntry + suffix).trim();
             if (!fullText) fullText = cleanEntry;
-
-            lines.push({
-                text: fullText,
-                score: scoreItem.val
-            });
+            lines.push({ text: fullText, score: scoreItem.val });
         });
 
         lines.sort((a, b) => b.score - a.score);
-
-        io.emit('bot-scoreboard', {
-            botId,
-            scoreboard: { title, lines }
-        });
+        io.emit('bot-scoreboard', { botId, scoreboard: { title, lines } });
     }
 
     function triggerAfkWithRetry() {
         if (!botData.client || botData.status !== 'Online') return;
-
         botData.waitingForAfkGui = true;
         sendChat(client, '/afk');
         broadcastLog(botId, '🚶 /afk yazıldı, menü bekleniyor...', 'info');
 
         if (botData.afkRetryTimer) clearTimeout(botData.afkRetryTimer);
-
         botData.afkRetryTimer = setTimeout(() => {
             if (botData.waitingForAfkGui && botData.client && botData.status === 'Online') {
                 afkFailCount++;
-
                 if (afkFailCount >= 3) {
-                    broadcastLog(botId, '⚠️ Lobiye düşülmüş olabilir. Tekrar alt sunucuya giriliyor...', 'error');
+                    broadcastLog(botId, '⚠️ Lobiye düşülmüş olabilir. Alt sunucuya tekrar giriliyor...', 'error');
                     afkFailCount = 0;
                     isSequenceStarted = false;
                     const subCmd = botData.autoSubServerCmd !== undefined ? botData.autoSubServerCmd : globalConfig.autoSubServerCmd;
@@ -337,7 +304,7 @@ function setupCustomPacketHandler(client, botId) {
                 botData.waitingForAfkGui = false;
                 botData.entities = {};
                 afkFailCount = 0;
-                broadcastLog(botId, '🔄 Sunucu değişimi algılandı. AFK ve Harita verileri yenileniyor...', 'warn');
+                broadcastLog(botId, '🔄 Sunucu değişimi algılandı. AFK ve harita yenileniyor...', 'warn');
                 botData.afkTimer = setTimeout(() => triggerAfkWithRetry(), 4000);
                 break;
 
@@ -380,9 +347,8 @@ function setupCustomPacketHandler(client, botId) {
                                         changedSlots: [],
                                         cursorItem: { present: false }
                                     });
-                                    broadcastLog(botId, `🎯 AFK Menüsü Başarıyla Tıklandı! (Slot: 12)`, 'success');
+                                    broadcastLog(botId, `🎯 AFK Menüsü Tıklandı! (Slot: 12)`, 'success');
                                 } catch (e) {
-                                    broadcastLog(botId, `Menü tıklama hatası: ${e.message}`, 'error');
                                     setTimeout(() => triggerAfkWithRetry(), 3000);
                                 }
                             }
@@ -393,17 +359,16 @@ function setupCustomPacketHandler(client, botId) {
 
             case 'set_slot':
                 if (data.windowId === 0) {
-                    const item = data.item;
-                    if (!item || item.present === false || item.itemId !== undefined || item.itemId !== -1) {
+                    if (!data.item || data.item.present === false || data.item.itemId === undefined || data.item.itemId === -1) {
                         delete botData.inventory[data.slot];
                     } else {
-                        const details = getItemDetails(botData.version || globalConfig.version, item.itemId);
+                        const details = getItemDetails(botData.version || globalConfig.version, data.item.itemId);
                         botData.inventory[data.slot] = {
                             slot: data.slot,
-                            id: item.itemId,
+                            id: data.item.itemId,
                             name: details ? details.name : 'unknown',
-                            displayName: details ? details.displayName : `ID: ${item.itemId}`,
-                            count: item.itemCount || 1
+                            displayName: details ? details.displayName : `ID: ${data.item.itemId}`,
+                            count: data.item.itemCount || 1
                         };
                     }
                     broadcastInventory(botId);
@@ -431,30 +396,24 @@ function setupCustomPacketHandler(client, botId) {
 
                 if (!isSequenceStarted) {
                     isSequenceStarted = true;
-
                     const pwd = botData.autoPassword !== undefined ? botData.autoPassword : globalConfig.autoPassword;
                     const subCmd = botData.autoSubServerCmd !== undefined ? botData.autoSubServerCmd : globalConfig.autoSubServerCmd;
 
                     setTimeout(() => {
                         if (!botData.client) return;
-
                         if (pwd && pwd.trim() !== '') {
                             sendChat(client, `/login ${pwd}`);
                             broadcastLog(botId, `🔑 /login gönderildi.`, 'info');
                         }
-
                         if (subCmd && subCmd.trim() !== '') {
                             let tryCount = 1;
-                            const maxTries = 3;
-
                             sendChat(client, subCmd);
-                            broadcastLog(botId, `🚀 Alt sunucu komutu gönderildi (1/${maxTries})`, 'success');
+                            broadcastLog(botId, `🚀 Alt sunucu komutu gönderildi`, 'success');
 
                             botData.subCmdInterval = setInterval(() => {
-                                if (botData.client && botData.status === 'Online' && tryCount < maxTries) {
+                                if (botData.client && botData.status === 'Online' && tryCount < 3) {
                                     tryCount++;
                                     sendChat(client, subCmd);
-                                    broadcastLog(botId, `🚀 Alt sunucu komutu tekrarlandı (${tryCount}/${maxTries})`, 'success');
                                 } else {
                                     clearInterval(botData.subCmdInterval);
                                     botData.subCmdInterval = null;
@@ -472,8 +431,10 @@ function setupCustomPacketHandler(client, botId) {
             case 'spawn_entity':
             case 'named_entity_spawn':
                 if (data.entityId !== undefined) {
+                    let entityName = meta.name === 'named_entity_spawn' ? (data.username || `Oyuncu #${data.entityId}`) : `Varlık #${data.entityId}`;
                     botData.entities[data.entityId] = {
                         id: data.entityId,
+                        name: entityName,
                         x: Math.round((data.x || 0) * 10) / 10,
                         y: Math.round((data.y || 0) * 10) / 10,
                         z: Math.round((data.z || 0) * 10) / 10
@@ -510,21 +471,18 @@ function setupCustomPacketHandler(client, botId) {
                 break;
 
             case 'player_info_update':
+            case 'player_info':
                 if (Array.isArray(data.data)) {
                     data.data.forEach(p => {
                         const uuid = p.uuid;
                         if (!botData.tabList[uuid]) {
                             botData.tabList[uuid] = { uuid, name: 'Bilinmeyen', displayName: '', ping: 0 };
                         }
-                        if (p.player && p.player.name) {
-                            botData.tabList[uuid].name = p.player.name;
-                        }
-                        if (p.displayName) {
-                            botData.tabList[uuid].displayName = parseMcText(p.displayName);
-                        }
-                        if (p.latency !== undefined) {
-                            botData.tabList[uuid].ping = p.latency;
-                        }
+                        if (p.player && p.player.name) botData.tabList[uuid].name = p.player.name;
+                        if (p.name) botData.tabList[uuid].name = p.name;
+                        if (p.displayName) botData.tabList[uuid].displayName = parseMcText(p.displayName);
+                        if (p.latency !== undefined) botData.tabList[uuid].ping = p.latency;
+                        if (p.ping !== undefined) botData.tabList[uuid].ping = p.ping;
                     });
                     queueTabListUpdate();
                 }
@@ -533,24 +491,6 @@ function setupCustomPacketHandler(client, botId) {
             case 'player_remove':
                 if (Array.isArray(data.uuids)) {
                     data.uuids.forEach(uuid => delete botData.tabList[uuid]);
-                    queueTabListUpdate();
-                }
-                break;
-
-            case 'player_info':
-                if (Array.isArray(data.data)) {
-                    data.data.forEach(p => {
-                        if (data.action === 0) {
-                            botData.tabList[p.uuid] = {
-                                uuid: p.uuid,
-                                name: p.name || 'Bilinmeyen',
-                                displayName: p.displayName ? parseMcText(p.displayName) : p.name,
-                                ping: p.ping || 0
-                            };
-                        } else if (data.action === 4) {
-                            delete botData.tabList[p.uuid];
-                        }
-                    });
                     queueTabListUpdate();
                 }
                 break;
@@ -566,107 +506,21 @@ function setupCustomPacketHandler(client, botId) {
             case 'player_chat':
             case 'system_chat':
             case 'chat':
-                handleIncomingChat(data, botId, (msg) => {
-                    broadcastLog(botId, msg, 'chat');
-                    const msgLower = msg.toLowerCase();
-                    if (msgLower.includes('ışınlanma isteği') || msgLower.includes('teleport request') || msgLower.includes('tpaccept')) {
-                        broadcastLog(botId, '📡 TPA isteği algılandı, kabul ediliyor...', 'info');
+                let text = '';
+                try {
+                    text = data.plainMessage || parseMcText(data.content || data.message);
+                } catch (e) {}
+                if (text && text.trim()) {
+                    broadcastLog(botId, text, 'chat');
+                    if (text.toLowerCase().includes('tpa') || text.toLowerCase().includes('ışınlanma isteği')) {
                         setTimeout(() => {
-                            if (botData.client && botData.status === 'Online') {
-                                sendChat(client, '/tpaccept');
-                            }
+                            if (botData.client && botData.status === 'Online') sendChat(client, '/tpaccept');
                         }, 1000);
                     }
-                });
-                break;
-
-            case 'display_objective':
-            case 'scoreboard_display_objective':
-                if (data.position === 1) {
-                    botData.scoreboardData.sidebarObjective = data.name;
-                    queueScoreboardUpdate();
                 }
-                break;
-
-            case 'scoreboard_objective':
-                const objName = data.name;
-                if (data.action === 0 || data.action === 2) {
-                    const titleText = parseMcText(data.displayText || data.name);
-                    if (!botData.scoreboardData.objectives[objName]) {
-                        botData.scoreboardData.objectives[objName] = {};
-                    }
-                    botData.scoreboardData.objectives[objName].title = titleText;
-                } else if (data.action === 1) {
-                    delete botData.scoreboardData.objectives[objName];
-                    delete botData.scoreboardData.scores[objName];
-                }
-                queueScoreboardUpdate();
-                break;
-
-            case 'scoreboard_score':
-            case 'set_score':
-                const targetObj = data.scoreName || data.objectiveName;
-                const itemName = data.itemName;
-
-                if (!botData.scoreboardData.scores[targetObj]) {
-                    botData.scoreboardData.scores[targetObj] = {};
-                }
-
-                if (data.action === 0) {
-                    botData.scoreboardData.scores[targetObj][itemName] = {
-                        val: data.value,
-                        customName: data.displayName ? parseMcText(data.displayName) : null
-                    };
-                } else if (data.action === 1) {
-                    delete botData.scoreboardData.scores[targetObj][itemName];
-                }
-                queueScoreboardUpdate();
-                break;
-
-            case 'teams':
-            case 'scoreboard_team':
-                const teamName = data.team;
-                if (!botData.scoreboardData.teams[teamName]) {
-                    botData.scoreboardData.teams[teamName] = { prefix: '', suffix: '', players: [] };
-                }
-                const tObj = botData.scoreboardData.teams[teamName];
-
-                if (data.mode === 0 || data.mode === 2) {
-                    if (data.prefix) tObj.prefix = parseMcText(data.prefix);
-                    if (data.suffix) tObj.suffix = parseMcText(data.suffix);
-                }
-                if (data.mode === 0 || data.mode === 3) {
-                    if (Array.isArray(data.players)) {
-                        data.players.forEach(p => { if (!tObj.players.includes(p)) tObj.players.push(p); });
-                    }
-                }
-                if (data.mode === 4) {
-                    if (Array.isArray(data.players)) {
-                        tObj.players = tObj.players.filter(p => !data.players.includes(p));
-                    }
-                }
-                if (data.mode === 1) {
-                    delete botData.scoreboardData.teams[teamName];
-                }
-                queueScoreboardUpdate();
                 break;
         }
     });
-}
-
-function handleIncomingChat(data, botId, callback) {
-    let text = '';
-    try {
-        if (data.plainMessage) {
-            text = data.plainMessage;
-        } else if (data.content) {
-            text = parseMcText(data.content);
-        } else if (data.message) {
-            text = parseMcText(data.message);
-        }
-    } catch (e) {}
-
-    if (text && text.trim()) callback(text);
 }
 
 function cleanupBot(botId, reason) {
@@ -692,7 +546,7 @@ function cleanupBot(botId, reason) {
 
     botData.status = 'Offline';
     botData.onlineSince = null;
-    botData.inventory = {};
+    botData.inventory = {}; // Bot offline olunca envanter sıfırlanıyor
     botData.scoreboard = null;
     botData.tabList = {};
     botData.entities = {};
@@ -700,6 +554,7 @@ function cleanupBot(botId, reason) {
 
     broadcastLog(botId, `🔴 ${reason}`, 'error');
     io.emit('status-update', { botId, status: 'Offline', onlineSince: null });
+    broadcastInventory(botId);
     io.emit('bot-scoreboard', { botId, scoreboard: null });
     io.emit('bot-tablist', { botId, players: [] });
     io.emit('bot-map-update', { botId, pos: { x: 0, y: 0, z: 0 }, entities: [] });
@@ -747,13 +602,11 @@ function startBotInstance(botId) {
 
             if (botData.keepAliveInterval) clearInterval(botData.keepAliveInterval);
             let currentYaw = 0;
-
             botData.keepAliveInterval = setInterval(() => {
                 if (botData.client && botData.status === 'Online') {
                     try {
-                        currentYaw = (currentYaw + (Math.floor(Math.random() * 30) + 15)) % 360;
-                        const pitch = Math.floor(Math.random() * 20) - 10;
-                        client.write('look', { yaw: currentYaw, pitch: pitch, onGround: true });
+                        currentYaw = (currentYaw + 20) % 360;
+                        client.write('look', { yaw: currentYaw, pitch: 0, onGround: true });
                         client.write('arm_animation', { hand: 0 });
                     } catch (e) {}
                 } else {
@@ -763,8 +616,8 @@ function startBotInstance(botId) {
             }, 2000);
         });
 
-        client.on('kick_disconnect', (packet) => cleanupBot(botId, `Atıldı: ${packet.reason}`));
-        client.on('disconnect', (packet) => cleanupBot(botId, `Bağlantı Kesildi: ${packet.reason}`));
+        client.on('kick_disconnect', (p) => cleanupBot(botId, `Atıldı: ${p.reason}`));
+        client.on('disconnect', (p) => cleanupBot(botId, `Bağlantı Kesildi: ${p.reason}`));
         client.on('error', (err) => cleanupBot(botId, `Hata: ${err.message}`));
         client.on('end', () => cleanupBot(botId, `Bağlantı sonlandı.`));
 
@@ -829,12 +682,12 @@ io.on('connection', (socket) => {
         const id = 'bot_' + Date.now();
         const newBot = {
             id, username,
-            host: typeof data === 'object' && data.host ? data.host : globalConfig.host,
-            port: typeof data === 'object' && data.port ? data.port : globalConfig.port,
-            version: typeof data === 'object' && data.version ? data.version : globalConfig.version,
-            autoPassword: typeof data === 'object' && data.autoPassword !== undefined ? data.autoPassword : globalConfig.autoPassword,
-            autoSubServerCmd: typeof data === 'object' && data.autoSubServerCmd !== undefined ? data.autoSubServerCmd : globalConfig.autoSubServerCmd,
-            autoSubServerDelay: typeof data === 'object' && data.autoSubServerDelay !== undefined ? data.autoSubServerDelay : globalConfig.autoSubServerDelay,
+            host: globalConfig.host,
+            port: globalConfig.port,
+            version: globalConfig.version,
+            autoPassword: globalConfig.autoPassword,
+            autoSubServerCmd: globalConfig.autoSubServerCmd,
+            autoSubServerDelay: globalConfig.autoSubServerDelay,
             status: 'Offline', onlineSince: null, pos: { x: 0, y: 0, z: 0 },
             client: null, logs: [], inventory: {}, scoreboard: null, tabList: {}, entities: {}, isManualStop: false
         };

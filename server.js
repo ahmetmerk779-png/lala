@@ -320,10 +320,15 @@ function setupCustomPacketHandler(client, botId) {
     client.on('packet', (data, meta) => {
         if (meta.state !== 'play') return;
 
+        // Scoreboard ve paketlerin konsola dökülüp debug edilmesi için eklendi:
+        if (meta.name.includes('scoreboard') || meta.name.includes('objective') || meta.name.includes('display') || meta.name.includes('score')) {
+            console.log(`[DEBUG PAKET] [${botData.username}] --> ${meta.name}:`, JSON.stringify(data));
+        }
+
         switch (meta.name) {
             case 'update_health':
                 if (data.health <= 0) {
-                    broadcastLog(botId, '☠️️ Bot öldü! Otomatik Respawn gönderiliyor...', 'error');
+                    broadcastLog(botId, '☠ Bot öldü! Otomatik Respawn gönderiliyor...', 'error');
                     try { client.write('client_command', { actionId: 0 }); } catch (e) {}
                 }
                 break;

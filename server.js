@@ -48,7 +48,7 @@ function getMcData(version) {
         }
     } catch (e) {}
     try {
-        if (!mcDataCache['1.20.1']) mcDataCache['1.20.1'] = mc('1.20.1'); // fallback
+        if (!mcDataCache['1.20.1']) mcDataCache['1.20.1'] = mcData('1.20.1');
         return mcDataCache['1.20.1'] || null;
     } catch (e) {
         return null;
@@ -113,9 +113,7 @@ function loadSavedData() {
                 });
             });
         }
-    } catch (err) {
-        console.error('Kayıt yükleme hatası:', err.message);
-    }
+    } catch (err) {}
 }
 
 function saveDataToFile() {
@@ -266,6 +264,7 @@ function setupCustomPacketHandler(client, botId) {
         const sb = botData.scoreboardData;
         let activeObjName = null;
 
+        // 1. Önce açıkça Sidebar (position 1) olarak işaretlenmiş olanı bul
         for (const [objName, objVal] of Object.entries(sb.objectives)) {
             if (objVal.position === 1) {
                 activeObjName = objName;
@@ -273,11 +272,23 @@ function setupCustomPacketHandler(client, botId) {
             }
         }
         
+        // 2. Eğer açıkça belirtilmemişse, oyuncu listesi / leaderboard (15'ten fazla satırı olan) 
+        // haricindeki normal kişisel scoreboard objective'ini seç
+        if (!activeObjName) {
+            for (const [objName, scoresObj] of Object.entries(sb.scores)) {
+                const count = Object.keys(scoresObj).length;
+                if (count > 0 && count <= 15) {
+                    activeObjName = objName;
+                    break;
+                }
+            }
+        }
+
+        // 3. Hala bulunamadıysa ilk objective'i al
         if (!activeObjName) {
             const keys = Object.keys(sb.objectives);
             if (keys.length > 0) {
-                activeObjName = keys[keys.length - 1];
-                sb.sidebarObjective = activeObjName;
+                activeObjName = keys[0];
             }
         }
 
@@ -314,7 +325,11 @@ function setupCustomPacketHandler(client, botId) {
         });
 
         lines.sort((a, b) => b.score - a.score);
-        io.emit('bot-scoreboard', { botId, scoreboard: { title, lines } });
+        
+        // Sağ menüde en fazla 15 satır gösterilir
+        const cleanLines = lines.slice(0, 15);
+
+        io.emit('bot-scoreboard', { botId, scoreboard: { title, lines: cleanLines } });
     }
 
     function triggerAfkWithRetry() {
@@ -344,7 +359,6 @@ function setupCustomPacketHandler(client, botId) {
         }, 6000);
     }
 
-    // 🔥 GENEL PAKET HATA YAKALAYICI (Kritik Güvenlik Katmanı)
     client.on('packet', (data, meta) => {
         if (meta.state !== 'play') return;
 
@@ -620,10 +634,7 @@ function setupCustomPacketHandler(client, botId) {
                     break;
                 }
             }
-        } catch (packetErr) {
-            // Paket işleme hatası yakalandı ancak bot çökmez, hatayı loglar ve devam eder.
-            // console.warn(`[Paket İşleme Hatası - ${meta.name}]:`, packetErr.message);
-        }
+        } catch (packetErr) {}
     });
 }
 

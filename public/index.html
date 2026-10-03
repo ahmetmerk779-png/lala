@@ -176,7 +176,6 @@
         .log-chat { color: #e879f9; }
         .log-command { color: #a7f3d0; font-weight: bold; }
 
-        /* ENVANTER TASARIMI */
         .inventory-wrapper {
             background: #090d16;
             border: 1px solid #1e293b;
@@ -281,14 +280,12 @@
         .inv-info-name { font-weight: 700; color: #38bdf8; }
         .inv-info-slot { color: #94a3b8; font-size: 10px; }
 
-        /* WIDGET IZGARASI (SCOREBOARD, HARİTA, TAB LIST) */
         .bot-widgets-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
             gap: 10px;
         }
 
-        /* 2D RADAR HARİTA TASARIMI */
         .radar-box {
             background: #090d16;
             border: 1px solid #1e293b;
@@ -319,7 +316,6 @@
             height: 220px;
         }
 
-        /* TAB LIST TASARIMI */
         .tablist-box {
             background: #090d16;
             border: 1px solid #1e293b;
@@ -364,7 +360,6 @@
             color: var(--text-main);
         }
 
-        /* SCOREBOARD TASARIMI */
         .scoreboard-box {
             background: #090d16;
             border: 1px solid #1e293b;
@@ -659,7 +654,6 @@
                 </div>
 
                 <div class="bot-widgets-grid">
-                    <!-- 2D RADAR HARİTA -->
                     <div class="radar-box">
                         <div class="radar-title">
                             <span>🗺️ 2D Radar</span>
@@ -668,7 +662,6 @@
                         <canvas id="map-canvas-${bot.id}" class="radar-canvas" width="220" height="220"></canvas>
                     </div>
 
-                    <!-- TAB LİSTESİ -->
                     <div class="tablist-box">
                         <div class="tablist-title">
                             <span>📋 Tab Oyuncu Listesi</span>
@@ -689,7 +682,6 @@
                         </div>
                     </div>
 
-                    <!-- SCOREBOARD -->
                     <div class="scoreboard-box">
                         <div class="scoreboard-title" id="sb-title-${bot.id}">📊 Scoreboard</div>
                         <div id="sb-lines-${bot.id}">
@@ -717,12 +709,11 @@
         const h = canvas.height;
         const cx = w / 2;
         const cy = h / 2;
-        const scale = 3; // 1 Blok = 3 Piksel
+        const scale = 3;
 
         ctx.fillStyle = '#020617';
         ctx.fillRect(0, 0, w, h);
 
-        // Izgara Çizgileri
         ctx.strokeStyle = '#1e293b';
         ctx.lineWidth = 1;
         ctx.beginPath();
@@ -730,7 +721,6 @@
         ctx.moveTo(0, cy); ctx.lineTo(w, cy);
         ctx.stroke();
 
-        // Mesafe Halkaları (10, 20, 30 Blok)
         [10, 20, 30].forEach(r => {
             ctx.beginPath();
             ctx.arc(cx, cy, r * scale, 0, Math.PI * 2);
@@ -738,7 +728,6 @@
             ctx.stroke();
         });
 
-        // Etraftaki Varlıklar (Kırmızı Noktalar)
         if (Array.isArray(entities)) {
             ctx.fillStyle = '#ef4444';
             entities.forEach(ent => {
@@ -755,7 +744,6 @@
             });
         }
 
-        // Botun Kendisi (Yeşil Merkez Noktası)
         ctx.fillStyle = '#10b981';
         ctx.beginPath();
         ctx.arc(cx, cy, 5, 0, Math.PI * 2);

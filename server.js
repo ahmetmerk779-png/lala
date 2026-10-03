@@ -320,7 +320,6 @@ function setupCustomPacketHandler(client, botId) {
     client.on('packet', (data, meta) => {
         if (meta.state !== 'play') return;
 
-        // Scoreboard ve paketlerin konsola dökülüp debug edilmesi için eklendi:
         if (meta.name.includes('scoreboard') || meta.name.includes('objective') || meta.name.includes('display') || meta.name.includes('score')) {
             console.log(`[DEBUG PAKET] [${botData.username}] --> ${meta.name}:`, JSON.stringify(data));
         }
@@ -569,24 +568,32 @@ function setupCustomPacketHandler(client, botId) {
 
             case 'scoreboard_score':
             case 'set_score': {
-                const objName = data.objectiveName || data.itemName || data.name || Object.keys(botData.scoreboardData.objectives)[0];
-                const scoreName = data.scoreName || data.name || data.itemName || data.entityName;
+                const objName = data.scoreName || data.objectiveName || data.name || Object.keys(botData.scoreboardData.objectives)[0];
+                const scoreItemName = data.itemName || data.scoreName || data.name;
                 const action = data.action !== undefined ? data.action : (data.remove ? 1 : 0);
                 
                 if (!objName) break;
+
+                if (objName === 'TAB-Scoreboard') {
+                    botData.scoreboardData.sidebarObjective = 'TAB-Scoreboard';
+                    if (!botData.scoreboardData.objectives['TAB-Scoreboard']) {
+                        botData.scoreboardData.objectives['TAB-Scoreboard'] = { title: 'Scoreboard', type: 0, position: 1 };
+                    }
+                }
+
                 if (!botData.scoreboardData.scores[objName]) {
                     botData.scoreboardData.scores[objName] = {};
                 }
 
                 if (action === 0 || action === undefined) {
                     const val = data.value !== undefined ? data.value : (data.score !== undefined ? data.score : 0);
-                    botData.scoreboardData.scores[objName][scoreName] = {
+                    botData.scoreboardData.scores[objName][scoreItemName] = {
                         val: val,
                         customName: data.customName ? parseMcText(data.customName) : null
                     };
                 } else if (action === 1) {
-                    if (scoreName && botData.scoreboardData.scores[objName][scoreName]) {
-                        delete botData.scoreboardData.scores[objName][scoreName];
+                    if (scoreItemName && botData.scoreboardData.scores[objName][scoreItemName]) {
+                        delete botData.scoreboardData.scores[objName][scoreItemName];
                     }
                 }
                 

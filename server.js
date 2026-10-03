@@ -47,9 +47,7 @@ function getMcData(version) {
             mcDataCache[verStr] = data;
             return data;
         }
-    } catch (e) {
-        console.warn(`[mcData Warning] '${verStr}' yüklenemedi, 1.20.1 deneniyor...`);
-    }
+    } catch (e) {}
 
     try {
         if (!mcDataCache['1.20.1']) {
@@ -63,7 +61,6 @@ function getMcData(version) {
 
 function getItemDetails(version, itemId) {
     if (itemId === undefined || itemId === null || itemId === -1) return null;
-    
     const data = getMcData(version);
     if (data && data.items) {
         const item = data.items[itemId];
@@ -118,9 +115,7 @@ function loadSavedData() {
                 });
             });
         }
-    } catch (err) {
-        console.error('[Hafıza Okuma Hatası]', err.message);
-    }
+    } catch (err) {}
 }
 
 function saveDataToFile() {
@@ -131,9 +126,7 @@ function saveDataToFile() {
             autoSubServerCmd: b.autoSubServerCmd, autoSubServerDelay: b.autoSubServerDelay
         }));
         fs.writeFileSync(DATA_FILE, JSON.stringify({ globalConfig, bots: botList }, null, 2));
-    } catch (err) {
-        console.error('[Hafıza Kayıt Hatası]', err.message);
-    }
+    } catch (err) {}
 }
 
 loadSavedData();
@@ -273,7 +266,7 @@ function setupCustomPacketHandler(client, botId) {
             let prefix = '', suffix = '';
             
             Object.values(sb.teams).forEach(t => {
-                if (t.players && t.players.includes(entryKey)) {
+                if (t.players && (t.players.includes(entryKey) || t.players.includes(scoreItem.realName))) {
                     prefix = t.prefix || '';
                     suffix = t.suffix || '';
                 }
@@ -283,6 +276,11 @@ function setupCustomPacketHandler(client, botId) {
             let fullText = (prefix + cleanEntry + suffix).trim();
             if (!fullText) fullText = cleanEntry;
             
+            // Scoreboard altındaki IP adreslerinin ve reklamların kayma yapmasını önlemek için filtrelenmesi[span_1](start_span)[span_1](end_span)
+            if (fullText.includes('OYNA.') || fullText.includes('.COM') || fullText.toLowerCase().includes('play.')) {
+                return;
+            }
+
             lines.push({ text: fullText, score: scoreItem.val });
         });
 
@@ -302,15 +300,12 @@ function setupCustomPacketHandler(client, botId) {
         botData.afkRetryTimer = setTimeout(() => {
             if (botData.waitingForAfkGui && botData.client && botData.status === 'Online') {
                 afkFailCount++;
-
                 if (afkFailCount >= 3) {
-                    broadcastLog(botId, '⚠️ Lobiye düşülmüş olabilir. Tekrar alt sunucuya giriliyor...', 'error');
                     afkFailCount = 0;
                     isSequenceStarted = false;
                     const subCmd = botData.autoSubServerCmd !== undefined ? botData.autoSubServerCmd : globalConfig.autoSubServerCmd;
                     if (subCmd) sendChat(client, subCmd);
                 } else {
-                    broadcastLog(botId, `⚠ Menü açılmadı, /afk tekrar deneniyor... (${afkFailCount}/3)`, 'warn');
                     triggerAfkWithRetry();
                 }
             }
@@ -323,7 +318,6 @@ function setupCustomPacketHandler(client, botId) {
         switch (meta.name) {
             case 'update_health':
                 if (data.health <= 0) {
-                    broadcastLog(botId, '☠ Bot öldü! Otomatik Respawn gönderiliyor...', 'error');
                     try { client.write('client_command', { actionId: 0 }); } catch (e) {}
                 }
                 break;
@@ -333,89 +327,44 @@ function setupCustomPacketHandler(client, botId) {
                 botData.waitingForAfkGui = false;
                 botData.entities = {};
                 botData.tabList = {};
-                botData.scoreboardData = {
-                    sidebarObjective: null,
-                    objectives: {},
-                    scores: {},
-                    teams: {}
-                };
+                botData.scoreboardData = { sidebarObjective: null, objectives: {}, scores: {}, teams: {} };
                 afkFailCount = 0;
-                broadcastLog(botId, '🔄 Sunucu değişimi algılandı. Eski veriler tamamen temizlendi, AFK ve Harita yenileniyor...', 'warn');
                 botData.afkTimer = setTimeout(() => triggerAfkWithRetry(), 4000);
                 break;
 
-            case 'window_items':
-                if (data.windowId === 0) {
-                    botData.inventory = {};
-                    if (Array.isArray(data.items)) {
-                        data.items.forEach((item, index) => {
-                            if (item && item.present !== false && item.itemId !== undefined && item.itemId !== -1) {
-                                const details = getItemDetails(botData.version || globalConfig.version, item.itemId);
-                                botData.inventory[index] = {
-                                    slot: index,
-                                    id: item.itemId,
-                                    name: details ? details.name : 'unknown',
-                                    displayName: details ? details.displayName : `ID: ${item.itemId}`,
-                                    count: item.itemCount || 1
-                                };
-                            }
-                        });
-                    }
-                    broadcastInventory(botId);
-                } else {
-                    botData.currentWindowId = data.windowId;
-                    botData.currentStateId = data.stateId;
+            case 'player_info':
+            case 'player_info_update': {
+                const playersArray = data.data || data.players || [];
+                playersArray.forEach(p => {
+                    const uuid = p.uuid || p.UUID;
+                    if (!uuid) return;
 
-                    if (botData.waitingForAfkGui) {
-                        botData.waitingForAfkGui = false;
-                        afkFailCount = 0;
-                        if (botData.afkRetryTimer) clearTimeout(botData.afkRetryTimer);
-
-                        setTimeout(() => {
-                            if (botData.client && botData.status === 'Online') {
-                                try {
-                                    client.write('window_click', {
-                                        windowId: botData.currentWindowId,
-                                        stateId: botData.currentStateId,
-                                        slot: 12,
-                                        mouseButton: 1,
-                                        mode: 0,
-                                        changedSlots: [],
-                                        cursorItem: { present: false }
-                                    });
-                                    broadcastLog(botId, `🎯 AFK Menüsü Başarıyla Tıklandı! (Slot: 12)`, 'success');
-                                } catch (e) {
-                                    broadcastLog(botId, `Menü tıklama hatası: ${e.message}`, 'error');
-                                    setTimeout(() => triggerAfkWithRetry(), 3000);
-                                }
-                            }
-                        }, 1000);
+                    if (!botData.tabList[uuid]) {
+                        botData.tabList[uuid] = { uuid, name: 'Bilinmeyen', displayName: '', ping: 0 };
                     }
+
+                    if (p.name) botData.tabList[uuid].name = p.name;
+                    if (p.player && p.player.name) botData.tabList[uuid].name = p.player.name;
+                    
+                    if (p.displayName) {
+                        botData.tabList[uuid].displayName = parseMcText(p.displayName);
+                    } else if (p.player && p.player.displayName) {
+                        botData.tabList[uuid].displayName = parseMcText(p.player.displayName);
+                    }
+
+                    if (p.latency !== undefined) botData.tabList[uuid].ping = p.latency;
+                });
+                queueTabListUpdate();
+                break;
+            }
+
+            case 'player_info_remove': {
+                if (Array.isArray(data.UUIDs)) {
+                    data.UUIDs.forEach(uuid => delete botData.tabList[uuid]);
+                    queueTabListUpdate();
                 }
                 break;
-
-            case 'set_slot':
-                if (data.windowId === 0) {
-                    const item = data.item;
-                    if (!item || item.present === false || item.itemId === undefined || item.itemId === -1) {
-                        delete botData.inventory[data.slot];
-                    } else {
-                        const details = getItemDetails(botData.version || globalConfig.version, item.itemId);
-                        botData.inventory[data.slot] = {
-                            slot: data.slot,
-                            id: item.itemId,
-                            name: details ? details.name : 'unknown',
-                            displayName: details ? details.displayName : `ID: ${item.itemId}`,
-                            count: item.itemCount || 1
-                        };
-                    }
-                    broadcastInventory(botId);
-                }
-                break;
-
-            case 'open_window':
-                botData.currentWindowId = data.windowId;
-                break;
+            }
 
             case 'position':
                 try {
@@ -434,36 +383,14 @@ function setupCustomPacketHandler(client, botId) {
 
                 if (!isSequenceStarted) {
                     isSequenceStarted = true;
-
                     const pwd = botData.autoPassword !== undefined ? botData.autoPassword : globalConfig.autoPassword;
                     const subCmd = botData.autoSubServerCmd !== undefined ? botData.autoSubServerCmd : globalConfig.autoSubServerCmd;
 
                     setTimeout(() => {
                         if (!botData.client) return;
-
-                        if (pwd && pwd.trim() !== '') {
-                            sendChat(client, `/login ${pwd}`);
-                            broadcastLog(botId, `🔑 /login gönderildi.`, 'info');
-                        }
-
+                        if (pwd && pwd.trim() !== '') sendChat(client, `/login ${pwd}`);
                         if (subCmd && subCmd.trim() !== '') {
-                            let tryCount = 1;
-                            const maxTries = 3;
-
                             sendChat(client, subCmd);
-                            broadcastLog(botId, `🚀 Alt sunucu komutu gönderildi (1/${maxTries})`, 'success');
-
-                            botData.subCmdInterval = setInterval(() => {
-                                if (botData.client && botData.status === 'Online' && tryCount < maxTries) {
-                                    tryCount++;
-                                    sendChat(client, subCmd);
-                                    broadcastLog(botId, `🚀 Alt sunucu komutu tekrarlandı (${tryCount}/${maxTries})`, 'success');
-                                } else {
-                                    clearInterval(botData.subCmdInterval);
-                                    botData.subCmdInterval = null;
-                                }
-                            }, 3000);
-
                             botData.afkTimer = setTimeout(() => triggerAfkWithRetry(), 10000);
                         } else {
                             botData.afkTimer = setTimeout(() => triggerAfkWithRetry(), 4000);
@@ -494,42 +421,8 @@ function setupCustomPacketHandler(client, botId) {
                 }
                 break;
 
-            case 'player_info_update':
-            case 'player_info':
-                if (Array.isArray(data.data)) {
-                    data.data.forEach(p => {
-                        const uuid = p.uuid;
-                        if (!botData.tabList[uuid]) {
-                            botData.tabList[uuid] = { uuid, name: 'Bilinmeyen', displayName: '', ping: 0 };
-                        }
-                        if (p.player && p.player.name) botData.tabList[uuid].name = p.player.name;
-                        if (p.name) botData.tabList[uuid].name = p.name;
-                        if (p.displayName) botData.tabList[uuid].displayName = parseMcText(p.displayName);
-                        if (p.latency !== undefined) botData.tabList[uuid].ping = p.latency;
-                    });
-                    queueTabListUpdate();
-                }
-                break;
-
             case 'keep_alive':
                 try { client.write('keep_alive', { keepAliveId: data.keepAliveId }); } catch (e) {}
-                break;
-
-            case 'player_chat':
-            case 'system_chat':
-            case 'chat':
-                handleIncomingChat(data, botId, (msg) => {
-                    broadcastLog(botId, msg, 'chat');
-                    const msgLower = msg.toLowerCase();
-                    if (msgLower.includes('ışınlanma isteği') || msgLower.includes('teleport request') || msgLower.includes('tpaccept')) {
-                        broadcastLog(botId, '📡 TPA isteği algılandı, kabul ediliyor...', 'info');
-                        setTimeout(() => {
-                            if (botData.client && botData.status === 'Online') {
-                                sendChat(client, '/tpaccept');
-                            }
-                        }, 1000);
-                    }
-                });
                 break;
 
             case 'display_objective':
@@ -537,9 +430,7 @@ function setupCustomPacketHandler(client, botId) {
                 const position = data.position !== undefined ? data.position : data.slot;
                 const name = data.name || data.objectiveName;
                 if (position === 1 || position === undefined) {
-                    if (name) {
-                        botData.scoreboardData.sidebarObjective = name;
-                    }
+                    if (name) botData.scoreboardData.sidebarObjective = name;
                 }
                 queueScoreboardUpdate();
                 break;
@@ -551,12 +442,6 @@ function setupCustomPacketHandler(client, botId) {
                 
                 if (action === 0 || action === 2 || data.displayText || data.title) {
                     const titleText = data.displayText || data.title || name;
-                    
-                    if (data.position === 1 || name === 'TAB-Scoreboard') {
-                        botData.scoreboardData.objectives = {};
-                        botData.scoreboardData.scores = {};
-                    }
-
                     botData.scoreboardData.objectives[name] = {
                         title: parseMcText(titleText),
                         type: data.type || 0,
@@ -566,9 +451,6 @@ function setupCustomPacketHandler(client, botId) {
                 } else if (action === 1) {
                     delete botData.scoreboardData.objectives[name];
                     delete botData.scoreboardData.scores[name];
-                    if (botData.scoreboardData.sidebarObjective === name) {
-                        botData.scoreboardData.sidebarObjective = null;
-                    }
                 }
                 queueScoreboardUpdate();
                 break;
@@ -582,13 +464,6 @@ function setupCustomPacketHandler(client, botId) {
                 
                 if (!objName) break;
 
-                if (objName === 'TAB-Scoreboard') {
-                    botData.scoreboardData.sidebarObjective = 'TAB-Scoreboard';
-                    if (!botData.scoreboardData.objectives['TAB-Scoreboard']) {
-                        botData.scoreboardData.objectives['TAB-Scoreboard'] = { title: 'Scoreboard', type: 0, position: 1 };
-                    }
-                }
-
                 if (!botData.scoreboardData.scores[objName]) {
                     botData.scoreboardData.scores[objName] = {};
                 }
@@ -597,7 +472,8 @@ function setupCustomPacketHandler(client, botId) {
                     const val = data.value !== undefined ? data.value : (data.score !== undefined ? data.score : 0);
                     botData.scoreboardData.scores[objName][scoreItemName] = {
                         val: val,
-                        customName: data.customName ? parseMcText(data.customName) : null
+                        customName: data.customName ? parseMcText(data.customName) : null,
+                        realName: scoreItemName
                     };
                 } else if (action === 1) {
                     if (scoreItemName && botData.scoreboardData.scores[objName][scoreItemName]) {
@@ -633,21 +509,6 @@ function setupCustomPacketHandler(client, botId) {
     });
 }
 
-function handleIncomingChat(data, botId, callback) {
-    let text = '';
-    try {
-        if (data.plainMessage) {
-            text = data.plainMessage;
-        } else if (data.content) {
-            text = parseMcText(data.content);
-        } else if (data.message) {
-            text = parseMcText(data.message);
-        }
-    } catch (e) {}
-
-    if (text && text.trim()) callback(text);
-}
-
 function cleanupBot(botId, reason) {
     const botData = botPool.get(botId);
     if (!botData) return;
@@ -671,8 +532,6 @@ function cleanupBot(botId, reason) {
 
     botData.status = 'Offline';
     botData.onlineSince = null;
-    botData.inventory = {};
-    botData.scoreboard = null;
     botData.tabList = {};
     botData.entities = {};
     botData.pos = { x: 0, y: 0, z: 0 };
@@ -681,7 +540,6 @@ function cleanupBot(botId, reason) {
     io.emit('status-update', { botId, status: 'Offline', onlineSince: null });
     io.emit('bot-scoreboard', { botId, scoreboard: null });
     io.emit('bot-tablist', { botId, players: [] });
-    io.emit('bot-map-update', { botId, pos: { x: 0, y: 0, z: 0 }, entities: [] });
 
     if (!botData.isManualStop && globalConfig.autoReconnect) {
         botData.reconnectTimer = setTimeout(() => {
@@ -701,7 +559,7 @@ function startBotInstance(botId) {
     const port = Number(botData.port || globalConfig.port);
     const version = botData.version || globalConfig.version;
 
-    broadcastLog(botId, `${botData.username} bağlanıyor (${host}:${port})...`, 'info');
+    broadcastLog(botId, `${botData.username} bağlanıyor...`, 'info');
     botData.status = 'Connecting';
     io.emit('status-update', { botId, status: 'Connecting', onlineSince: null });
 
@@ -776,7 +634,6 @@ io.on('connection', (socket) => {
         port: b.port || globalConfig.port, version: b.version || globalConfig.version,
         autoPassword: b.autoPassword !== undefined ? b.autoPassword : globalConfig.autoPassword,
         autoSubServerCmd: b.autoSubServerCmd !== undefined ? b.autoSubServerCmd : globalConfig.autoSubServerCmd,
-        autoSubServerDelay: b.autoSubServerDelay !== undefined ? b.autoSubServerDelay : globalConfig.autoSubServerDelay,
         status: b.status, onlineSince: b.onlineSince || null, pos: b.pos || { x: 0, y: 0, z: 0 },
         logs: b.logs, inventory: b.inventory || {}
     }));
@@ -813,7 +670,6 @@ io.on('connection', (socket) => {
             version: typeof data === 'object' && data.version ? data.version : globalConfig.version,
             autoPassword: typeof data === 'object' && data.autoPassword !== undefined ? data.autoPassword : globalConfig.autoPassword,
             autoSubServerCmd: typeof data === 'object' && data.autoSubServerCmd !== undefined ? data.autoSubServerCmd : globalConfig.autoSubServerCmd,
-            autoSubServerDelay: typeof data === 'object' && data.autoSubServerDelay !== undefined ? data.autoSubServerDelay : globalConfig.autoSubServerDelay,
             status: 'Offline', onlineSince: null, pos: { x: 0, y: 0, z: 0 },
             client: null, logs: [], inventory: {}, scoreboard: null, tabList: {}, entities: {}, isManualStop: false
         };

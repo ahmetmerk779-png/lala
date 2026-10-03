@@ -44,7 +44,6 @@
             gap: 12px;
         }
 
-        /* HEADER */
         .header {
             display: flex;
             justify-content: space-between;
@@ -66,7 +65,6 @@
             gap: 8px;
         }
 
-        /* CARD */
         .card {
             background: var(--bg-card);
             border: 1px solid var(--border-color);
@@ -87,7 +85,6 @@
             justify-content: space-between;
         }
 
-        /* INPUTS & BUTTONS */
         .form-group {
             display: flex;
             gap: 8px;
@@ -133,7 +130,6 @@
         .btn-danger { background: #dc2626; }
         .btn-secondary { background: #334155; color: var(--text-main); }
 
-        /* BOT CARD */
         .bot-card {
             background: #0f172a;
             border: 1px solid var(--border-color);
@@ -178,7 +174,6 @@
             gap: 4px;
         }
 
-        /* LOG BOX */
         .log-box {
             background: #020617;
             border: 1px solid #1e293b;
@@ -199,7 +194,6 @@
         .log-chat { color: #e879f9; }
         .log-command { color: #a7f3d0; font-weight: bold; }
 
-        /* ENVANTER GRID */
         .inventory-wrapper {
             background: #0b0f17;
             border: 1px solid #1e293b;
@@ -225,18 +219,18 @@
             border: 1px solid #334155;
             aspect-ratio: 1;
             display: flex;
+            flex-direction: column;
             align-items: center;
             justify-content: center;
             position: relative;
             border-radius: 4px;
-            font-size: 9px;
-            color: #64748b;
+            padding: 2px;
+            overflow: hidden;
         }
 
         .inv-slot.has-item {
             background: #1e1b4b;
             border-color: #6366f1;
-            color: #a5b4fc;
         }
 
         .inv-slot-count {
@@ -246,9 +240,9 @@
             color: #fbbf24;
             font-weight: 700;
             font-size: 9px;
+            text-shadow: 1px 1px 2px #000;
         }
 
-        /* MODAL */
         .modal-overlay {
             position: fixed;
             top: 0; left: 0; right: 0; bottom: 0;
@@ -296,13 +290,11 @@
 <body>
 
 <div class="container">
-    <!-- HEADER -->
     <div class="header">
         <h1>🤖 MC Bot Manager</h1>
         <button class="btn-secondary" onclick="openGlobalSettings()">⚙️ Genel Ayarlar</button>
     </div>
 
-    <!-- SOHBET & KOMUT -->
     <div class="card">
         <div class="card-header">💬 Konsol & Komut Gönderimi</div>
         <div class="form-group">
@@ -314,7 +306,6 @@
         </div>
     </div>
 
-    <!-- BOT EKLEME VE TOPLU KONTROL -->
     <div class="card">
         <div class="card-header">➕ Bot Yönetimi</div>
         <div class="form-group" style="margin-bottom: 10px;">
@@ -327,14 +318,12 @@
         </div>
     </div>
 
-    <!-- BOT LİSTESİ -->
     <div class="card">
         <div class="card-header">📋 Aktif Bot Listesi</div>
         <div id="botListContainer"></div>
     </div>
 </div>
 
-<!-- BOTA ÖZEL AYARLAR MODAL -->
 <div class="modal-overlay" id="botSettingsModal">
     <div class="modal">
         <div class="modal-title">⚙️ Bot Ayarları (<span id="modalBotName"></span>)</div>
@@ -368,7 +357,6 @@
     </div>
 </div>
 
-<!-- GENEL AYARLAR MODAL -->
 <div class="modal-overlay" id="globalSettingsModal">
     <div class="modal">
         <div class="modal-title">🌐 Varsayılan Genel Ayarlar</div>
@@ -493,7 +481,7 @@
                     <div class="bot-actions">
                         <button class="btn-success" onclick="socket.emit('start-bot', '${bot.id}')">Başlat</button>
                         <button class="btn-warning" onclick="socket.emit('stop-bot', '${bot.id}')">Durdur</button>
-                        <button class="btn-secondary" onclick="openBotSettings('${bot.id}')">⚙️ Ayarlar</button>
+                        <button class="btn-secondary" onclick="openBotSettings('${bot.id}')">⚙️️ Ayarlar</button>
                         <button class="btn-danger" onclick="socket.emit('delete-bot', '${bot.id}')">Sil</button>
                     </div>
                 </div>
@@ -532,20 +520,31 @@
 
             if (item) {
                 slot.className = 'inv-slot has-item';
-                slot.title = `Item ID: ${item.id} | Miktar: ${item.count}`;
+                const nameToShow = item.displayName || item.name || `ID: ${item.id}`;
+                slot.title = `${nameToShow} (Adet: ${item.count})`;
+
+                const itemUrl = `https://raw.githubusercontent.com/PrismarineJS/minecraft-assets/master/data/1.20.1/items/${item.name}.png`;
+                const blockUrl = `https://raw.githubusercontent.com/PrismarineJS/minecraft-assets/master/data/1.20.1/blocks/${item.name}.png`;
+
                 slot.innerHTML = `
-                    <span>${item.id}</span>
+                    ${item.name && item.name !== 'unknown' ? `
+                        <img src="${itemUrl}" 
+                             onerror="if(this.src!=='${blockUrl}'){this.src='${blockUrl}';}else{this.style.display='none';}" 
+                             style="width: 20px; height: 20px; image-rendering: pixelated; object-fit: contain;">
+                    ` : ''}
+                    <span style="font-size: 8px; color: #cbd5e1; text-align: center; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 1px;">
+                        ${nameToShow}
+                    </span>
                     <span class="inv-slot-count">${item.count}</span>
                 `;
             } else {
                 slot.className = 'inv-slot';
-                slot.innerHTML = `<span>${i}</span>`;
+                slot.innerHTML = `<span style="opacity: 0.25; font-size: 9px;">${i}</span>`;
             }
             grid.appendChild(slot);
         }
     }
 
-    /* MODAL VE AYAR İŞLEMLERİ */
     function openBotSettings(botId) {
         const bot = botsMap.get(botId);
         if (!bot) return;

@@ -1,3 +1,188 @@
+const express = require('express');
+const http = require('http');
+const { Server } = require('socket.io');
+const mc = require('minecraft-protocol');
+const mcData = require('minecraft-data');
+const path = require('path');
+const fs = require('fs');
+
+const app = express();
+const server = http.createServer(app);
+const io = new Server(server);
+
+app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.json());
+
+process.on('uncaughtException', (err) => console.error('[Hata Engellendi]:', err.message));
+process.on('unhandledRejection', (reason) => console.error('[Söz Rejeksiyonu Engellendi]:', reason));
+
+const DATA_FILE = path.join(__dirname, 'bots.json');
+const botPool = new Map();
+
+let globalConfig = {
+    host: '141.95.82.164',
+    port: 25565,
+    version: '1.20.1',
+    autoPassword: 'deliyizpassword',
+    autoSubServerCmd: '/gir asmp',
+    autoSubServerDelay: 4,
+    autoReconnect: true
+};
+
+const defaultBotConfigs = [
+    { id: 'bot_1', username: 'Deliyiz_1', host: '141.95.82.164', port: 25565, autoPassword: 'deliyizpassword' },
+    { id: 'bot_2', username: 'Deliyiz_2', host: '141.95.82.164', port: 25565, autoPassword: 'deliyizpassword' },
+    { id: 'bot_3', username: 'Deliyiz_3', host: '141.95.82.164', port: 25565, autoPassword: 'deliyizpassword' }
+];
+
+const mcDataCache = {};
+
+function getMcData(version) {
+    const verStr = (version || '1.20.1').toString().trim();
+    if (mcDataCache[verStr]) return mcDataCache[verStr];
+
+    try {
+        const data = mcData(verStr);
+        if (data && data.items) {
+            mcDataCache[verStr] = data;
+            return data;
+        }
+    } catch (e) {
+        console.warn(`[mcData Warning] '${verStr}' yüklenemedi, 1.20.1 deneniyor...`);
+    }
+
+    try {
+        if (!mcDataCache['1.20.1']) {
+            mcDataCache['1.20.1'] = mcData('1.20.1');
+        }
+        return mcDataCache['1.20.1'];
+    } catch (e) {
+        return null;
+    }
+}
+
+function getItemDetails(version, itemId) {
+    if (itemId === undefined || itemId === null || itemId === -1) return null;
+    
+    const data = getMcData(version);
+    if (data && data.items) {
+        const item = data.items[itemId];
+        if (item) {
+            const cleanName = item.displayName || item.name.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+            return { name: item.name, displayName: cleanName };
+        }
+    }
+    return { name: 'unknown', displayName: `ID: ${itemId}` };
+}
+
+function parseMcText(text) {
+    if (!text) return '';
+    let str = '';
+    if (typeof text === 'string') {
+        try {
+            return parseMcText(JSON.parse(text));
+        } catch (e) {
+            str = text;
+        }
+    } else if (typeof text === 'object') {
+        if (text.text) str += text.text;
+        if (Array.isArray(text.extra)) {
+            str += text.extra.map(e => parseMcText(e)).join('');
+        }
+        if (text.translate) str += text.translate;
+    }
+    return str.replace(/§[0-9a-fk-or]/gi, '').replace(/&[0-9a-fk-or]/gi, '').trim();
+}
+
+function loadSavedData() {
+    if (!fs.existsSync(DATA_FILE)) {
+        defaultBotConfigs.forEach(cfg => {
+            botPool.set(cfg.id, { 
+                ...cfg, status: 'Offline', onlineSince: null, client: null, logs: [], inventory: {}, 
+                scoreboard: null, isManualStop: false, pos: { x: 0, y: 0, z: 0 }, tabList: {}, entities: {} 
+            });
+        });
+        saveDataToFile();
+        return;
+    }
+    try {
+        const rawData = fs.readFileSync(DATA_FILE, 'utf8');
+        const parsed = JSON.parse(rawData);
+        if (parsed.globalConfig) globalConfig = { ...globalConfig, ...parsed.globalConfig };
+        if (Array.isArray(parsed.bots) && parsed.bots.length > 0) {
+            botPool.clear();
+            parsed.bots.forEach(b => {
+                botPool.set(b.id, { 
+                    ...b, status: 'Offline', onlineSince: null, client: null, logs: [], inventory: {}, 
+                    scoreboard: null, isManualStop: false, pos: { x: 0, y: 0, z: 0 }, tabList: {}, entities: {} 
+                });
+            });
+        }
+    } catch (err) {
+        console.error('[Hafıza Okuma Hatası]', err.message);
+    }
+}
+
+function saveDataToFile() {
+    try {
+        const botList = Array.from(botPool.values()).map(b => ({
+            id: b.id, username: b.username, host: b.host, port: b.port,
+            version: b.version, autoPassword: b.autoPassword,
+            autoSubServerCmd: b.autoSubServerCmd, autoSubServerDelay: b.autoSubServerDelay
+        }));
+        fs.writeFileSync(DATA_FILE, JSON.stringify({ globalConfig, bots: botList }, null, 2));
+    } catch (err) {
+        console.error('[Hafıza Kayıt Hatası]', err.message);
+    }
+}
+
+loadSavedData();
+
+function broadcastLog(botId, text, type = 'info') {
+    if (!text || typeof text !== 'string' || !text.trim()) return;
+    const timestamp = new Date().toLocaleTimeString('tr-TR');
+    const logEntry = { botId, text, timestamp, type };
+
+    if (botPool.has(botId)) {
+        const botData = botPool.get(botId);
+        botData.logs.push(logEntry);
+        if (botData.logs.length > 20) botData.logs.shift();
+    }
+    io.emit('bot-log', logEntry);
+}
+
+function broadcastInventory(botId) {
+    const botData = botPool.get(botId);
+    if (botData) {
+        io.emit('bot-inventory', { botId, inventory: botData.inventory || {} });
+    }
+}
+
+function sendChat(client, message) {
+    if (!client) return;
+    try {
+        if (message.startsWith('/')) {
+            client.write('chat_command', {
+                command: message.slice(1),
+                timestamp: BigInt(Date.now()),
+                salt: BigInt(0),
+                argumentSignatures: [],
+                messageCount: 0,
+                acknowledged: Buffer.alloc(3)
+            });
+        } else {
+            client.write('chat_message', {
+                message: message,
+                timestamp: BigInt(Date.now()),
+                salt: BigInt(0),
+                signature: Buffer.alloc(0),
+                offset: 0,
+                acknowledged: Buffer.alloc(3)
+            });
+        }
+    } catch (e) {}
+}
+
 function setupCustomPacketHandler(client, botId) {
     let isSequenceStarted = false;
     let afkFailCount = 0;
@@ -27,13 +212,12 @@ function setupCustomPacketHandler(client, botId) {
     botData.tabList = {};
     botData.entities = {};
     botData.pos = { x: 0, y: 0, z: 0 };
-    
-    // Gelişmiş Scoreboard Veri Yapısı (Yedekli ve Esnek)
-    botData.scoreboardData = { 
-        sidebarObjective: null, 
-        objectives: {}, 
-        scores: {}, 
-        teams: {} 
+
+    botData.scoreboardData = {
+        sidebarObjective: null,
+        objectives: {},
+        scores: {},
+        teams: {}
     };
 
     function queueScoreboardUpdate() {
@@ -64,8 +248,6 @@ function setupCustomPacketHandler(client, botId) {
 
     function broadcastDynamicScoreboard() {
         const sb = botData.scoreboardData;
-        
-        // Eğer sidebar hedefi doğrudan atanmamışsa, mevcut objectives içerisinden ilk sidebar'ı otomatik seç
         if (!sb.sidebarObjective) {
             for (const [objName, objVal] of Object.entries(sb.objectives)) {
                 if (objVal.position === 1 || Object.keys(sb.objectives).length === 1) {
@@ -104,32 +286,31 @@ function setupCustomPacketHandler(client, botId) {
             lines.push({ text: fullText, score: scoreItem.val });
         });
 
-        // Skorlara göre büyükten küçüğe sırala
         lines.sort((a, b) => b.score - a.score);
-        
-        // Eğer hiç satır yoksa ama objective varsa bile başlığı göster
-        const finalScoreboard = { title, lines };
-        io.emit('bot-scoreboard', { botId, scoreboard: finalScoreboard });
+        io.emit('bot-scoreboard', { botId, scoreboard: { title, lines } });
     }
 
     function triggerAfkWithRetry() {
         if (!botData.client || botData.status !== 'Online') return;
+
         botData.waitingForAfkGui = true;
         sendChat(client, '/afk');
         broadcastLog(botId, '🚶 /afk yazıldı, menü bekleniyor...', 'info');
 
         if (botData.afkRetryTimer) clearTimeout(botData.afkRetryTimer);
+
         botData.afkRetryTimer = setTimeout(() => {
             if (botData.waitingForAfkGui && botData.client && botData.status === 'Online') {
                 afkFailCount++;
+
                 if (afkFailCount >= 3) {
-                    broadcastLog(botId, '⚠️ /afk menüsü açılamadı, alt sunucuya tekrar komut gönderiliyor...', 'error');
+                    broadcastLog(botId, '⚠️ Lobiye düşülmüş olabilir. Tekrar alt sunucuya giriliyor...', 'error');
                     afkFailCount = 0;
                     isSequenceStarted = false;
                     const subCmd = botData.autoSubServerCmd !== undefined ? botData.autoSubServerCmd : globalConfig.autoSubServerCmd;
                     if (subCmd) sendChat(client, subCmd);
-                    botData.afkTimer = setTimeout(() => triggerAfkWithRetry(), 5000);
                 } else {
+                    broadcastLog(botId, `⚠ Menü açılmadı, /afk tekrar deneniyor... (${afkFailCount}/3)`, 'warn');
                     triggerAfkWithRetry();
                 }
             }
@@ -152,93 +333,9 @@ function setupCustomPacketHandler(client, botId) {
                 botData.waitingForAfkGui = false;
                 botData.entities = {};
                 afkFailCount = 0;
+                broadcastLog(botId, '🔄 Sunucu değişimi algılandı. AFK ve Harita verileri yenileniyor...', 'warn');
                 botData.afkTimer = setTimeout(() => triggerAfkWithRetry(), 4000);
                 break;
-
-            // --- GELİŞTİRİLMİŞ SCOREBOARD PAKET YÖNETİCİSİ ---
-            case 'scoreboard_objective':
-            case 'scoreboard_objective_1_20_3': {
-                const name = data.name || data.objectiveName;
-                const action = data.action !== undefined ? data.action : (data.mode !== undefined ? data.mode : 0);
-                // action 0: create, 1: remove, 2: update
-                if (action === 0 || action === 2 || data.displayText || data.title) {
-                    const titleText = data.displayText || data.title || name;
-                    botData.scoreboardData.objectives[name] = {
-                        title: parseMcText(titleText),
-                        type: data.type || 0,
-                        position: data.position
-                    };
-                    if (action === 0 && (data.position === 1 || Object.keys(botData.scoreboardData.objectives).length === 1)) {
-                        botData.scoreboardData.sidebarObjective = name;
-                    }
-                } else if (action === 1) {
-                    delete botData.scoreboardData.objectives[name];
-                    if (botData.scoreboardData.sidebarObjective === name) {
-                        botData.scoreboardData.sidebarObjective = null;
-                    }
-                }
-                queueScoreboardUpdate();
-                break;
-            }
-
-            case 'scoreboard_display_objective': {
-                // position 1 = sidebar (sağ menü)
-                const position = data.position !== undefined ? data.position : data.slot;
-                const name = data.name || data.objectiveName;
-                if (position === 1 && name) {
-                    botData.scoreboardData.sidebarObjective = name;
-                    queueScoreboardUpdate();
-                } else if (position === 1 && !name) {
-                    botData.scoreboardData.sidebarObjective = null;
-                    queueScoreboardUpdate();
-                }
-                break;
-            }
-
-            case 'scoreboard_score': {
-                const objName = data.objectiveName || data.itemName || Object.keys(botData.scoreboardData.objectives)[0];
-                const scoreName = data.scoreName || data.name || data.itemName;
-                const action = data.action !== undefined ? data.action : (data.remove ? 1 : 0);
-                
-                if (!objName) break;
-                if (!botData.scoreboardData.scores[objName]) {
-                    botData.scoreboardData.scores[objName] = {};
-                }
-
-                if (action === 0 || action === undefined) {
-                    const val = data.value !== undefined ? data.value : (data.score !== undefined ? data.score : 0);
-                    botData.scoreboardData.scores[objName][scoreName] = {
-                        val: val,
-                        customName: data.customName ? parseMcText(data.customName) : null
-                    };
-                } else if (action === 1) {
-                    if (scoreName && botData.scoreboardData.scores[objName][scoreName]) {
-                        delete botData.scoreboardData.scores[objName][scoreName];
-                    } else {
-                        // Eğer özel bir isim verilmediyse tüm skorları sıfırla veya temizle
-                        botData.scoreboardData.scores[objName] = {};
-                    }
-                }
-                queueScoreboardUpdate();
-                break;
-            }
-
-            case 'scoreboard_team': {
-                const teamName = data.team || data.teamName;
-                const action = data.action !== undefined ? data.action : 0;
-                if (action === 0 || action === 2) {
-                    botData.scoreboardData.teams[teamName] = {
-                        prefix: parseMcText(data.prefix || data.teamPrefix || ''),
-                        suffix: parseMcText(data.suffix || data.teamSuffix || ''),
-                        players: data.players || []
-                    };
-                } else if (action === 1) {
-                    delete botData.scoreboardData.teams[teamName];
-                }
-                queueScoreboardUpdate();
-                break;
-            }
-            // ------------------------------------------------
 
             case 'window_items':
                 if (data.windowId === 0) {
@@ -279,7 +376,11 @@ function setupCustomPacketHandler(client, botId) {
                                         changedSlots: [],
                                         cursorItem: { present: false }
                                     });
-                                } catch (e) {}
+                                    broadcastLog(botId, `🎯 AFK Menüsü Başarıyla Tıklandı! (Slot: 12)`, 'success');
+                                } catch (e) {
+                                    broadcastLog(botId, `Menü tıklama hatası: ${e.message}`, 'error');
+                                    setTimeout(() => triggerAfkWithRetry(), 3000);
+                                }
                             }
                         }, 1000);
                     }
@@ -288,16 +389,17 @@ function setupCustomPacketHandler(client, botId) {
 
             case 'set_slot':
                 if (data.windowId === 0) {
-                    if (!data.item || data.item.present === false || data.item.itemId === undefined || data.item.itemId === -1) {
+                    const item = data.item;
+                    if (!item || item.present === false || item.itemId === undefined || item.itemId === -1) {
                         delete botData.inventory[data.slot];
                     } else {
-                        const details = getItemDetails(botData.version || globalConfig.version, data.item.itemId);
+                        const details = getItemDetails(botData.version || globalConfig.version, item.itemId);
                         botData.inventory[data.slot] = {
                             slot: data.slot,
-                            id: data.item.itemId,
+                            id: item.itemId,
                             name: details ? details.name : 'unknown',
-                            displayName: details ? details.displayName : `ID: ${data.item.itemId}`,
-                            count: data.item.itemCount || 1
+                            displayName: details ? details.displayName : `ID: ${item.itemId}`,
+                            count: item.itemCount || 1
                         };
                     }
                     broadcastInventory(botId);
@@ -325,23 +427,30 @@ function setupCustomPacketHandler(client, botId) {
 
                 if (!isSequenceStarted) {
                     isSequenceStarted = true;
+
                     const pwd = botData.autoPassword !== undefined ? botData.autoPassword : globalConfig.autoPassword;
                     const subCmd = botData.autoSubServerCmd !== undefined ? botData.autoSubServerCmd : globalConfig.autoSubServerCmd;
 
                     setTimeout(() => {
                         if (!botData.client) return;
+
                         if (pwd && pwd.trim() !== '') {
                             sendChat(client, `/login ${pwd}`);
+                            broadcastLog(botId, `🔑 /login gönderildi.`, 'info');
                         }
+
                         if (subCmd && subCmd.trim() !== '') {
                             let tryCount = 1;
-                            sendChat(client, dialog => subCmd);
+                            const maxTries = 3;
+
                             sendChat(client, subCmd);
+                            broadcastLog(botId, `🚀 Alt sunucu komutu gönderildi (1/${maxTries})`, 'success');
 
                             botData.subCmdInterval = setInterval(() => {
-                                if (botData.client && botData.status === 'Online' && tryCount < 3) {
+                                if (botData.client && botData.status === 'Online' && tryCount < maxTries) {
                                     tryCount++;
                                     sendChat(client, subCmd);
+                                    broadcastLog(botId, `🚀 Alt sunucu komutu tekrarlandı (${tryCount}/${maxTries})`, 'success');
                                 } else {
                                     clearInterval(botData.subCmdInterval);
                                     botData.subCmdInterval = null;
@@ -359,10 +468,8 @@ function setupCustomPacketHandler(client, botId) {
             case 'spawn_entity':
             case 'named_entity_spawn':
                 if (data.entityId !== undefined) {
-                    let entityName = meta.name === 'named_entity_spawn' ? (data.username || `Oyuncu #${data.entityId}`) : `Varlık #${data.entityId}`;
                     botData.entities[data.entityId] = {
                         id: data.entityId,
-                        name: entityName,
                         x: Math.round((data.x || 0) * 10) / 10,
                         y: Math.round((data.y || 0) * 10) / 10,
                         z: Math.round((data.z || 0) * 10) / 10
@@ -404,12 +511,319 @@ function setupCustomPacketHandler(client, botId) {
             case 'player_chat':
             case 'system_chat':
             case 'chat':
-                let text = '';
-                try { text = data.plainMessage || parseMcText(data.content || data.message); } catch (e) {}
-                if (text && text.trim()) {
-                    broadcastLog(botId, text, 'chat');
+                handleIncomingChat(data, botId, (msg) => {
+                    broadcastLog(botId, msg, 'chat');
+                    const msgLower = msg.toLowerCase();
+                    if (msgLower.includes('ışınlanma isteği') || msgLower.includes('teleport request') || msgLower.includes('tpaccept')) {
+                        broadcastLog(botId, '📡 TPA isteği algılandı, kabul ediliyor...', 'info');
+                        setTimeout(() => {
+                            if (botData.client && botData.status === 'Online') {
+                                sendChat(client, '/tpaccept');
+                            }
+                        }, 1000);
+                    }
+                });
+                break;
+
+            case 'display_objective':
+            case 'scoreboard_display_objective': {
+                const position = data.position !== undefined ? data.position : data.slot;
+                const name = data.name || data.objectiveName;
+                if (position === 1 && name) {
+                    botData.scoreboardData.sidebarObjective = name;
+                    queueScoreboardUpdate();
+                } else if (position === 1 && !name) {
+                    botData.scoreboardData.sidebarObjective = null;
+                    queueScoreboardUpdate();
                 }
                 break;
+            }
+
+            case 'scoreboard_objective': {
+                const name = data.name || data.objectiveName;
+                const action = data.action !== undefined ? data.action : (data.mode !== undefined ? data.mode : 0);
+                if (action === 0 || action === 2 || data.displayText || data.title) {
+                    const titleText = data.displayText || data.title || name;
+                    botData.scoreboardData.objectives[name] = {
+                        title: parseMcText(titleText),
+                        type: data.type || 0,
+                        position: data.position
+                    };
+                    if (action === 0 && (data.position === 1 || Object.keys(botData.scoreboardData.objectives).length === 1)) {
+                        botData.scoreboardData.sidebarObjective = name;
+                    }
+                } else if (action === 1) {
+                    delete botData.scoreboardData.objectives[name];
+                    if (botData.scoreboardData.sidebarObjective === name) {
+                        botData.scoreboardData.sidebarObjective = null;
+                    }
+                }
+                queueScoreboardUpdate();
+                break;
+            }
+
+            case 'scoreboard_score':
+            case 'set_score': {
+                const objName = data.objectiveName || data.itemName || Object.keys(botData.scoreboardData.objectives)[0];
+                const scoreName = data.scoreName || data.name || data.itemName;
+                const action = data.action !== undefined ? data.action : (data.remove ? 1 : 0);
+                
+                if (!objName) break;
+                if (!botData.scoreboardData.scores[objName]) {
+                    botData.scoreboardData.scores[objName] = {};
+                }
+
+                if (action === 0 || action === undefined) {
+                    const val = data.value !== undefined ? data.value : (data.score !== undefined ? data.score : 0);
+                    botData.scoreboardData.scores[objName][scoreName] = {
+                        val: val,
+                        customName: data.customName ? parseMcText(data.customName) : null
+                    };
+                } else if (action === 1) {
+                    if (scoreName && botData.scoreboardData.scores[objName][scoreName]) {
+                        delete botData.scoreboardData.scores[objName][scoreName];
+                    } else {
+                        botData.scoreboardData.scores[objName] = {};
+                    }
+                }
+                queueScoreboardUpdate();
+                break;
+            }
+
+            case 'teams':
+            case 'scoreboard_team': {
+                const teamName = data.team || data.teamName;
+                const action = data.action !== undefined ? data.action : (data.mode !== undefined ? data.mode : 0);
+                if (action === 0 || action === 2) {
+                    botData.scoreboardData.teams[teamName] = {
+                        prefix: parseMcText(data.prefix || data.teamPrefix || ''),
+                        suffix: parseMcText(data.suffix || data.teamSuffix || ''),
+                        players: data.players || []
+                    };
+                } else if (action === 1) {
+                    delete botData.scoreboardData.teams[teamName];
+                }
+                queueScoreboardUpdate();
+                break;
+            }
         }
     });
 }
+
+function handleIncomingChat(data, botId, callback) {
+    let text = '';
+    try {
+        if (data.plainMessage) {
+            text = data.plainMessage;
+        } else if (data.content) {
+            text = parseMcText(data.content);
+        } else if (data.message) {
+            text = parseMcText(data.message);
+        }
+    } catch (e) {}
+
+    if (text && text.trim()) callback(text);
+}
+
+function cleanupBot(botId, reason) {
+    const botData = botPool.get(botId);
+    if (!botData) return;
+
+    if (botData.keepAliveInterval) clearInterval(botData.keepAliveInterval);
+    if (botData.subCmdInterval) clearInterval(botData.subCmdInterval);
+    if (botData.afkTimer) clearTimeout(botData.afkTimer);
+    if (botData.afkRetryTimer) clearTimeout(botData.afkRetryTimer);
+    if (botData.sbUpdateTimer) clearTimeout(botData.sbUpdateTimer);
+    if (botData.tabUpdateTimer) clearTimeout(botData.tabUpdateTimer);
+    if (botData.mapUpdateTimer) clearTimeout(botData.mapUpdateTimer);
+    if (botData.reconnectTimer) clearTimeout(botData.reconnectTimer);
+
+    if (botData.client) {
+        try {
+            botData.client.removeAllListeners();
+            botData.client.end();
+        } catch (e) {}
+        botData.client = null;
+    }
+
+    botData.status = 'Offline';
+    botData.onlineSince = null;
+    botData.inventory = {};
+    botData.scoreboard = null;
+    botData.tabList = {};
+    botData.entities = {};
+    botData.pos = { x: 0, y: 0, z: 0 };
+
+    broadcastLog(botId, `🔴 ${reason}`, 'error');
+    io.emit('status-update', { botId, status: 'Offline', onlineSince: null });
+    io.emit('bot-scoreboard', { botId, scoreboard: null });
+    io.emit('bot-tablist', { botId, players: [] });
+    io.emit('bot-map-update', { botId, pos: { x: 0, y: 0, z: 0 }, entities: [] });
+
+    if (!botData.isManualStop && globalConfig.autoReconnect) {
+        botData.reconnectTimer = setTimeout(() => {
+            if (botPool.has(botId) && !botData.isManualStop && botData.status === 'Offline') {
+                startBotInstance(botId);
+            }
+        }, 5000);
+    }
+}
+
+function startBotInstance(botId) {
+    const botData = botPool.get(botId);
+    if (!botData || botData.client) return;
+
+    botData.isManualStop = false;
+    const host = botData.host || globalConfig.host;
+    const port = Number(botData.port || globalConfig.port);
+    const version = botData.version || globalConfig.version;
+
+    broadcastLog(botId, `${botData.username} bağlanıyor (${host}:${port})...`, 'info');
+    botData.status = 'Connecting';
+    io.emit('status-update', { botId, status: 'Connecting', onlineSince: null });
+
+    try {
+        const client = mc.createClient({
+            host: host,
+            port: port,
+            username: botData.username,
+            version: version || '1.20.1',
+            checkTimeoutInterval: 60000,
+            keepAlive: true
+        });
+
+        botData.client = client;
+        setupCustomPacketHandler(client, botId);
+
+        client.on('success', () => {
+            botData.status = 'Online';
+            botData.onlineSince = Date.now();
+            broadcastLog(botId, `⚡ ${botData.username} sunucuya girdi!`, 'success');
+            io.emit('status-update', { botId, status: 'Online', onlineSince: botData.onlineSince });
+
+            if (botData.keepAliveInterval) clearInterval(botData.keepAliveInterval);
+            let currentYaw = 0;
+
+            botData.keepAliveInterval = setInterval(() => {
+                if (botData.client && botData.status === 'Online') {
+                    try {
+                        currentYaw = (currentYaw + (Math.floor(Math.random() * 30) + 15)) % 360;
+                        const pitch = Math.floor(Math.random() * 20) - 10;
+                        client.write('look', { yaw: currentYaw, pitch: pitch, onGround: true });
+                        client.write('arm_animation', { hand: 0 });
+                    } catch (e) {}
+                } else {
+                    clearInterval(botData.keepAliveInterval);
+                    botData.keepAliveInterval = null;
+                }
+            }, 2000);
+        });
+
+        client.on('kick_disconnect', (packet) => cleanupBot(botId, `Atıldı: ${packet.reason}`));
+        client.on('disconnect', (packet) => cleanupBot(botId, `Bağlantı Kesildi: ${packet.reason}`));
+        client.on('error', (err) => cleanupBot(botId, `Hata: ${err.message}`));
+        client.on('end', () => cleanupBot(botId, `Bağlantı sonlandı.`));
+
+    } catch (err) {
+        cleanupBot(botId, `Başlatılamadı: ${err.message}`);
+    }
+}
+
+function stopBotInstance(botId) {
+    const botData = botPool.get(botId);
+    if (botData) {
+        botData.isManualStop = true;
+        cleanupBot(botId, 'Bot elle durduruldu.');
+    }
+}
+
+function startAllBots() {
+    let delay = 0;
+    for (const [id, botData] of botPool.entries()) {
+        if (botData.status === 'Offline') {
+            setTimeout(() => startBotInstance(id), delay);
+            delay += 2500;
+        }
+    }
+}
+
+io.on('connection', (socket) => {
+    const botList = Array.from(botPool.values()).map(b => ({
+        id: b.id, username: b.username, host: b.host || globalConfig.host,
+        port: b.port || globalConfig.port, version: b.version || globalConfig.version,
+        autoPassword: b.autoPassword !== undefined ? b.autoPassword : globalConfig.autoPassword,
+        autoSubServerCmd: b.autoSubServerCmd !== undefined ? b.autoSubServerCmd : globalConfig.autoSubServerCmd,
+        autoSubServerDelay: b.autoSubServerDelay !== undefined ? b.autoSubServerDelay : globalConfig.autoSubServerDelay,
+        status: b.status, onlineSince: b.onlineSince || null, pos: b.pos || { x: 0, y: 0, z: 0 },
+        logs: b.logs, inventory: b.inventory || {}
+    }));
+
+    socket.emit('init-data', { botList, globalConfig });
+
+    socket.on('update-config', (newConfig) => {
+        globalConfig = { ...globalConfig, ...newConfig };
+        saveDataToFile();
+        io.emit('config-updated', globalConfig);
+    });
+
+    socket.on('update-bot-config', ({ botId, config }) => {
+        if (!botPool.has(botId)) return;
+        const botData = botPool.get(botId);
+        Object.assign(botData, config);
+        saveDataToFile();
+        io.emit('bot-updated', { botId, config: botData });
+    });
+
+    socket.on('start-bot', (botId) => startBotInstance(botId));
+    socket.on('stop-bot', (botId) => stopBotInstance(botId));
+    socket.on('start-all', () => startAllBots());
+    socket.on('stop-all', () => { for (const id of botPool.keys()) stopBotInstance(id); });
+
+    socket.on('add-bot', (data) => {
+        const username = typeof data === 'string' ? data : data.username;
+        if (!username) return;
+        const id = 'bot_' + Date.now();
+        const newBot = {
+            id, username,
+            host: typeof data === 'object' && data.host ? data.host : globalConfig.host,
+            port: typeof data === 'object' && data.port ? data.port : globalConfig.port,
+            version: typeof data === 'object' && data.version ? data.version : globalConfig.version,
+            autoPassword: typeof data === 'object' && data.autoPassword !== undefined ? data.autoPassword : globalConfig.autoPassword,
+            autoSubServerCmd: typeof data === 'object' && data.autoSubServerCmd !== undefined ? data.autoSubServerCmd : globalConfig.autoSubServerCmd,
+            autoSubServerDelay: typeof data === 'object' && data.autoSubServerDelay !== undefined ? data.autoSubServerDelay : globalConfig.autoSubServerDelay,
+            status: 'Offline', onlineSince: null, pos: { x: 0, y: 0, z: 0 },
+            client: null, logs: [], inventory: {}, scoreboard: null, tabList: {}, entities: {}, isManualStop: false
+        };
+        botPool.set(id, newBot);
+        saveDataToFile();
+        io.emit('bot-added', newBot);
+    });
+
+    socket.on('delete-bot', (botId) => {
+        stopBotInstance(botId);
+        botPool.delete(botId);
+        saveDataToFile();
+        io.emit('bot-deleted', botId);
+    });
+
+    socket.on('send-command', ({ targetBotId, command }) => {
+        if (!command) return;
+        if (targetBotId === 'all') {
+            botPool.forEach((botData) => {
+                if (botData.client && botData.status === 'Online') {
+                    sendChat(botData.client, command);
+                    broadcastLog(botData.id, `> ${command}`, 'command');
+                }
+            });
+        } else {
+            const botData = botPool.get(targetBotId);
+            if (botData && botData.client && botData.status === 'Online') {
+                sendChat(botData.client, command);
+                broadcastLog(targetBotId, `> ${command}`, 'command');
+            }
+        }
+    });
+});
+
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => console.log(`Panel http://localhost:${PORT} adresinde aktif.`));

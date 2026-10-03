@@ -323,7 +323,7 @@ function setupCustomPacketHandler(client, botId) {
         switch (meta.name) {
             case 'update_health':
                 if (data.health <= 0) {
-                    broadcastLog(botId, '☠️ Bot öldü! Otomatik Respawn gönderiliyor...', 'error');
+                    broadcastLog(botId, '☠️️ Bot öldü! Otomatik Respawn gönderiliyor...', 'error');
                     try { client.write('client_command', { actionId: 0 }); } catch (e) {}
                 }
                 break;
@@ -529,19 +529,19 @@ function setupCustomPacketHandler(client, botId) {
             case 'scoreboard_display_objective': {
                 const position = data.position !== undefined ? data.position : data.slot;
                 const name = data.name || data.objectiveName;
-                if (position === 1 && name) {
-                    botData.scoreboardData.sidebarObjective = name;
-                    queueScoreboardUpdate();
-                } else if (position === 1 && !name) {
-                    botData.scoreboardData.sidebarObjective = null;
-                    queueScoreboardUpdate();
+                if (position === 1 || position === undefined) {
+                    if (name) {
+                        botData.scoreboardData.sidebarObjective = name;
+                    }
                 }
+                queueScoreboardUpdate();
                 break;
             }
 
             case 'scoreboard_objective': {
                 const name = data.name || data.objectiveName;
                 const action = data.action !== undefined ? data.action : (data.mode !== undefined ? data.mode : 0);
+                
                 if (action === 0 || action === 2 || data.displayText || data.title) {
                     const titleText = data.displayText || data.title || name;
                     botData.scoreboardData.objectives[name] = {
@@ -549,7 +549,7 @@ function setupCustomPacketHandler(client, botId) {
                         type: data.type || 0,
                         position: data.position
                     };
-                    if (action === 0 && (data.position === 1 || Object.keys(botData.scoreboardData.objectives).length === 1)) {
+                    if (!botData.scoreboardData.sidebarObjective) {
                         botData.scoreboardData.sidebarObjective = name;
                     }
                 } else if (action === 1) {
@@ -564,8 +564,8 @@ function setupCustomPacketHandler(client, botId) {
 
             case 'scoreboard_score':
             case 'set_score': {
-                const objName = data.objectiveName || data.itemName || Object.keys(botData.scoreboardData.objectives)[0];
-                const scoreName = data.scoreName || data.name || data.itemName;
+                const objName = data.objectiveName || data.itemName || data.name || Object.keys(botData.scoreboardData.objectives)[0];
+                const scoreName = data.scoreName || data.name || data.itemName || data.entityName;
                 const action = data.action !== undefined ? data.action : (data.remove ? 1 : 0);
                 
                 if (!objName) break;
@@ -582,10 +582,13 @@ function setupCustomPacketHandler(client, botId) {
                 } else if (action === 1) {
                     if (scoreName && botData.scoreboardData.scores[objName][scoreName]) {
                         delete botData.scoreboardData.scores[objName][scoreName];
-                    } else {
-                        botData.scoreboardData.scores[objName] = {};
                     }
                 }
+                
+                if (!botData.scoreboardData.sidebarObjective && objName) {
+                    botData.scoreboardData.sidebarObjective = objName;
+                }
+
                 queueScoreboardUpdate();
                 break;
             }

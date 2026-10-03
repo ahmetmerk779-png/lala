@@ -114,7 +114,7 @@ function sendChat(client, message) {
     }
 }
 
-// SIRALI OTO-LOGIN VE 3 SANİYEDE BİR TEKRARLAYAN ALT SUNUCU KOMUTU
+// AKILLI AKIŞ: LOGIN -> SINIRLI ALT SUNUCU KOMUTU (MAX 3)
 function setupCustomPacketHandler(client, botId) {
     let isSequenceStarted = false;
     const botData = botPool.get(botId);
@@ -144,7 +144,7 @@ function setupCustomPacketHandler(client, botId) {
                     const pwd = botData.autoPassword !== undefined ? botData.autoPassword : globalConfig.autoPassword;
                     const subCmd = botData.autoSubServerCmd !== undefined ? botData.autoSubServerCmd : globalConfig.autoSubServerCmd;
 
-                    // ADIM 1: Doğduktan 2 saniye sonra şifreyi gir
+                    // 1. ADIM: Doğduktan 2 saniye sonra şifreyi gir
                     setTimeout(() => {
                         if (!botData.client) return;
 
@@ -153,20 +153,23 @@ function setupCustomPacketHandler(client, botId) {
                             broadcastLog(botId, `🔑 /login gönderildi.`, 'info');
                         }
 
-                        // ADIM 2: Her 3 saniyede bir alt sunucu komutunu (/gir asmp) tekrarla
+                        // 2. ADIM: Alt sunucu komutunu en fazla 3 kere (3 sn arayla) dene ve dur
                         if (subCmd && subCmd.trim() !== '') {
-                            // İlk alt sunucu komutunu at
-                            sendChat(client, subCmd);
-                            broadcastLog(botId, `🚀 Alt sunucu komutu gönderildi: ${subCmd}`, 'success');
+                            let tryCount = 1;
+                            const maxTries = 3;
 
-                            // Sürekli 3 saniyede bir çalıştırma döngüsü
+                            sendChat(client, subCmd);
+                            broadcastLog(botId, `🚀 Alt sunucu komutu gönderildi (1/${maxTries}): ${subCmd}`, 'success');
+
                             botData.subCmdInterval = setInterval(() => {
-                                if (botData.client && botData.status === 'Online') {
+                                if (botData.client && botData.status === 'Online' && tryCount < maxTries) {
+                                    tryCount++;
                                     sendChat(client, subCmd);
-                                    broadcastLog(botId, `🚀 Alt sunucu komutu tekrarlandı: ${subCmd}`, 'success');
+                                    broadcastLog(botId, `🚀 Alt sunucu komutu tekrarlandı (${tryCount}/${maxTries}): ${subCmd}`, 'success');
                                 } else {
                                     clearInterval(botData.subCmdInterval);
                                     botData.subCmdInterval = null;
+                                    broadcastLog(botId, `✅ Alt sunucu geçişi tamamlandı. Bot sabit tutuluyor.`, 'info');
                                 }
                             }, 3000);
                         }
@@ -292,17 +295,29 @@ function startBotInstance(botId) {
             botData.status = 'Online';
             broadcastLog(botId, `⚡ ${botData.username} sunucuya girdi!`, 'success');
             io.emit('status-update', { botId, status: 'Online' });
-        });
 
-        client.on('login', () => {
+            // ANTI-AFK BAŞ HAREKETİ DÖNGÜSÜ (Her 2 saniyede bir başını rastgele çevirir)
             if (botData.keepAliveInterval) clearInterval(botData.keepAliveInterval);
+
+            let currentYaw = 0;
+
             botData.keepAliveInterval = setInterval(() => {
                 if (botData.client && botData.status === 'Online') {
                     try {
-                        client.write('look', { yaw: (Math.random() * 360) - 180, pitch: 0, onGround: true });
+                        currentYaw = (currentYaw + (Math.floor(Math.random() * 30) + 15)) % 360;
+                        const pitch = Math.floor(Math.random() * 20) - 10;
+
+                        client.write('look', {
+                            yaw: currentYaw,
+                            pitch: pitch,
+                            onGround: true
+                        });
                     } catch (e) {}
+                } else {
+                    clearInterval(botData.keepAliveInterval);
+                    botData.keepAliveInterval = null;
                 }
-            }, 4000);
+            }, 2000);
         });
 
         client.on('kick_disconnect', (packet) => cleanupBot(botId, `Atıldı: ${packet.reason}`));

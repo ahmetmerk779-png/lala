@@ -97,7 +97,10 @@ function parseMcText(text) {
 function loadSavedData() {
     if (!fs.existsSync(DATA_FILE)) {
         defaultBotConfigs.forEach(cfg => {
-            botPool.set(cfg.id, { ...cfg, status: 'Offline', client: null, logs: [], inventory: {}, scoreboard: null, isManualStop: false });
+            botPool.set(cfg.id, { 
+                ...cfg, status: 'Offline', onlineSince: null, client: null, logs: [], inventory: {}, 
+                scoreboard: null, isManualStop: false, pos: { x: 0, y: 0, z: 0 }, tabList: {}, entities: {} 
+            });
         });
         saveDataToFile();
         return;
@@ -109,7 +112,10 @@ function loadSavedData() {
         if (Array.isArray(parsed.bots) && parsed.bots.length > 0) {
             botPool.clear();
             parsed.bots.forEach(b => {
-                botPool.set(b.id, { ...b, status: 'Offline', client: null, logs: [], inventory: {}, scoreboard: null, isManualStop: false });
+                botPool.set(b.id, { 
+                    ...b, status: 'Offline', onlineSince: null, client: null, logs: [], inventory: {}, 
+                    scoreboard: null, isManualStop: false, pos: { x: 0, y: 0, z: 0 }, tabList: {}, entities: {} 
+                });
             });
         }
     } catch (err) {
@@ -187,10 +193,15 @@ function setupCustomPacketHandler(client, botId) {
         if (botData.afkTimer) clearTimeout(botData.afkTimer);
         if (botData.afkRetryTimer) clearTimeout(botData.afkRetryTimer);
         if (botData.sbUpdateTimer) clearTimeout(botData.sbUpdateTimer);
+        if (botData.tabUpdateTimer) clearTimeout(botData.tabUpdateTimer);
+        if (botData.mapUpdateTimer) clearTimeout(botData.mapUpdateTimer);
+        
         botData.subCmdInterval = null;
         botData.afkTimer = null;
         botData.afkRetryTimer = null;
         botData.sbUpdateTimer = null;
+        botData.tabUpdateTimer = null;
+        botData.mapUpdateTimer = null;
     }
 
     clearBotTimers();
@@ -198,13 +209,47 @@ function setupCustomPacketHandler(client, botId) {
     botData.currentWindowId = 0;
     botData.currentStateId = 0;
     botData.inventory = {};
-    
+    botData.tabList = {};
+    botData.entities = {};
+    botData.pos = { x: 0, y: 0, z: 0 };
+
     botData.scoreboardData = {
         sidebarObjective: null,
         objectives: {},
         scores: {},
         teams: {}
     };
+
+    // --- THROTTLE MEKANİZMALARI (KASMA/ÇÖKME ÖNLEYİCİ) ---
+    function queueScoreboardUpdate() {
+        if (botData.sbUpdateTimer) return;
+        botData.sbUpdateTimer = setTimeout(() => {
+            botData.sbUpdateTimer = null;
+            broadcastDynamicScoreboard();
+        }, 500);
+    }
+
+    function queueTabListUpdate() {
+        if (botData.tabUpdateTimer) return;
+        botData.tabUpdateTimer = setTimeout(() => {
+            botData.tabUpdateTimer = null;
+            const players = Object.values(botData.tabList);
+            io.emit('bot-tablist', { botId, players });
+        }, 600);
+    }
+
+    function queueMapUpdate() {
+        if (botData.mapUpdateTimer) return;
+        botData.mapUpdateTimer = setTimeout(() => {
+            botData.mapUpdateTimer = null;
+            const entityArray = Object.values(botData.entities);
+            io.emit('bot-map-update', { 
+                botId, 
+                pos: botData.pos, 
+                entities: entityArray 
+            });
+        }, 300);
+    }
 
     function broadcastDynamicScoreboard() {
         const sb = botData.scoreboardData;
@@ -250,15 +295,6 @@ function setupCustomPacketHandler(client, botId) {
         });
     }
 
-    // --- RENDER CPU/RAM ÇÖKMESİNİ ÖNLEYEN THROTTLE MEKANİZMASI ---
-    function queueScoreboardUpdate() {
-        if (botData.sbUpdateTimer) return;
-        botData.sbUpdateTimer = setTimeout(() => {
-            botData.sbUpdateTimer = null;
-            broadcastDynamicScoreboard();
-        }, 500); // Saniyede en fazla 2 güncelleme yayınlar
-    }
-
     function triggerAfkWithRetry() {
         if (!botData.client || botData.status !== 'Online') return;
 
@@ -300,8 +336,9 @@ function setupCustomPacketHandler(client, botId) {
             case 'respawn':
                 clearBotTimers();
                 botData.waitingForAfkGui = false;
+                botData.entities = {};
                 afkFailCount = 0;
-                broadcastLog(botId, '🔄 Sunucu değişimi algılandı. AFK süreci yenileniyor...', 'warn');
+                broadcastLog(botId, '🔄 Sunucu değişimi algılandı. AFK ve Harita verileri yenileniyor...', 'warn');
                 botData.afkTimer = setTimeout(() => triggerAfkWithRetry(), 4000);
                 break;
 
@@ -358,7 +395,7 @@ function setupCustomPacketHandler(client, botId) {
             case 'set_slot':
                 if (data.windowId === 0) {
                     const item = data.item;
-                    if (!item || item.present === false || item.itemId === undefined || item.itemId === -1) {
+                    if (!item || item.present === false || item.itemId !== undefined || item.itemId !== -1) {
                         delete botData.inventory[data.slot];
                     } else {
                         const details = getItemDetails(botData.version || globalConfig.version, item.itemId);
@@ -378,6 +415,7 @@ function setupCustomPacketHandler(client, botId) {
                 botData.currentWindowId = data.windowId;
                 break;
 
+            // --- KOORDİNAT VE HARİTA TAKİBİ ---
             case 'position':
                 try {
                     if (data.teleportId !== undefined) {
@@ -385,6 +423,13 @@ function setupCustomPacketHandler(client, botId) {
                     }
                     client.write('position', { x: data.x, y: data.y, z: data.z, onGround: true });
                 } catch (e) {}
+
+                botData.pos = {
+                    x: Math.round(data.x * 10) / 10,
+                    y: Math.round(data.y * 10) / 10,
+                    z: Math.round(data.z * 10) / 10
+                };
+                queueMapUpdate();
 
                 if (!isSequenceStarted) {
                     isSequenceStarted = true;
@@ -426,6 +471,94 @@ function setupCustomPacketHandler(client, botId) {
                 }
                 break;
 
+            // --- HARİTA İÇİN YANINDAKİ OYUNCU/VARLIK TAKİBİ ---
+            case 'spawn_entity':
+            case 'named_entity_spawn':
+                if (data.entityId !== undefined) {
+                    botData.entities[data.entityId] = {
+                        id: data.entityId,
+                        x: Math.round((data.x || 0) * 10) / 10,
+                        y: Math.round((data.y || 0) * 10) / 10,
+                        z: Math.round((data.z || 0) * 10) / 10
+                    };
+                    queueMapUpdate();
+                }
+                break;
+
+            case 'entity_teleport':
+                if (botData.entities[data.entityId]) {
+                    botData.entities[data.entityId].x = Math.round(data.x * 10) / 10;
+                    botData.entities[data.entityId].y = Math.round(data.y * 10) / 10;
+                    botData.entities[data.entityId].z = Math.round(data.z * 10) / 10;
+                    queueMapUpdate();
+                }
+                break;
+
+            case 'rel_entity_move':
+            case 'entity_move_look':
+                if (botData.entities[data.entityId]) {
+                    botData.entities[data.entityId].x += (data.dX || 0) / (32 * 128);
+                    botData.entities[data.entityId].z += (data.dZ || 0) / (32 * 128);
+                    queueMapUpdate();
+                }
+                break;
+
+            case 'entity_destroy':
+            case 'destroy_entities':
+                const eIds = data.entityIds || [data.entityId];
+                if (Array.isArray(eIds)) {
+                    eIds.forEach(id => delete botData.entities[id]);
+                    queueMapUpdate();
+                }
+                break;
+
+            // --- TAB LIST TAKİBİ (1.20.1 & DİĞER SÜRÜMLER UYUMLU) ---
+            case 'player_info_update':
+                if (Array.isArray(data.data)) {
+                    data.data.forEach(p => {
+                        const uuid = p.uuid;
+                        if (!botData.tabList[uuid]) {
+                            botData.tabList[uuid] = { uuid, name: 'Bilinmeyen', displayName: '', ping: 0 };
+                        }
+                        if (p.player && p.player.name) {
+                            botData.tabList[uuid].name = p.player.name;
+                        }
+                        if (p.displayName) {
+                            botData.tabList[uuid].displayName = parseMcText(p.displayName);
+                        }
+                        if (p.latency !== undefined) {
+                            botData.tabList[uuid].ping = p.latency;
+                        }
+                    });
+                    queueTabListUpdate();
+                }
+                break;
+
+            case 'player_remove':
+                if (Array.isArray(data.uuids)) {
+                    data.uuids.forEach(uuid => delete botData.tabList[uuid]);
+                    queueTabListUpdate();
+                }
+                break;
+
+            case 'player_info':
+                if (Array.isArray(data.data)) {
+                    data.data.forEach(p => {
+                        if (data.action === 0) { // Add
+                            botData.tabList[p.uuid] = {
+                                uuid: p.uuid,
+                                name: p.name || 'Bilinmeyen',
+                                displayName: p.displayName ? parseMcText(p.displayName) : p.name,
+                                ping: p.ping || 0
+                            };
+                        } else if (data.action === 4) { // Remove
+                            delete botData.tabList[p.uuid];
+                        }
+                    });
+                    queueTabListUpdate();
+                }
+                break;
+
             case 'keep_alive':
                 try { client.write('keep_alive', { keepAliveId: data.keepAliveId }); } catch (e) {}
                 break;
@@ -451,10 +584,10 @@ function setupCustomPacketHandler(client, botId) {
                 });
                 break;
 
-            // --- DİNAMİK SCOREBOARD PAKETLERİ (KİLİTLENMEYE KARŞI GÜNCELLENDİ) ---
+            // --- SCOREBOARD ---
             case 'display_objective':
             case 'scoreboard_display_objective':
-                if (data.position === 1) { // 1 = Sidebar
+                if (data.position === 1) {
                     botData.scoreboardData.sidebarObjective = data.name;
                     queueScoreboardUpdate();
                 }
@@ -550,6 +683,8 @@ function cleanupBot(botId, reason) {
     if (botData.afkTimer) clearTimeout(botData.afkTimer);
     if (botData.afkRetryTimer) clearTimeout(botData.afkRetryTimer);
     if (botData.sbUpdateTimer) clearTimeout(botData.sbUpdateTimer);
+    if (botData.tabUpdateTimer) clearTimeout(botData.tabUpdateTimer);
+    if (botData.mapUpdateTimer) clearTimeout(botData.mapUpdateTimer);
     if (botData.reconnectTimer) clearTimeout(botData.reconnectTimer);
 
     if (botData.client) {
@@ -561,11 +696,18 @@ function cleanupBot(botId, reason) {
     }
 
     botData.status = 'Offline';
+    botData.onlineSince = null;
     botData.inventory = {};
     botData.scoreboard = null;
+    botData.tabList = {};
+    botData.entities = {};
+    botData.pos = { x: 0, y: 0, z: 0 };
+
     broadcastLog(botId, `🔴 ${reason}`, 'error');
-    io.emit('status-update', { botId, status: 'Offline' });
+    io.emit('status-update', { botId, status: 'Offline', onlineSince: null });
     io.emit('bot-scoreboard', { botId, scoreboard: null });
+    io.emit('bot-tablist', { botId, players: [] });
+    io.emit('bot-map-update', { botId, pos: { x: 0, y: 0, z: 0 }, entities: [] });
 
     if (!botData.isManualStop && globalConfig.autoReconnect) {
         botData.reconnectTimer = setTimeout(() => {
@@ -587,7 +729,7 @@ function startBotInstance(botId) {
 
     broadcastLog(botId, `${botData.username} bağlanıyor (${host}:${port})...`, 'info');
     botData.status = 'Connecting';
-    io.emit('status-update', { botId, status: 'Connecting' });
+    io.emit('status-update', { botId, status: 'Connecting', onlineSince: null });
 
     try {
         const client = mc.createClient({
@@ -604,8 +746,9 @@ function startBotInstance(botId) {
 
         client.on('success', () => {
             botData.status = 'Online';
+            botData.onlineSince = Date.now();
             broadcastLog(botId, `⚡ ${botData.username} sunucuya girdi!`, 'success');
-            io.emit('status-update', { botId, status: 'Online' });
+            io.emit('status-update', { botId, status: 'Online', onlineSince: botData.onlineSince });
 
             if (botData.keepAliveInterval) clearInterval(botData.keepAliveInterval);
             let currentYaw = 0;
@@ -660,7 +803,8 @@ io.on('connection', (socket) => {
         autoPassword: b.autoPassword !== undefined ? b.autoPassword : globalConfig.autoPassword,
         autoSubServerCmd: b.autoSubServerCmd !== undefined ? b.autoSubServerCmd : globalConfig.autoSubServerCmd,
         autoSubServerDelay: b.autoSubServerDelay !== undefined ? b.autoSubServerDelay : globalConfig.autoSubServerDelay,
-        status: b.status, logs: b.logs, inventory: b.inventory || {}
+        status: b.status, onlineSince: b.onlineSince || null, pos: b.pos || { x: 0, y: 0, z: 0 },
+        logs: b.logs, inventory: b.inventory || {}
     }));
 
     socket.emit('init-data', { botList, globalConfig });
@@ -696,7 +840,8 @@ io.on('connection', (socket) => {
             autoPassword: typeof data === 'object' && data.autoPassword !== undefined ? data.autoPassword : globalConfig.autoPassword,
             autoSubServerCmd: typeof data === 'object' && data.autoSubServerCmd !== undefined ? data.autoSubServerCmd : globalConfig.autoSubServerCmd,
             autoSubServerDelay: typeof data === 'object' && data.autoSubServerDelay !== undefined ? data.autoSubServerDelay : globalConfig.autoSubServerDelay,
-            status: 'Offline', client: null, logs: [], inventory: {}, scoreboard: null, isManualStop: false
+            status: 'Offline', onlineSince: null, pos: { x: 0, y: 0, z: 0 },
+            client: null, logs: [], inventory: {}, scoreboard: null, tabList: {}, entities: {}, isManualStop: false
         };
         botPool.set(id, newBot);
         saveDataToFile();

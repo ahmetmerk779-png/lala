@@ -36,14 +36,47 @@ const defaultBotConfigs = [
     { id: 'bot_3', username: 'Deliyiz_3', host: '141.95.82.164', port: 25565, autoPassword: 'deliyizpassword' }
 ];
 
-function getItemDetails(version, itemId) {
+// === MC DATA YEDEKLEMELİ YÜKLEYİCİ ===
+const mcDataCache = {};
+
+function getMcData(version) {
+    const verStr = (version || '1.20.1').toString().trim();
+    if (mcDataCache[verStr]) return mcDataCache[verStr];
+
     try {
-        const data = mcData(version || '1.20.1');
+        const data = mcData(verStr);
+        if (data && data.items) {
+            mcDataCache[verStr] = data;
+            return data;
+        }
+    } catch (e) {
+        console.warn(`[mcData Warning] '${verStr}' yüklenemedi, 1.20.1 deneniyor...`);
+    }
+
+    try {
+        if (!mcDataCache['1.20.1']) {
+            mcDataCache['1.20.1'] = mcData('1.20.1');
+        }
+        return mcDataCache['1.20.1'];
+    } catch (e) {
+        console.error('[mcData HATA] minecraft-data kütüphanesi yüklenemedi!');
+        return null;
+    }
+}
+
+function getItemDetails(version, itemId) {
+    if (itemId === undefined || itemId === null || itemId === -1) return null;
+    
+    const data = getMcData(version);
+    if (data && data.items) {
         const item = data.items[itemId];
         if (item) {
-            return { name: item.name, displayName: item.displayName };
+            return {
+                name: item.name,
+                displayName: item.displayName || item.name
+            };
         }
-    } catch (e) {}
+    }
     return { name: 'unknown', displayName: `ID: ${itemId}` };
 }
 
@@ -164,13 +197,13 @@ function setupCustomPacketHandler(client, botId) {
                 afkFailCount++;
 
                 if (afkFailCount >= 3) {
-                    broadcastLog(botId, '⚠️ Menü açılmadı! Lobiye düşülmüş olabilir. Tekrar ASMP\'ye giriliyor...', 'error');
+                    broadcastLog(botId, '⚠️ Menü açılmadı! Lobiye düşülmüş olabilir. Tekrar alt sunucuya giriliyor...', 'error');
                     afkFailCount = 0;
                     isSequenceStarted = false;
                     const subCmd = botData.autoSubServerCmd !== undefined ? botData.autoSubServerCmd : globalConfig.autoSubServerCmd;
                     if (subCmd) sendChat(client, subCmd);
                 } else {
-                    broadcastLog(botId, `⚠️️ Menü açılmadı, /afk tekrar deneniyor... (${afkFailCount}/3)`, 'warn');
+                    broadcastLog(botId, `⚠ Menü açılmadı, /afk tekrar deneniyor... (${afkFailCount}/3)`, 'warn');
                     triggerAfkWithRetry();
                 }
             }
@@ -208,8 +241,8 @@ function setupCustomPacketHandler(client, botId) {
                                 botData.inventory[index] = {
                                     slot: index,
                                     id: item.itemId,
-                                    name: details.name,
-                                    displayName: details.displayName,
+                                    name: details ? details.name : 'unknown',
+                                    displayName: details ? details.displayName : `ID: ${item.itemId}`,
                                     count: item.itemCount || 1
                                 };
                             }
@@ -259,8 +292,8 @@ function setupCustomPacketHandler(client, botId) {
                         botData.inventory[data.slot] = {
                             slot: data.slot,
                             id: item.itemId,
-                            name: details.name,
-                            displayName: details.displayName,
+                            name: details ? details.name : 'unknown',
+                            displayName: details ? details.displayName : `ID: ${item.itemId}`,
                             count: item.itemCount || 1
                         };
                     }

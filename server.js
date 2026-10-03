@@ -2,6 +2,7 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const mc = require('minecraft-protocol');
+const mcData = require('minecraft-data');
 const path = require('path');
 const fs = require('fs');
 
@@ -12,7 +13,7 @@ const io = new Server(server);
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
 
-// Global Çökme ve RAM Taşması Korumaları
+// Global Çökme Korumaları
 process.on('uncaughtException', (err) => console.error('[Hata Engellendi]:', err.message));
 process.on('unhandledRejection', (reason) => console.error('[Söz Rejeksiyonu Engellendi]:', reason));
 
@@ -34,6 +35,17 @@ const defaultBotConfigs = [
     { id: 'bot_2', username: 'Deliyiz_2', host: '141.95.82.164', port: 25565, autoPassword: 'deliyizpassword' },
     { id: 'bot_3', username: 'Deliyiz_3', host: '141.95.82.164', port: 25565, autoPassword: 'deliyizpassword' }
 ];
+
+function getItemDetails(version, itemId) {
+    try {
+        const data = mcData(version || '1.20.1');
+        const item = data.items[itemId];
+        if (item) {
+            return { name: item.name, displayName: item.displayName };
+        }
+    } catch (e) {}
+    return { name: 'unknown', displayName: `ID: ${itemId}` };
+}
 
 function loadSavedData() {
     if (!fs.existsSync(DATA_FILE)) {
@@ -81,7 +93,7 @@ function broadcastLog(botId, text, type = 'info') {
     if (botPool.has(botId)) {
         const botData = botPool.get(botId);
         botData.logs.push(logEntry);
-        if (botData.logs.length > 15) botData.logs.shift();
+        if (botData.logs.length > 20) botData.logs.shift();
     }
     io.emit('bot-log', logEntry);
 }
@@ -118,9 +130,6 @@ function sendChat(client, message) {
     } catch (e) {}
 }
 
-// -------------------------------------------------------------
-// MINECRAFT PROTOCOL PAKET VE ENVANTER YÖNETİCİSİ
-// -------------------------------------------------------------
 function setupCustomPacketHandler(client, botId) {
     let isSequenceStarted = false;
     let afkFailCount = 0;
@@ -161,7 +170,7 @@ function setupCustomPacketHandler(client, botId) {
                     const subCmd = botData.autoSubServerCmd !== undefined ? botData.autoSubServerCmd : globalConfig.autoSubServerCmd;
                     if (subCmd) sendChat(client, subCmd);
                 } else {
-                    broadcastLog(botId, `⚠️ Menü açılmadı, /afk tekrar deneniyor... (${afkFailCount}/3)`, 'warn');
+                    broadcastLog(botId, `⚠️️ Menü açılmadı, /afk tekrar deneniyor... (${afkFailCount}/3)`, 'warn');
                     triggerAfkWithRetry();
                 }
             }
@@ -172,40 +181,35 @@ function setupCustomPacketHandler(client, botId) {
         if (meta.state !== 'play') return;
 
         switch (meta.name) {
-            // CAN KONTROLÜ VE OTOMATİK DOĞMA (RESPAWN)
             case 'update_health':
                 if (data.health <= 0) {
-                    broadcastLog(botId, '☠️ Bot öldü! Otomatik Yeniden Doğma (Respawn) gönderiliyor...', 'error');
+                    broadcastLog(botId, '☠️ Bot öldü! Otomatik Respawn gönderiliyor...', 'error');
                     try {
                         client.write('client_command', { actionId: 0 });
                     } catch (e) {}
                 }
                 break;
 
-            // LOBİYE DÜŞME / RESPAWN / SUNUCU DEĞİŞİMİ
             case 'respawn':
                 clearBotTimers();
                 botData.waitingForAfkGui = false;
                 afkFailCount = 0;
-
                 broadcastLog(botId, '🔄 Sunucu değişimi/Yeniden doğma algılandı. AFK süreci yeniden başlatılıyor...', 'warn');
-
-                botData.afkTimer = setTimeout(() => {
-                    triggerAfkWithRetry();
-                }, 4000);
+                botData.afkTimer = setTimeout(() => triggerAfkWithRetry(), 4000);
                 break;
 
-            // ENVANTER GÜNCELLEMESİ VEYA MENÜ AÇILMASI
             case 'window_items':
                 if (data.windowId === 0) {
-                    // Botun Ana Envanteri
                     botData.inventory = {};
                     if (Array.isArray(data.items)) {
                         data.items.forEach((item, index) => {
                             if (item && item.present !== false && item.itemId !== undefined && item.itemId !== -1) {
+                                const details = getItemDetails(botData.version || globalConfig.version, item.itemId);
                                 botData.inventory[index] = {
                                     slot: index,
                                     id: item.itemId,
+                                    name: details.name,
+                                    displayName: details.displayName,
                                     count: item.itemCount || 1
                                 };
                             }
@@ -213,7 +217,6 @@ function setupCustomPacketHandler(client, botId) {
                     }
                     broadcastInventory(botId);
                 } else {
-                    // Sanal Menü
                     botData.currentWindowId = data.windowId;
                     botData.currentStateId = data.stateId;
 
@@ -225,7 +228,7 @@ function setupCustomPacketHandler(client, botId) {
                         setTimeout(() => {
                             if (botData.client && botData.status === 'Online') {
                                 try {
-                                    const targetSlot = 12; // AFK BÖLGESİ 1
+                                    const targetSlot = 12;
                                     client.write('window_click', {
                                         windowId: botData.currentWindowId,
                                         stateId: botData.currentStateId,
@@ -246,16 +249,18 @@ function setupCustomPacketHandler(client, botId) {
                 }
                 break;
 
-            // ENVANTER TEK SLOT DEĞİŞİMİ
             case 'set_slot':
                 if (data.windowId === 0) {
                     const item = data.item;
                     if (!item || item.present === false || item.itemId === undefined || item.itemId === -1) {
                         delete botData.inventory[data.slot];
                     } else {
+                        const details = getItemDetails(botData.version || globalConfig.version, item.itemId);
                         botData.inventory[data.slot] = {
                             slot: data.slot,
                             id: item.itemId,
+                            name: details.name,
+                            displayName: details.displayName,
                             count: item.itemCount || 1
                         };
                     }
@@ -307,14 +312,9 @@ function setupCustomPacketHandler(client, botId) {
                                 }
                             }, 3000);
 
-                            botData.afkTimer = setTimeout(() => {
-                                triggerAfkWithRetry();
-                            }, 10000);
-
+                            botData.afkTimer = setTimeout(() => triggerAfkWithRetry(), 10000);
                         } else {
-                            botData.afkTimer = setTimeout(() => {
-                                triggerAfkWithRetry();
-                            }, 4000);
+                            botData.afkTimer = setTimeout(() => triggerAfkWithRetry(), 4000);
                         }
                     }, 2000);
                 }
@@ -333,7 +333,6 @@ function setupCustomPacketHandler(client, botId) {
             case 'chat':
                 handleIncomingChat(data, botId, (msg) => {
                     broadcastLog(botId, msg, 'chat');
-
                     const msgLower = msg.toLowerCase();
                     if (msgLower.includes('ışınlanma isteği') || msgLower.includes('teleport request') || msgLower.includes('tpaccept')) {
                         broadcastLog(botId, '📡 TPA isteği algılandı, kabul ediliyor...', 'info');
@@ -434,7 +433,6 @@ function startBotInstance(botId) {
         });
 
         botData.client = client;
-
         setupCustomPacketHandler(client, botId);
 
         client.on('success', () => {
@@ -445,7 +443,6 @@ function startBotInstance(botId) {
             if (botData.keepAliveInterval) clearInterval(botData.keepAliveInterval);
             let currentYaw = 0;
 
-            // ANTI-AFK (Kafa Çevirme + El Sallama)
             botData.keepAliveInterval = setInterval(() => {
                 if (botData.client && botData.status === 'Online') {
                     try {
@@ -489,7 +486,6 @@ function startAllBots() {
     }
 }
 
-// SOCKET.IO ARAYÜZ YÖNETİMİ
 io.on('connection', (socket) => {
     const botList = Array.from(botPool.values()).map(b => ({
         id: b.id, username: b.username, host: b.host || globalConfig.host,
@@ -567,4 +563,4 @@ io.on('connection', (socket) => {
 });
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => { console.log(`Panel http://localhost:${PORT} adresinde aktif.`); });
+server.listen(PORT, () => console.log(`Panel http://localhost:${PORT} adresinde aktif.`));

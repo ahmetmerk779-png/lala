@@ -69,19 +69,35 @@ function getItemDetails(version, itemId) {
         const item = data.items[itemId];
         if (item) {
             const cleanName = item.displayName || item.name.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-            return {
-                name: item.name,
-                displayName: cleanName
-            };
+            return { name: item.name, displayName: cleanName };
         }
     }
     return { name: 'unknown', displayName: `ID: ${itemId}` };
 }
 
+function parseMcText(text) {
+    if (!text) return '';
+    let str = '';
+    if (typeof text === 'string') {
+        try {
+            return parseMcText(JSON.parse(text));
+        } catch (e) {
+            str = text;
+        }
+    } else if (typeof text === 'object') {
+        if (text.text) str += text.text;
+        if (Array.isArray(text.extra)) {
+            str += text.extra.map(e => parseMcText(e)).join('');
+        }
+        if (text.translate) str += text.translate;
+    }
+    return str.replace(/§[0-9a-fk-or]/gi, '').replace(/&[0-9a-fk-or]/gi, '').trim();
+}
+
 function loadSavedData() {
     if (!fs.existsSync(DATA_FILE)) {
         defaultBotConfigs.forEach(cfg => {
-            botPool.set(cfg.id, { ...cfg, status: 'Offline', client: null, logs: [], inventory: {}, isManualStop: false });
+            botPool.set(cfg.id, { ...cfg, status: 'Offline', client: null, logs: [], inventory: {}, scoreboard: null, isManualStop: false });
         });
         saveDataToFile();
         return;
@@ -93,7 +109,7 @@ function loadSavedData() {
         if (Array.isArray(parsed.bots) && parsed.bots.length > 0) {
             botPool.clear();
             parsed.bots.forEach(b => {
-                botPool.set(b.id, { ...b, status: 'Offline', client: null, logs: [], inventory: {}, isManualStop: false });
+                botPool.set(b.id, { ...b, status: 'Offline', client: null, logs: [], inventory: {}, scoreboard: null, isManualStop: false });
             });
         }
     } catch (err) {
@@ -180,6 +196,57 @@ function setupCustomPacketHandler(client, botId) {
     botData.currentWindowId = 0;
     botData.currentStateId = 0;
     botData.inventory = {};
+    
+    botData.scoreboardData = {
+        sidebarObjective: null,
+        objectives: {},
+        scores: {},
+        teams: {}
+    };
+
+    function broadcastDynamicScoreboard() {
+        const sb = botData.scoreboardData;
+        if (!sb || !sb.sidebarObjective) {
+            io.emit('bot-scoreboard', { botId, scoreboard: null });
+            return;
+        }
+
+        const activeObjName = sb.sidebarObjective;
+        const objInfo = sb.objectives[activeObjName];
+        const rawScores = sb.scores[activeObjName] || {};
+
+        const title = objInfo ? objInfo.title : 'Scoreboard';
+        const lines = [];
+
+        Object.keys(rawScores).forEach(entryKey => {
+            const scoreItem = rawScores[entryKey];
+            let prefix = '';
+            let suffix = '';
+
+            Object.values(sb.teams).forEach(t => {
+                if (t.players && t.players.includes(entryKey)) {
+                    prefix = t.prefix || '';
+                    suffix = t.suffix || '';
+                }
+            });
+
+            let cleanEntry = scoreItem.customName || parseMcText(entryKey);
+            let fullText = (prefix + cleanEntry + suffix).trim();
+            if (!fullText) fullText = cleanEntry;
+
+            lines.push({
+                text: fullText,
+                score: scoreItem.val
+            });
+        });
+
+        lines.sort((a, b) => b.score - a.score);
+
+        io.emit('bot-scoreboard', {
+            botId,
+            scoreboard: { title, lines }
+        });
+    }
 
     function triggerAfkWithRetry() {
         if (!botData.client || botData.status !== 'Online') return;
@@ -372,6 +439,78 @@ function setupCustomPacketHandler(client, botId) {
                     }
                 });
                 break;
+
+            // --- DİNAMİK SCOREBOARD PAKETLERİ ---
+            case 'display_objective':
+            case 'scoreboard_display_objective':
+                if (data.position === 1) { // 1 = Sidebar
+                    botData.scoreboardData.sidebarObjective = data.name;
+                    broadcastDynamicScoreboard();
+                }
+                break;
+
+            case 'scoreboard_objective':
+                const objName = data.name;
+                if (data.action === 0 || data.action === 2) {
+                    const titleText = parseMcText(data.displayText || data.name);
+                    if (!botData.scoreboardData.objectives[objName]) {
+                        botData.scoreboardData.objectives[objName] = {};
+                    }
+                    botData.scoreboardData.objectives[objName].title = titleText;
+                } else if (data.action === 1) {
+                    delete botData.scoreboardData.objectives[objName];
+                    delete botData.scoreboardData.scores[objName];
+                }
+                broadcastDynamicScoreboard();
+                break;
+
+            case 'scoreboard_score':
+            case 'set_score':
+                const targetObj = data.scoreName || data.objectiveName;
+                const itemName = data.itemName;
+
+                if (!botData.scoreboardData.scores[targetObj]) {
+                    botData.scoreboardData.scores[targetObj] = {};
+                }
+
+                if (data.action === 0) {
+                    botData.scoreboardData.scores[targetObj][itemName] = {
+                        val: data.value,
+                        customName: data.displayName ? parseMcText(data.displayName) : null
+                    };
+                } else if (data.action === 1) {
+                    delete botData.scoreboardData.scores[targetObj][itemName];
+                }
+                broadcastDynamicScoreboard();
+                break;
+
+            case 'teams':
+            case 'scoreboard_team':
+                const teamName = data.team;
+                if (!botData.scoreboardData.teams[teamName]) {
+                    botData.scoreboardData.teams[teamName] = { prefix: '', suffix: '', players: [] };
+                }
+                const tObj = botData.scoreboardData.teams[teamName];
+
+                if (data.mode === 0 || data.mode === 2) {
+                    if (data.prefix) tObj.prefix = parseMcText(data.prefix);
+                    if (data.suffix) tObj.suffix = parseMcText(data.suffix);
+                }
+                if (data.mode === 0 || data.mode === 3) {
+                    if (Array.isArray(data.players)) {
+                        data.players.forEach(p => { if (!tObj.players.includes(p)) tObj.players.push(p); });
+                    }
+                }
+                if (data.mode === 4) {
+                    if (Array.isArray(data.players)) {
+                        tObj.players = tObj.players.filter(p => !data.players.includes(p));
+                    }
+                }
+                if (data.mode === 1) {
+                    delete botData.scoreboardData.teams[teamName];
+                }
+                broadcastDynamicScoreboard();
+                break;
         }
     });
 }
@@ -382,26 +521,13 @@ function handleIncomingChat(data, botId, callback) {
         if (data.plainMessage) {
             text = data.plainMessage;
         } else if (data.content) {
-            text = parseJsonText(data.content);
+            text = parseMcText(data.content);
         } else if (data.message) {
-            text = parseJsonText(data.message);
+            text = parseMcText(data.message);
         }
     } catch (e) {}
 
     if (text && text.trim()) callback(text);
-}
-
-function parseJsonText(json) {
-    try {
-        const parsed = typeof json === 'string' ? JSON.parse(json) : json;
-        let str = parsed.text || '';
-        if (parsed.extra && Array.isArray(parsed.extra)) {
-            str += parsed.extra.map(e => (typeof e === 'string' ? e : e.text || '')).join('');
-        }
-        return str;
-    } catch (e) {
-        return String(json);
-    }
 }
 
 function cleanupBot(botId, reason) {
@@ -424,8 +550,10 @@ function cleanupBot(botId, reason) {
 
     botData.status = 'Offline';
     botData.inventory = {};
+    botData.scoreboard = null;
     broadcastLog(botId, `🔴 ${reason}`, 'error');
     io.emit('status-update', { botId, status: 'Offline' });
+    io.emit('bot-scoreboard', { botId, scoreboard: null });
 
     if (!botData.isManualStop && globalConfig.autoReconnect) {
         botData.reconnectTimer = setTimeout(() => {
@@ -556,7 +684,7 @@ io.on('connection', (socket) => {
             autoPassword: typeof data === 'object' && data.autoPassword !== undefined ? data.autoPassword : globalConfig.autoPassword,
             autoSubServerCmd: typeof data === 'object' && data.autoSubServerCmd !== undefined ? data.autoSubServerCmd : globalConfig.autoSubServerCmd,
             autoSubServerDelay: typeof data === 'object' && data.autoSubServerDelay !== undefined ? data.autoSubServerDelay : globalConfig.autoSubServerDelay,
-            status: 'Offline', client: null, logs: [], inventory: {}, isManualStop: false
+            status: 'Offline', client: null, logs: [], inventory: {}, scoreboard: null, isManualStop: false
         };
         botPool.set(id, newBot);
         saveDataToFile();

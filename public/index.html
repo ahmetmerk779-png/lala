@@ -2,211 +2,413 @@
 <html lang="tr">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Minecraft Bot Yönetim Paneli</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Minecraft Bot Panel</title>
     <script src="/socket.io/socket.io.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
     <style>
+        :root {
+            --bg-body: #0b0f17;
+            --bg-card: #151c28;
+            --bg-input: #1e293b;
+            --border-color: #27354a;
+            --accent-primary: #6366f1;
+            --accent-hover: #4f46e5;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+        }
+
         * {
             box-sizing: border-box;
             margin: 0;
             padding: 0;
-            font-family: 'Consolas', 'Courier New', monospace;
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            -webkit-tap-highlight-color: transparent;
         }
 
         body {
-            background-color: #121212;
-            color: #d4d4d4;
-            padding: 15px;
+            background-color: var(--bg-body);
+            color: var(--text-main);
+            padding: 12px;
+            font-size: 14px;
         }
 
         .container {
-            max-width: 1000px;
+            max-width: 800px;
             margin: 0 auto;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
         }
 
-        .card {
-            background-color: #1e1e1e;
-            border: 1px solid #333333;
-            border-radius: 4px;
-            padding: 12px;
-            margin-bottom: 15px;
-        }
-
-        .card-title {
-            font-size: 14px;
-            font-weight: bold;
-            color: #4ec9b0;
-            margin-bottom: 10px;
-            text-transform: uppercase;
-        }
-
-        input, select, button {
-            background-color: #252526;
-            border: 1px solid #3c3c3c;
-            color: #ccc;
-            padding: 8px 12px;
-            border-radius: 3px;
-            font-size: 13px;
-        }
-
-        input:focus {
-            outline: 1px solid #007acc;
-        }
-
-        button {
-            cursor: pointer;
-            font-weight: bold;
-        }
-
-        button.btn-green { background-color: #2e7d32; color: #fff; border: none; }
-        button.btn-red { background-color: #c62828; color: #fff; border: none; }
-        button.btn-blue { background-color: #1565c0; color: #fff; border: none; }
-        button.btn-orange { background-color: #e65100; color: #fff; border: none; }
-
-        .bot-card {
-            background-color: #181818;
-            border: 1px solid #2a2a2a;
-            border-radius: 4px;
-            padding: 10px;
-            margin-bottom: 12px;
-        }
-
-        .bot-header {
+        /* HEADER */
+        .header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 8px;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            padding: 14px 16px;
+            border-radius: 12px;
         }
 
-        .bot-status {
-            font-size: 11px;
-            padding: 2px 6px;
-            border-radius: 3px;
-            font-weight: bold;
-        }
-        .status-Online { background-color: #1b5e20; color: #81c784; }
-        .status-Offline { background-color: #b71c1c; color: #ef9a9a; }
-        .status-Connecting { background-color: #f57f17; color: #fff176; }
-
-        .log-box {
-            background-color: #0d0d0d;
-            border: 1px solid #222;
-            height: 110px;
-            overflow-y: auto;
-            padding: 6px;
-            font-size: 11px;
-            margin-bottom: 8px;
-            border-radius: 3px;
+        .header h1 {
+            font-size: 16px;
+            font-weight: 700;
+            background: linear-gradient(135deg, #a5b4fc, #6366f1);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            display: flex;
+            align-items: center;
+            gap: 8px;
         }
 
-        .log-line { margin-bottom: 2px; word-break: break-all; }
-        .log-info { color: #9cdcfe; }
-        .log-success { color: #6a9955; }
-        .log-warn { color: #d7ba7d; }
-        .log-error { color: #f44747; }
-        .log-chat { color: #ce9178; }
-
-        /* ENVANTER BÖLÜMÜ (HER BOTA ÖZEL IZGARA) */
-        .inventory-section {
-            margin-top: 10px;
-            background-color: #111;
-            border: 1px solid #252526;
-            padding: 8px;
-            border-radius: 3px;
+        /* CARD */
+        .card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 14px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
         }
 
-        .inventory-header {
+        .card-header {
             font-size: 12px;
-            color: #dcdcaa;
-            margin-bottom: 6px;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        /* INPUTS & BUTTONS */
+        .form-group {
+            display: flex;
+            gap: 8px;
+        }
+
+        input, select {
+            background: var(--bg-input);
+            border: 1px solid var(--border-color);
+            color: var(--text-main);
+            padding: 10px 12px;
+            border-radius: 8px;
+            font-size: 13px;
+            outline: none;
+            transition: all 0.2s;
+        }
+
+        input:focus {
+            border-color: var(--accent-primary);
+            box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
+        }
+
+        button {
+            border: none;
+            padding: 9px 14px;
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            transition: transform 0.1s, opacity 0.2s;
+            color: #fff;
+        }
+
+        button:active { transform: scale(0.97); }
+
+        .btn-primary { background: var(--accent-primary); }
+        .btn-primary:hover { background: var(--accent-hover); }
+        .btn-success { background: #059669; }
+        .btn-warning { background: #d97706; }
+        .btn-danger { background: #dc2626; }
+        .btn-secondary { background: #334155; color: var(--text-main); }
+
+        /* BOT CARD */
+        .bot-card {
+            background: #0f172a;
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 12px;
+            margin-bottom: 12px;
+        }
+
+        .bot-top {
             display: flex;
             justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .bot-title {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .bot-name {
+            font-weight: 700;
+            font-size: 15px;
+            color: #f1f5f9;
+        }
+
+        .badge {
+            font-size: 11px;
+            padding: 3px 8px;
+            border-radius: 20px;
+            font-weight: 600;
+        }
+        .badge-Online { background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3); }
+        .badge-Offline { background: rgba(239, 68, 68, 0.15); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.3); }
+        .badge-Connecting { background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.3); }
+
+        .bot-actions {
+            display: flex;
+            gap: 4px;
+        }
+
+        /* LOG BOX */
+        .log-box {
+            background: #020617;
+            border: 1px solid #1e293b;
+            height: 110px;
+            overflow-y: auto;
+            padding: 8px;
+            font-family: 'Fira Code', monospace;
+            font-size: 11px;
+            border-radius: 6px;
+            margin-bottom: 10px;
+        }
+
+        .log-line { margin-bottom: 3px; word-break: break-all; }
+        .log-info { color: #38bdf8; }
+        .log-success { color: #4ade80; }
+        .log-warn { color: #fbbf24; }
+        .log-error { color: #f87171; }
+        .log-chat { color: #e879f9; }
+        .log-command { color: #a7f3d0; font-weight: bold; }
+
+        /* ENVANTER GRID */
+        .inventory-wrapper {
+            background: #0b0f17;
+            border: 1px solid #1e293b;
+            padding: 8px;
+            border-radius: 8px;
+        }
+
+        .inventory-title {
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-bottom: 6px;
+            font-weight: 600;
         }
 
         .inventory-grid {
             display: grid;
             grid-template-columns: repeat(9, 1fr);
-            gap: 4px;
+            gap: 3px;
         }
 
         .inv-slot {
-            background-color: #222;
-            border: 1px solid #333;
+            background: #1e293b;
+            border: 1px solid #334155;
             aspect-ratio: 1;
             display: flex;
-            flex-direction: column;
             align-items: center;
             justify-content: center;
-            font-size: 10px;
             position: relative;
-            border-radius: 2px;
+            border-radius: 4px;
+            font-size: 9px;
+            color: #64748b;
         }
 
         .inv-slot.has-item {
-            background-color: #2a2d32;
-            border-color: #4ec9b0;
-        }
-
-        .inv-slot-id {
-            color: #888;
-            font-size: 9px;
-            line-height: 1;
+            background: #1e1b4b;
+            border-color: #6366f1;
+            color: #a5b4fc;
         }
 
         .inv-slot-count {
             position: absolute;
-            bottom: 2px;
-            right: 3px;
-            color: #ffcc00;
-            font-weight: bold;
-            font-size: 10px;
+            bottom: 1px;
+            right: 2px;
+            color: #fbbf24;
+            font-weight: 700;
+            font-size: 9px;
         }
 
-        .cmd-group {
-            display: flex;
-            gap: 5px;
+        /* MODAL */
+        .modal-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0, 0, 0, 0.75);
+            backdrop-filter: blur(4px);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            padding: 15px;
         }
-        .cmd-group input { flex: 1; }
+
+        .modal {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            width: 100%;
+            max-width: 400px;
+            border-radius: 12px;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+        }
+
+        .modal-title {
+            font-size: 15px;
+            font-weight: 700;
+            color: var(--text-main);
+        }
+
+        .field {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .field label {
+            font-size: 11px;
+            color: var(--text-muted);
+            font-weight: 600;
+        }
     </style>
 </head>
 <body>
 
 <div class="container">
+    <!-- HEADER -->
+    <div class="header">
+        <h1>🤖 MC Bot Manager</h1>
+        <button class="btn-secondary" onclick="openGlobalSettings()">⚙️ Genel Ayarlar</button>
+    </div>
+
+    <!-- SOHBET & KOMUT -->
     <div class="card">
-        <div class="card-title">💬 OYUN İÇİ SOHBET & KOMUT KONSOLU</div>
-        <div class="cmd-group">
-            <select id="targetBotSelect">
-                <option value="all">Tüm Botlar (All)</option>
+        <div class="card-header">💬 Konsol & Komut Gönderimi</div>
+        <div class="form-group">
+            <select id="targetBotSelect" style="max-width: 130px;">
+                <option value="all">Tüm Botlar</option>
             </select>
-            <input type="text" id="globalCmdInput" placeholder="Mesaj veya komut yazın (/afk, /login ...)">
-            <button class="btn-green" onclick="sendGlobalCommand()">Gönder</button>
+            <input type="text" id="globalCmdInput" placeholder="Komut veya mesaj yazın (/afk, /login...)" style="flex: 1;">
+            <button class="btn-primary" onclick="sendGlobalCommand()">Gönder</button>
         </div>
     </div>
 
+    <!-- BOT EKLEME VE TOPLU KONTROL -->
     <div class="card">
-        <div class="card-title">[+] BOT YÖNETİMİ</div>
-        <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+        <div class="card-header">➕ Bot Yönetimi</div>
+        <div class="form-group" style="margin-bottom: 10px;">
             <input type="text" id="newBotUsername" placeholder="Yeni Bot Kullanıcı Adı" style="flex: 1;">
-            <button class="btn-green" onclick="addBot()">Bot Ekle</button>
+            <button class="btn-success" onclick="addBot()">Ekle</button>
         </div>
-        <div>
-            <button class="btn-green" onclick="socket.emit('start-all')">⚡ Tümünü Başlat</button>
-            <button class="btn-red" onclick="socket.emit('stop-all')">🛑 Tümünü Durdur</button>
+        <div style="display: flex; gap: 8px;">
+            <button class="btn-success" style="flex: 1;" onclick="socket.emit('start-all')">⚡ Tümünü Başlat</button>
+            <button class="btn-danger" style="flex: 1;" onclick="socket.emit('stop-all')">🛑 Tümünü Durdur</button>
         </div>
     </div>
 
+    <!-- BOT LİSTESİ -->
     <div class="card">
-        <div class="card-title">[=] BOT LİSTESİ</div>
+        <div class="card-header">📋 Aktif Bot Listesi</div>
         <div id="botListContainer"></div>
+    </div>
+</div>
+
+<!-- BOTA ÖZEL AYARLAR MODAL -->
+<div class="modal-overlay" id="botSettingsModal">
+    <div class="modal">
+        <div class="modal-title">⚙️ Bot Ayarları (<span id="modalBotName"></span>)</div>
+        <input type="hidden" id="modalBotId">
+        
+        <div class="field">
+            <label>Sunucu IP (Host)</label>
+            <input type="text" id="modalHost">
+        </div>
+        <div class="field">
+            <label>Port</label>
+            <input type="number" id="modalPort">
+        </div>
+        <div class="field">
+            <label>Versiyon</label>
+            <input type="text" id="modalVersion" placeholder="1.20.1">
+        </div>
+        <div class="field">
+            <label>Otomatik Şifre (/login)</label>
+            <input type="text" id="modalPassword">
+        </div>
+        <div class="field">
+            <label>Alt Sunucu Komutu</label>
+            <input type="text" id="modalSubCmd" placeholder="/gir asmp">
+        </div>
+
+        <div style="display: flex; gap: 8px; margin-top: 8px;">
+            <button class="btn-primary" style="flex: 1;" onclick="saveBotSettings()">Kaydet</button>
+            <button class="btn-secondary" onclick="closeModal('botSettingsModal')">İptal</button>
+        </div>
+    </div>
+</div>
+
+<!-- GENEL AYARLAR MODAL -->
+<div class="modal-overlay" id="globalSettingsModal">
+    <div class="modal">
+        <div class="modal-title">🌐 Varsayılan Genel Ayarlar</div>
+        
+        <div class="field">
+            <label>Varsayılan IP</label>
+            <input type="text" id="gModalHost">
+        </div>
+        <div class="field">
+            <label>Varsayılan Port</label>
+            <input type="number" id="gModalPort">
+        </div>
+        <div class="field">
+            <label>Varsayılan Versiyon</label>
+            <input type="text" id="gModalVersion">
+        </div>
+        <div class="field">
+            <label>Varsayılan Şifre</label>
+            <input type="text" id="gModalPassword">
+        </div>
+        <div class="field">
+            <label>Varsayılan Alt Sunucu Komutu</label>
+            <input type="text" id="gModalSubCmd">
+        </div>
+
+        <div style="display: flex; gap: 8px; margin-top: 8px;">
+            <button class="btn-primary" style="flex: 1;" onclick="saveGlobalSettings()">Kaydet</button>
+            <button class="btn-secondary" onclick="closeModal('globalSettingsModal')">Kapat</button>
+        </div>
     </div>
 </div>
 
 <script>
     const socket = io();
     let botsMap = new Map();
+    let globalConfig = {};
 
     socket.on('init-data', (data) => {
         botsMap.clear();
+        globalConfig = data.globalConfig || {};
         data.botList.forEach(bot => botsMap.set(bot.id, bot));
         renderBotList();
     });
@@ -221,13 +423,24 @@
         renderBotList();
     });
 
+    socket.on('bot-updated', ({ botId, config }) => {
+        if (botsMap.has(botId)) {
+            Object.assign(botsMap.get(botId), config);
+            renderBotList();
+        }
+    });
+
+    socket.on('config-updated', (cfg) => {
+        globalConfig = cfg;
+    });
+
     socket.on('status-update', ({ botId, status }) => {
         if (botsMap.has(botId)) {
             botsMap.get(botId).status = status;
-            const statusEl = document.getElementById(`status-${botId}`);
-            if (statusEl) {
-                statusEl.innerText = status;
-                statusEl.className = `bot-status status-${status}`;
+            const badge = document.getElementById(`badge-${botId}`);
+            if (badge) {
+                badge.innerText = status;
+                badge.className = `badge badge-${status}`;
             }
         }
     });
@@ -236,7 +449,7 @@
         if (botsMap.has(log.botId)) {
             const bot = botsMap.get(log.botId);
             bot.logs.push(log);
-            if (bot.logs.length > 15) bot.logs.shift();
+            if (bot.logs.length > 20) bot.logs.shift();
 
             const logBox = document.getElementById(`logs-${log.botId}`);
             if (logBox) {
@@ -249,7 +462,6 @@
         }
     });
 
-    // ANLIK ENVANTER GÜNCELLEMESİ (BOT BAZLI)
     socket.on('bot-inventory', ({ botId, inventory }) => {
         if (botsMap.has(botId)) {
             botsMap.get(botId).inventory = inventory;
@@ -262,28 +474,27 @@
         const select = document.getElementById('targetBotSelect');
         
         container.innerHTML = '';
-        select.innerHTML = '<option value="all">Tüm Botlar (All)</option>';
+        select.innerHTML = '<option value="all">Tüm Botlar</option>';
 
         botsMap.forEach((bot) => {
-            // Select Güncelleme
             const opt = document.createElement('option');
             opt.value = bot.id;
             opt.innerText = bot.username;
             select.appendChild(opt);
 
-            // Bot Kartı Tasarımı
             const card = document.createElement('div');
             card.className = 'bot-card';
             card.innerHTML = `
-                <div class="bot-header">
-                    <div>
-                        <strong style="color: #4ec9b0;">${bot.username}</strong>
-                        <span id="status-${bot.id}" class="bot-status status-${bot.status}">${bot.status}</span>
+                <div class="bot-top">
+                    <div class="bot-title">
+                        <span class="bot-name">${bot.username}</span>
+                        <span id="badge-${bot.id}" class="badge badge-${bot.status}">${bot.status}</span>
                     </div>
-                    <div style="display:flex; gap: 4px;">
-                        <button class="btn-green" onclick="socket.emit('start-bot', '${bot.id}')">Başlat</button>
-                        <button class="btn-orange" onclick="socket.emit('stop-bot', '${bot.id}')">Durdur</button>
-                        <button class="btn-red" onclick="socket.emit('delete-bot', '${bot.id}')">Sil</button>
+                    <div class="bot-actions">
+                        <button class="btn-success" onclick="socket.emit('start-bot', '${bot.id}')">Başlat</button>
+                        <button class="btn-warning" onclick="socket.emit('stop-bot', '${bot.id}')">Durdur</button>
+                        <button class="btn-secondary" onclick="openBotSettings('${bot.id}')">⚙️ Ayarlar</button>
+                        <button class="btn-danger" onclick="socket.emit('delete-bot', '${bot.id}')">Sil</button>
                     </div>
                 </div>
 
@@ -291,27 +502,20 @@
                     ${(bot.logs || []).map(l => `<div class="log-line log-${l.type}">[${l.timestamp}]${l.text}</div>`).join('')}
                 </div>
 
-                <div class="cmd-group" style="margin-bottom: 8px;">
-                    <input type="text" id="cmd-${bot.id}" placeholder="${bot.username} için mesaj/komut...">
-                    <button class="btn-blue" onclick="sendSingleCommand('${bot.id}')">Gönder</button>
+                <div class="form-group" style="margin-bottom: 8px;">
+                    <input type="text" id="cmd-${bot.id}" placeholder="Özel komut gönder..." style="flex: 1;">
+                    <button class="btn-primary" onclick="sendSingleCommand('${bot.id}')">Gönder</button>
                 </div>
 
-                <!-- BOTA ÖZEL ENVANTER PANENLİ -->
-                <div class="inventory-section">
-                    <div class="inventory-header">
-                        <span>🎒 Envanter (Slot 0-35)</span>
-                    </div>
-                    <div class="inventory-grid" id="inv-grid-${bot.id}">
-                        <!-- Slottlar buraya eklenecek -->
-                    </div>
+                <div class="inventory-wrapper">
+                    <div class="inventory-title">🎒 Envanter (Slot 0-35)</div>
+                    <div class="inventory-grid" id="inv-grid-${bot.id}"></div>
                 </div>
             `;
             container.appendChild(card);
 
-            // İlk Envanter Çizimi
             renderInventoryGrid(bot.id, bot.inventory || {});
 
-            // Log kutusunu alta kaydır
             const lb = document.getElementById(`logs-${bot.id}`);
             if (lb) lb.scrollTop = lb.scrollHeight;
         });
@@ -322,25 +526,80 @@
         if (!grid) return;
 
         grid.innerHTML = '';
-        
-        // 36 Slotluk standart envanter ızgarası (0-35)
         for (let i = 0; i < 36; i++) {
             const item = inventory[i];
-            const slotDiv = document.createElement('div');
+            const slot = document.createElement('div');
 
             if (item) {
-                slotDiv.className = 'inv-slot has-item';
-                slotDiv.title = `ID: ${item.id} | Adet: ${item.count}`;
-                slotDiv.innerHTML = `
-                    <span class="inv-slot-id">ID:${item.id}</span>
-                    <span class="inv-slot-count">x${item.count}</span>
+                slot.className = 'inv-slot has-item';
+                slot.title = `Item ID: ${item.id} | Miktar: ${item.count}`;
+                slot.innerHTML = `
+                    <span>${item.id}</span>
+                    <span class="inv-slot-count">${item.count}</span>
                 `;
             } else {
-                slotDiv.className = 'inv-slot';
-                slotDiv.innerHTML = `<span class="inv-slot-id" style="opacity: 0.3;">${i}</span>`;
+                slot.className = 'inv-slot';
+                slot.innerHTML = `<span>${i}</span>`;
             }
-            grid.appendChild(slotDiv);
+            grid.appendChild(slot);
         }
+    }
+
+    /* MODAL VE AYAR İŞLEMLERİ */
+    function openBotSettings(botId) {
+        const bot = botsMap.get(botId);
+        if (!bot) return;
+
+        document.getElementById('modalBotId').value = bot.id;
+        document.getElementById('modalBotName').innerText = bot.username;
+        document.getElementById('modalHost').value = bot.host || globalConfig.host || '';
+        document.getElementById('modalPort').value = bot.port || globalConfig.port || 25565;
+        document.getElementById('modalVersion').value = bot.version || globalConfig.version || '';
+        document.getElementById('modalPassword').value = bot.autoPassword !== undefined ? bot.autoPassword : (globalConfig.autoPassword || '');
+        document.getElementById('modalSubCmd').value = bot.autoSubServerCmd !== undefined ? bot.autoSubServerCmd : (globalConfig.autoSubServerCmd || '');
+
+        document.getElementById('botSettingsModal').style.display = 'flex';
+    }
+
+    function saveBotSettings() {
+        const botId = document.getElementById('modalBotId').value;
+        const config = {
+            host: document.getElementById('modalHost').value.trim(),
+            port: Number(document.getElementById('modalPort').value),
+            version: document.getElementById('modalVersion').value.trim(),
+            autoPassword: document.getElementById('modalPassword').value.trim(),
+            autoSubServerCmd: document.getElementById('modalSubCmd').value.trim()
+        };
+
+        socket.emit('update-bot-config', { botId, config });
+        closeModal('botSettingsModal');
+    }
+
+    function openGlobalSettings() {
+        document.getElementById('gModalHost').value = globalConfig.host || '';
+        document.getElementById('gModalPort').value = globalConfig.port || 25565;
+        document.getElementById('gModalVersion').value = globalConfig.version || '';
+        document.getElementById('gModalPassword').value = globalConfig.autoPassword || '';
+        document.getElementById('gModalSubCmd').value = globalConfig.autoSubServerCmd || '';
+
+        document.getElementById('globalSettingsModal').style.display = 'flex';
+    }
+
+    function saveGlobalSettings() {
+        const newConfig = {
+            host: document.getElementById('gModalHost').value.trim(),
+            port: Number(document.getElementById('gModalPort').value),
+            version: document.getElementById('gModalVersion').value.trim(),
+            autoPassword: document.getElementById('gModalPassword').value.trim(),
+            autoSubServerCmd: document.getElementById('gModalSubCmd').value.trim()
+        };
+
+        socket.emit('update-config', newConfig);
+        closeModal('globalSettingsModal');
+    }
+
+    function closeModal(id) {
+        document.getElementById(id).style.display = 'none';
     }
 
     function addBot() {

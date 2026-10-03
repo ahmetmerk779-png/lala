@@ -186,9 +186,11 @@ function setupCustomPacketHandler(client, botId) {
         if (botData.subCmdInterval) clearInterval(botData.subCmdInterval);
         if (botData.afkTimer) clearTimeout(botData.afkTimer);
         if (botData.afkRetryTimer) clearTimeout(botData.afkRetryTimer);
+        if (botData.sbUpdateTimer) clearTimeout(botData.sbUpdateTimer);
         botData.subCmdInterval = null;
         botData.afkTimer = null;
         botData.afkRetryTimer = null;
+        botData.sbUpdateTimer = null;
     }
 
     clearBotTimers();
@@ -246,6 +248,15 @@ function setupCustomPacketHandler(client, botId) {
             botId,
             scoreboard: { title, lines }
         });
+    }
+
+    // --- RENDER CPU/RAM ÇÖKMESİNİ ÖNLEYEN THROTTLE MEKANİZMASI ---
+    function queueScoreboardUpdate() {
+        if (botData.sbUpdateTimer) return;
+        botData.sbUpdateTimer = setTimeout(() => {
+            botData.sbUpdateTimer = null;
+            broadcastDynamicScoreboard();
+        }, 500); // Saniyede en fazla 2 güncelleme yayınlar
     }
 
     function triggerAfkWithRetry() {
@@ -440,12 +451,12 @@ function setupCustomPacketHandler(client, botId) {
                 });
                 break;
 
-            // --- DİNAMİK SCOREBOARD PAKETLERİ ---
+            // --- DİNAMİK SCOREBOARD PAKETLERİ (KİLİTLENMEYE KARŞI GÜNCELLENDİ) ---
             case 'display_objective':
             case 'scoreboard_display_objective':
                 if (data.position === 1) { // 1 = Sidebar
                     botData.scoreboardData.sidebarObjective = data.name;
-                    broadcastDynamicScoreboard();
+                    queueScoreboardUpdate();
                 }
                 break;
 
@@ -461,7 +472,7 @@ function setupCustomPacketHandler(client, botId) {
                     delete botData.scoreboardData.objectives[objName];
                     delete botData.scoreboardData.scores[objName];
                 }
-                broadcastDynamicScoreboard();
+                queueScoreboardUpdate();
                 break;
 
             case 'scoreboard_score':
@@ -481,7 +492,7 @@ function setupCustomPacketHandler(client, botId) {
                 } else if (data.action === 1) {
                     delete botData.scoreboardData.scores[targetObj][itemName];
                 }
-                broadcastDynamicScoreboard();
+                queueScoreboardUpdate();
                 break;
 
             case 'teams':
@@ -509,7 +520,7 @@ function setupCustomPacketHandler(client, botId) {
                 if (data.mode === 1) {
                     delete botData.scoreboardData.teams[teamName];
                 }
-                broadcastDynamicScoreboard();
+                queueScoreboardUpdate();
                 break;
         }
     });
@@ -538,6 +549,7 @@ function cleanupBot(botId, reason) {
     if (botData.subCmdInterval) clearInterval(botData.subCmdInterval);
     if (botData.afkTimer) clearTimeout(botData.afkTimer);
     if (botData.afkRetryTimer) clearTimeout(botData.afkRetryTimer);
+    if (botData.sbUpdateTimer) clearTimeout(botData.sbUpdateTimer);
     if (botData.reconnectTimer) clearTimeout(botData.reconnectTimer);
 
     if (botData.client) {

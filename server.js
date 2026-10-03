@@ -152,7 +152,6 @@ function safeClientWrite(client, packetName, packetData) {
     }
 }
 
-// ⚡ Protokol Hatasını Kesin Olarak Önleyen Saf ve Güvenli Sohbet / Komut Yöntemi
 function sendChat(client, message) {
     if (!client) return;
     try {
@@ -375,23 +374,28 @@ function setupCustomPacketHandler(client, botId) {
                     if (botData.waitingForAfkGui) {
                         botData.waitingForAfkGui = false;
                         if (botData.afkRetryTimer) clearTimeout(botData.afkRetryTimer);
-                        broadcastLog(botId, '✅ /afk menüsü açıldı, 12. slota sağ tıklanıyor...', 'success');
+                        broadcastLog(botId, '✅ /afk menüsü açıldı, anti-cheat koruması için 1.5 saniye bekleniyor...', 'info');
                         
+                        // ⚡ KÖKTEN ÇÖZÜM: 500ms yerine 1500ms (1.5 saniye) gecikme ile anti-cheat algılaması engelleniyor
                         setTimeout(() => {
                             if (botData.client && botData.status === 'Online') {
                                 botData.currentStateId = (botData.currentStateId + 1) % 32767;
+                                
+                                const invItem = botData.inventory[12];
+                                const slotItem = invItem ? { itemCount: invItem.count, itemId: invItem.itemId } : { itemCount: 1, itemId: 1 };
+
                                 safeClientWrite(client, 'window_click', {
                                     windowId: data.windowId,
                                     stateId: botData.currentStateId,
                                     slot: 12,
-                                    mouseButton: 1,
+                                    mouseButton: 0, // Sol tık
                                     mode: 0,
                                     changedSlots: [],
-                                    item: { itemCount: 0, itemId: -1 }
+                                    item: slotItem
                                 });
-                                broadcastLog(botId, '🖱 AFK menüsü 12. slota sağ tıklandı.', 'success');
+                                broadcastLog(botId, '🖱 AFK menüsü 12. slota güvenli sol tık yapıldı.', 'success');
                             }
-                        }, 400);
+                        }, 1500);
                     }
                     break;
 
@@ -411,6 +415,7 @@ function setupCustomPacketHandler(client, botId) {
                                 invMap[index] = {
                                     slot: index,
                                     count: item.itemCount,
+                                    itemId: item.itemId,
                                     name: details ? details.name : 'unknown',
                                     displayName: details ? details.displayName : `ID: ${item.itemId}`
                                 };
@@ -430,6 +435,7 @@ function setupCustomPacketHandler(client, botId) {
                             botData.inventory[slot] = {
                                 slot: slot,
                                 count: item.itemCount,
+                                itemId: item.itemId,
                                 name: details ? details.name : 'unknown',
                                 displayName: details ? details.displayName : `ID: ${item.itemId}`
                             };
@@ -860,6 +866,9 @@ io.on('connection', (socket) => {
         if (!botData || !botData.client || botData.status !== 'Online') return;
         try {
             botData.currentStateId = (botData.currentStateId + 1) % 32767;
+            const invItem = botData.inventory[slot];
+            const slotItem = invItem ? { itemCount: invItem.count, itemId: invItem.itemId } : { itemCount: 1, itemId: 1 };
+
             safeClientWrite(botData.client, 'window_click', {
                 windowId: botData.currentWindowId,
                 stateId: botData.currentStateId,
@@ -867,7 +876,7 @@ io.on('connection', (socket) => {
                 mouseButton: button !== undefined ? button : 0,
                 mode: mode !== undefined ? mode : 0,
                 changedSlots: [],
-                item: { itemCount: 0, itemId: -1 }
+                item: slotItem
             });
         } catch (e) {}
     });

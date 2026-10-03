@@ -127,6 +127,13 @@
             gap: 8px;
         }
 
+        .bot-title {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
         .bot-name { font-weight: 700; font-size: 15px; color: #f1f5f9; }
 
         .badge {
@@ -138,6 +145,16 @@
         .badge-Online { background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3); }
         .badge-Offline { background: rgba(239, 68, 68, 0.15); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.3); }
         .badge-Connecting { background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.3); }
+
+        .coords-badge {
+            font-family: 'Fira Code', monospace;
+            font-size: 11px;
+            color: #38bdf8;
+            background: rgba(56, 189, 248, 0.1);
+            padding: 3px 8px;
+            border-radius: 6px;
+            border: 1px solid rgba(56, 189, 248, 0.25);
+        }
 
         .log-box {
             background: #020617;
@@ -263,6 +280,89 @@
 
         .inv-info-name { font-weight: 700; color: #38bdf8; }
         .inv-info-slot { color: #94a3b8; font-size: 10px; }
+
+        /* WIDGET IZGARASI (SCOREBOARD, HARİTA, TAB LIST) */
+        .bot-widgets-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+            gap: 10px;
+        }
+
+        /* 2D RADAR HARİTA TASARIMI */
+        .radar-box {
+            background: #090d16;
+            border: 1px solid #1e293b;
+            border-radius: 10px;
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .radar-title {
+            font-size: 12px;
+            color: #a5b4fc;
+            font-weight: 700;
+            margin-bottom: 8px;
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .radar-canvas {
+            background: #020617;
+            border: 1px solid #1e293b;
+            border-radius: 8px;
+            width: 100%;
+            max-width: 220px;
+            height: 220px;
+        }
+
+        /* TAB LIST TASARIMI */
+        .tablist-box {
+            background: #090d16;
+            border: 1px solid #1e293b;
+            border-radius: 10px;
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .tablist-title {
+            font-size: 12px;
+            color: #a5b4fc;
+            font-weight: 700;
+            margin-bottom: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .tablist-container {
+            max-height: 190px;
+            overflow-y: auto;
+        }
+
+        .tablist-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 11px;
+        }
+
+        .tablist-table th {
+            text-align: left;
+            color: var(--text-muted);
+            padding: 4px 6px;
+            border-bottom: 1px solid #1e293b;
+            font-size: 10px;
+        }
+
+        .tablist-table td {
+            padding: 4px 6px;
+            border-bottom: 1px dashed #1e293b;
+            color: var(--text-main);
+        }
 
         /* SCOREBOARD TASARIMI */
         .scoreboard-box {
@@ -456,6 +556,28 @@
         }
     });
 
+    socket.on('bot-map-update', ({ botId, pos, entities }) => {
+        if (botsMap.has(botId)) {
+            const bot = botsMap.get(botId);
+            bot.pos = pos;
+            bot.entities = entities;
+
+            const coordsEl = document.getElementById(`coords-${botId}`);
+            if (coordsEl) {
+                coordsEl.innerText = `📍 X: ${pos.x} | Y: ${pos.y} | Z: ${pos.z}`;
+            }
+            drawRadar(botId, pos, entities);
+        }
+    });
+
+    socket.on('bot-tablist', ({ botId, players }) => {
+        if (botsMap.has(botId)) {
+            const bot = botsMap.get(botId);
+            bot.tabList = players;
+            renderTabList(botId, players);
+        }
+    });
+
     socket.on('bot-scoreboard', ({ botId, scoreboard }) => {
         const titleEl = document.getElementById(`sb-title-${botId}`);
         const linesEl = document.getElementById(`sb-lines-${botId}`);
@@ -497,6 +619,8 @@
             opt.innerText = bot.username;
             select.appendChild(opt);
 
+            const pos = bot.pos || { x: 0, y: 0, z: 0 };
+
             const card = document.createElement('div');
             card.className = 'bot-card';
             card.innerHTML = `
@@ -504,6 +628,7 @@
                     <div class="bot-title">
                         <span class="bot-name">${bot.username}</span>
                         <span id="badge-${bot.id}" class="badge badge-${bot.status}">${bot.status}</span>
+                        <span class="coords-badge" id="coords-${bot.id}">📍 X: ${pos.x} | Y: ${pos.y} | Z: ${pos.z}</span>
                     </div>
                     <div class="bot-actions" style="display:flex; gap:4px;">
                         <button class="btn-success" onclick="socket.emit('start-bot', '${bot.id}')">Başlat</button>
@@ -533,19 +658,140 @@
                     </div>
                 </div>
 
-                <div class="scoreboard-box">
-                    <div class="scoreboard-title" id="sb-title-${bot.id}">📊 Scoreboard</div>
-                    <div id="sb-lines-${bot.id}">
-                        <div style="color: #64748b; text-align: center;">Skor verisi bekleniyor...</div>
+                <div class="bot-widgets-grid">
+                    <!-- 2D RADAR HARİTA -->
+                    <div class="radar-box">
+                        <div class="radar-title">
+                            <span>🗺️ 2D Radar</span>
+                            <span style="font-size:10px; color:#64748b;">(Yakın Varlıklar)</span>
+                        </div>
+                        <canvas id="map-canvas-${bot.id}" class="radar-canvas" width="220" height="220"></canvas>
+                    </div>
+
+                    <!-- TAB LİSTESİ -->
+                    <div class="tablist-box">
+                        <div class="tablist-title">
+                            <span>📋 Tab Oyuncu Listesi</span>
+                            <span style="font-size:10px; color:#38bdf8;" id="tab-count-${bot.id}">0 Oyuncu</span>
+                        </div>
+                        <div class="tablist-container">
+                            <table class="tablist-table">
+                                <thead>
+                                    <tr>
+                                        <th>Oyuncu</th>
+                                        <th style="text-align: right;">Ping</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="tab-body-${bot.id}">
+                                    <tr><td colspan="2" style="text-align:center; color:#64748b; padding:8px;">Veri bekleniyor...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- SCOREBOARD -->
+                    <div class="scoreboard-box">
+                        <div class="scoreboard-title" id="sb-title-${bot.id}">📊 Scoreboard</div>
+                        <div id="sb-lines-${bot.id}">
+                            <div style="color: #64748b; text-align: center;">Skor verisi bekleniyor...</div>
+                        </div>
                     </div>
                 </div>
             `;
             container.appendChild(card);
 
             renderInventoryGrid(bot.id, bot.inventory || {});
+            drawRadar(bot.id, pos, bot.entities || []);
+            renderTabList(bot.id, bot.tabList || []);
 
             const lb = document.getElementById(`logs-${bot.id}`);
             if (lb) lb.scrollTop = lb.scrollHeight;
+        });
+    }
+
+    function drawRadar(botId, pos, entities) {
+        const canvas = document.getElementById(`map-canvas-${botId}`);
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        const w = canvas.width;
+        const h = canvas.height;
+        const cx = w / 2;
+        const cy = h / 2;
+        const scale = 3; // 1 Blok = 3 Piksel
+
+        ctx.fillStyle = '#020617';
+        ctx.fillRect(0, 0, w, h);
+
+        // Izgara Çizgileri
+        ctx.strokeStyle = '#1e293b';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(cx, 0); ctx.lineTo(cx, h);
+        ctx.moveTo(0, cy); ctx.lineTo(w, cy);
+        ctx.stroke();
+
+        // Mesafe Halkaları (10, 20, 30 Blok)
+        [10, 20, 30].forEach(r => {
+            ctx.beginPath();
+            ctx.arc(cx, cy, r * scale, 0, Math.PI * 2);
+            ctx.strokeStyle = 'rgba(30, 41, 59, 0.4)';
+            ctx.stroke();
+        });
+
+        // Etraftaki Varlıklar (Kırmızı Noktalar)
+        if (Array.isArray(entities)) {
+            ctx.fillStyle = '#ef4444';
+            entities.forEach(ent => {
+                const dx = (ent.x - pos.x) * scale;
+                const dz = (ent.z - pos.z) * scale;
+                const rx = cx + dx;
+                const ry = cy + dz;
+
+                if (rx >= 0 && rx <= w && ry >= 0 && ry <= h) {
+                    ctx.beginPath();
+                    ctx.arc(rx, ry, 3.5, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            });
+        }
+
+        // Botun Kendisi (Yeşil Merkez Noktası)
+        ctx.fillStyle = '#10b981';
+        ctx.beginPath();
+        ctx.arc(cx, cy, 5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#34d399';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+    }
+
+    function renderTabList(botId, players) {
+        const tbody = document.getElementById(`tab-body-${botId}`);
+        const countEl = document.getElementById(`tab-count-${botId}`);
+        if (!tbody) return;
+
+        if (countEl) countEl.innerText = `${players ? players.length : 0} Oyuncu`;
+        tbody.innerHTML = '';
+
+        if (!players || players.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="2" style="text-align:center; color:#64748b; padding:8px;">Sunucuda oyuncu bulunamadı</td></tr>`;
+            return;
+        }
+
+        players.forEach(p => {
+            const tr = document.createElement('tr');
+            const name = p.displayName || p.name || 'Bilinmeyen';
+            const ping = p.ping !== undefined ? `${p.ping}ms` : '-';
+            
+            let pingColor = '#10b981';
+            if (p.ping > 150) pingColor = '#f59e0b';
+            if (p.ping > 300) pingColor = '#ef4444';
+
+            tr.innerHTML = `
+                <td><b>${name}</b></td>
+                <td style="text-align: right; color: ${pingColor}; font-family: 'Fira Code', monospace;">${ping}</td>
+            `;
+            tbody.appendChild(tr);
         });
     }
 

@@ -163,13 +163,11 @@ function sendChat(client, message) {
 
 function setupCustomPacketHandler(client, botId) {
     let isSequenceStarted = false;
-    let afkFailCount = 0;
     const botData = botPool.get(botId);
 
     function clearBotTimers() {
         if (botData.subCmdInterval) clearInterval(botData.subCmdInterval);
         if (botData.afkTimer) clearTimeout(botData.afkTimer);
-        if (botData.afkRetryTimer) clearTimeout(botData.afkRetryTimer);
         if (botData.sbUpdateTimer) clearTimeout(botData.sbUpdateTimer);
         if (botData.tabUpdateTimer) clearTimeout(botData.tabUpdateTimer);
         if (botData.mapUpdateTimer) clearTimeout(botData.mapUpdateTimer);
@@ -177,7 +175,6 @@ function setupCustomPacketHandler(client, botId) {
         
         botData.subCmdInterval = null;
         botData.afkTimer = null;
-        botData.afkRetryTimer = null;
         botData.sbUpdateTimer = null;
         botData.tabUpdateTimer = null;
         botData.mapUpdateTimer = null;
@@ -185,7 +182,6 @@ function setupCustomPacketHandler(client, botId) {
     }
 
     clearBotTimers();
-    botData.waitingForAfkGui = false;
     botData.currentWindowId = 0;
     botData.currentStateId = 0;
     botData.inventory = {};
@@ -319,33 +315,6 @@ function setupCustomPacketHandler(client, botId) {
         io.emit('bot-scoreboard', { botId, scoreboard: scoreboardObj });
     }
 
-    function triggerAfkWithRetry() {
-        if (!botData.client || botData.status !== 'Online') return;
-
-        botData.waitingForAfkGui = true;
-        sendChat(client, '/afk');
-        broadcastLog(botId, '🚶 /afk yazıldı, menü bekleniyor...', 'info');
-
-        if (botData.afkRetryTimer) clearTimeout(botData.afkRetryTimer);
-
-        botData.afkRetryTimer = setTimeout(() => {
-            if (botData.waitingForAfkGui && botData.client && botData.status === 'Online') {
-                afkFailCount++;
-                if (afkFailCount >= 3) {
-                    afkFailCount = 0;
-                    isSequenceStarted = false;
-                    const subCmd = botData.autoSubServerCmd !== undefined ? botData.autoSubServerCmd : globalConfig.autoSubServerCmd;
-                    if (subCmd) {
-                        resetBotSession(`${subCmd} ile sunucu geçişi tetiklendi.`);
-                        sendChat(client, subCmd);
-                    }
-                } else {
-                    triggerAfkWithRetry();
-                }
-            }
-        }, 6000);
-    }
-
     client.on('packet', (data, meta) => {
         if (meta.state !== 'play') return;
 
@@ -362,41 +331,13 @@ function setupCustomPacketHandler(client, botId) {
                 case 'join_game':
                     clearBotTimers();
                     resetBotSession('Sunucu aktarımı/yeniden doğuma bağlı scoreboard ve oturum sıfırlandı.');
-                    botData.waitingForAfkGui = false;
-                    afkFailCount = 0;
-                    botData.afkTimer = setTimeout(() => triggerAfkWithRetry(), 4000);
                     break;
 
                 case 'open_window':
                     botData.currentWindowId = data.windowId;
                     botData.inventory = {};
                     queueInventoryUpdate();
-                    if (botData.waitingForAfkGui) {
-                        botData.waitingForAfkGui = false;
-                        if (botData.afkRetryTimer) clearTimeout(botData.afkRetryTimer);
-                        broadcastLog(botId, '✅ /afk menüsü açıldı, anti-cheat koruması için 1.5 saniye bekleniyor...', 'info');
-                        
-                        // ⚡ KÖKTEN ÇÖZÜM: 500ms yerine 1500ms (1.5 saniye) gecikme ile anti-cheat algılaması engelleniyor
-                        setTimeout(() => {
-                            if (botData.client && botData.status === 'Online') {
-                                botData.currentStateId = (botData.currentStateId + 1) % 32767;
-                                
-                                const invItem = botData.inventory[12];
-                                const slotItem = invItem ? { itemCount: invItem.count, itemId: invItem.itemId } : { itemCount: 1, itemId: 1 };
-
-                                safeClientWrite(client, 'window_click', {
-                                    windowId: data.windowId,
-                                    stateId: botData.currentStateId,
-                                    slot: 12,
-                                    mouseButton: 0, // Sol tık
-                                    mode: 0,
-                                    changedSlots: [],
-                                    item: slotItem
-                                });
-                                broadcastLog(botId, '🖱 AFK menüsü 12. slota güvenli sol tık yapıldı.', 'success');
-                            }
-                        }, 1500);
-                    }
+                    broadcastLog(botId, '📦 Sunucu penceresi/menüsü açıldı.', 'info');
                     break;
 
                 case 'close_window':
@@ -531,9 +472,6 @@ function setupCustomPacketHandler(client, botId) {
                                         broadcastLog(botId, `🔀 ${subCmd} komutu ile sunucuya geçiliyor...`, 'info');
                                     }
                                 }, 1500);
-                                botData.afkTimer = setTimeout(() => triggerAfkWithRetry(), 8000);
-                            } else {
-                                botData.afkTimer = setTimeout(() => triggerAfkWithRetry(), 4000);
                             }
                         }, 2000);
                     }
@@ -657,7 +595,6 @@ function cleanupBot(botId, reason) {
     if (botData.keepAliveInterval) clearInterval(botData.keepAliveInterval);
     if (botData.subCmdInterval) clearInterval(botData.subCmdInterval);
     if (botData.afkTimer) clearTimeout(botData.afkTimer);
-    if (botData.afkRetryTimer) clearTimeout(botData.afkRetryTimer);
     if (botData.sbUpdateTimer) clearTimeout(botData.sbUpdateTimer);
     if (botData.tabUpdateTimer) clearTimeout(botData.tabUpdateTimer);
     if (botData.mapUpdateTimer) clearTimeout(botData.mapUpdateTimer);
@@ -867,7 +804,9 @@ io.on('connection', (socket) => {
         try {
             botData.currentStateId = (botData.currentStateId + 1) % 32767;
             const invItem = botData.inventory[slot];
-            const slotItem = invItem ? { itemCount: invItem.count, itemId: invItem.itemId } : { itemCount: 1, itemId: 1 };
+            
+            // Modern protokol uyumlu güvenli item nesnesi (present alanı eklendi)
+            const slotItem = invItem ? { present: true, itemId: invItem.itemId, itemCount: invItem.count } : { present: false };
 
             safeClientWrite(botData.client, 'window_click', {
                 windowId: botData.currentWindowId,

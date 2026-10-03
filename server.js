@@ -96,7 +96,8 @@ function loadSavedData() {
         defaultBotConfigs.forEach(cfg => {
             botPool.set(cfg.id, { 
                 ...cfg, status: 'Offline', onlineSince: null, client: null, logs: [], inventory: {}, 
-                scoreboard: null, isManualStop: false, pos: { x: 0, y: 0, z: 0 }, tabList: {}, entities: {} 
+                scoreboardData: { sidebarObjective: null, objectives: {}, scores: {}, teams: {} }, 
+                isManualStop: false, pos: { x: 0, y: 0, z: 0 }, tabList: {}, entities: {} 
             });
         });
         saveDataToFile();
@@ -111,7 +112,8 @@ function loadSavedData() {
             parsed.bots.forEach(b => {
                 botPool.set(b.id, { 
                     ...b, status: 'Offline', onlineSince: null, client: null, logs: [], inventory: {}, 
-                    scoreboard: null, isManualStop: false, pos: { x: 0, y: 0, z: 0 }, tabList: {}, entities: {} 
+                    scoreboardData: { sidebarObjective: null, objectives: {}, scores: {}, teams: {} }, 
+                    isManualStop: false, pos: { x: 0, y: 0, z: 0 }, tabList: {}, entities: {} 
                 });
             });
         }
@@ -208,6 +210,22 @@ function setupCustomPacketHandler(client, botId) {
         teams: {}
     };
 
+    // DİNAMİK OTURUM SIFIRLAMA (Lobi/Alt sunucu geçişlerinde temizlik)
+    function resetBotSession(reason = 'Oturum Sıfırlandı') {
+        botData.tabList = {};
+        botData.entities = {};
+        botData.inventory = {};
+        botData.scoreboardData = {
+            sidebarObjective: null,
+            objectives: {},
+            scores: {},
+            teams: {}
+        };
+        broadcastLog(botId, `🔄 [Dinamik Temizlik] ${reason}`, 'info');
+        io.emit('bot-scoreboard', { botId, scoreboard: null });
+        io.emit('bot-tablist', { botId, players: [] });
+    }
+
     function queueInventoryUpdate() {
         if (botData.invUpdateTimer) return;
         botData.invUpdateTimer = setTimeout(() => {
@@ -221,7 +239,7 @@ function setupCustomPacketHandler(client, botId) {
         botData.sbUpdateTimer = setTimeout(() => {
             botData.sbUpdateTimer = null;
             broadcastDynamicScoreboard();
-        }, 500);
+        }, 300);
     }
 
     function queueTabListUpdate() {
@@ -230,7 +248,7 @@ function setupCustomPacketHandler(client, botId) {
             botData.tabUpdateTimer = null;
             const players = Object.values(botData.tabList);
             io.emit('bot-tablist', { botId, players });
-        }, 500);
+        }, 300);
     }
 
     function queueMapUpdate() {
@@ -244,16 +262,23 @@ function setupCustomPacketHandler(client, botId) {
 
     function broadcastDynamicScoreboard() {
         const sb = botData.scoreboardData;
-        if (!sb.sidebarObjective) {
-            for (const [objName, objVal] of Object.entries(sb.objectives)) {
-                if (objVal.position === 1 || Object.keys(sb.objectives).length === 1) {
-                    sb.sidebarObjective = objName;
-                    break;
-                }
+        let activeObjName = null;
+
+        for (const [objName, objVal] of Object.entries(sb.objectives)) {
+            if (objVal.position === 1) {
+                activeObjName = objName;
+                break;
+            }
+        }
+        
+        if (!activeObjName) {
+            const keys = Object.keys(sb.objectives);
+            if (keys.length > 0) {
+                activeObjName = keys[keys.length - 1];
+                sb.sidebarObjective = activeObjName;
             }
         }
 
-        const activeObjName = sb.sidebarObjective || Object.keys(sb.objectives)[0];
         if (!activeObjName || !sb.objectives[activeObjName]) {
             io.emit('bot-scoreboard', { botId, scoreboard: null });
             return;
@@ -279,7 +304,7 @@ function setupCustomPacketHandler(client, botId) {
             let fullText = (prefix + cleanEntry + suffix).trim();
             if (!fullText) fullText = cleanEntry;
             
-            if (fullText.includes('OYNA.') || fullText.includes('.COM') || fullText.toLowerCase().includes('play.')) {
+            if (fullText.includes('OYNA.') || fullText.includes('.COM') || fullText.toLowerCase().includes('play.') || fullText.toLowerCase().includes('lobi')) {
                 return;
             }
 
@@ -306,7 +331,10 @@ function setupCustomPacketHandler(client, botId) {
                     afkFailCount = 0;
                     isSequenceStarted = false;
                     const subCmd = botData.autoSubServerCmd !== undefined ? botData.autoSubServerCmd : globalConfig.autoSubServerCmd;
-                    if (subCmd) sendChat(client, subCmd);
+                    if (subCmd) {
+                        resetBotSession(`${subCmd} ile sunucu geçişi tetiklendi.`);
+                        sendChat(client, subCmd);
+                    }
                 } else {
                     triggerAfkWithRetry();
                 }
@@ -326,10 +354,8 @@ function setupCustomPacketHandler(client, botId) {
 
             case 'respawn':
                 clearBotTimers();
+                resetBotSession('Sunucuda yeniden doğuldu, veriler temizlendi.');
                 botData.waitingForAfkGui = false;
-                botData.entities = {};
-                botData.tabList = {};
-                botData.scoreboardData = { sidebarObjective: null, objectives: {}, scores: {}, teams: {} };
                 afkFailCount = 0;
                 botData.afkTimer = setTimeout(() => triggerAfkWithRetry(), 4000);
                 break;
@@ -392,10 +418,17 @@ function setupCustomPacketHandler(client, botId) {
 
             case 'player_info':
             case 'player_info_update': {
+                const actions = data.actions || {};
                 const playersArray = data.data || data.players || [];
+                
                 playersArray.forEach(p => {
                     const uuid = p.uuid || p.UUID;
                     if (!uuid) return;
+
+                    if ((actions.updateListed === true && p.listed === false) || p.listed === false) {
+                        delete botData.tabList[uuid];
+                        return;
+                    }
 
                     if (!botData.tabList[uuid]) {
                         botData.tabList[uuid] = { uuid, name: 'Bilinmeyen', displayName: '', ping: 0 };
@@ -417,11 +450,19 @@ function setupCustomPacketHandler(client, botId) {
             }
 
             case 'player_info_remove': {
-                const uids = data.UUIDs || data.players;
+                const uids = data.UUIDs || data.players || [data.UUID || data.uuid];
                 if (Array.isArray(uids)) {
                     uids.forEach(item => {
-                        const uid = typeof item === 'object' ? (item.uuid || item.UUID) : item;
-                        if (uid) delete botData.tabList[uid];
+                        const uid = typeof item === 'object' && item !== null ? (item.uuid || item.UUID) : item;
+                        if (uid) {
+                            const uidStr = String(uid);
+                            delete botData.tabList[uidStr];
+                            Object.keys(botData.tabList).forEach(k => {
+                                if (k.includes(uidStr) || uidStr.includes(k)) {
+                                    delete botData.tabList[k];
+                                }
+                            });
+                        }
                     });
                     queueTabListUpdate();
                 }
@@ -457,6 +498,7 @@ function setupCustomPacketHandler(client, botId) {
                         if (subCmd && subCmd.trim() !== '') {
                             setTimeout(() => {
                                 if (botData.client) {
+                                    resetBotSession(`${subCmd} komutu ile alt sunucuya geçiliyor.`);
                                     sendChat(client, subCmd);
                                     broadcastLog(botId, `🔀 ${subCmd} komutu ile sunucuya geçiliyor...`, 'info');
                                 }
@@ -495,17 +537,6 @@ function setupCustomPacketHandler(client, botId) {
                 try { client.write('keep_alive', { keepAliveId: data.keepAliveId }); } catch (e) {}
                 break;
 
-            case 'display_objective':
-            case 'scoreboard_display_objective': {
-                const position = data.position !== undefined ? data.position : data.slot;
-                const name = data.name || data.objectiveName;
-                if (position === 1 || position === undefined) {
-                    if (name) botData.scoreboardData.sidebarObjective = name;
-                }
-                queueScoreboardUpdate();
-                break;
-            }
-
             case 'scoreboard_objective': {
                 const name = data.name || data.objectiveName;
                 const action = data.action !== undefined ? data.action : (data.mode !== undefined ? data.mode : 0);
@@ -521,6 +552,17 @@ function setupCustomPacketHandler(client, botId) {
                 } else if (action === 1) {
                     delete botData.scoreboardData.objectives[name];
                     delete botData.scoreboardData.scores[name];
+                }
+                queueScoreboardUpdate();
+                break;
+            }
+
+            case 'display_objective':
+            case 'scoreboard_display_objective': {
+                const position = data.position !== undefined ? data.position : data.slot;
+                const name = data.name || data.objectiveName;
+                if (position === 1 || position === undefined) {
+                    if (name) botData.scoreboardData.sidebarObjective = name;
                 }
                 queueScoreboardUpdate();
                 break;
@@ -607,6 +649,7 @@ function cleanupBot(botId, reason) {
     botData.entities = {};
     botData.pos = { x: 0, y: 0, z: 0 };
     botData.inventory = {};
+    botData.scoreboardData = { sidebarObjective: null, objectives: {}, scores: {}, teams: {} };
 
     broadcastLog(botId, `🔴 ${reason}`, 'error');
     io.emit('status-update', { botId, status: 'Offline', onlineSince: null });
@@ -744,7 +787,7 @@ io.on('connection', (socket) => {
             autoPassword: typeof data === 'object' && data.autoPassword !== undefined ? data.autoPassword : globalConfig.autoPassword,
             autoSubServerCmd: typeof data === 'object' && data.autoSubServerCmd !== undefined ? data.autoSubServerCmd : globalConfig.autoSubServerCmd,
             status: 'Offline', onlineSince: null, pos: { x: 0, y: 0, z: 0 },
-            client: null, logs: [], inventory: {}, scoreboard: null, tabList: {}, entities: {}, isManualStop: false
+            client: null, logs: [], inventory: {}, scoreboardData: { sidebarObjective: null, objectives: {}, scores: {}, teams: {} }, tabList: {}, entities: {}, isManualStop: false
         };
         botPool.set(id, newBot);
         saveDataToFile();
@@ -763,6 +806,10 @@ io.on('connection', (socket) => {
         if (targetBotId === 'all') {
             botPool.forEach((botData) => {
                 if (botData.client && botData.status === 'Online') {
+                    if (command.startsWith('/gir') || command.startsWith('/server')) {
+                        botData.tabList = {};
+                        botData.scoreboardData = { sidebarObjective: null, objectives: {}, scores: {}, teams: {} };
+                    }
                     sendChat(botData.client, command);
                     broadcastLog(botData.id, `> ${command}`, 'command');
                 }
@@ -770,6 +817,10 @@ io.on('connection', (socket) => {
         } else {
             const botData = botPool.get(targetBotId);
             if (botData && botData.client && botData.status === 'Online') {
+                if (command.startsWith('/gir') || command.startsWith('/server')) {
+                    botData.tabList = {};
+                    botData.scoreboardData = { sidebarObjective: null, objectives: {}, scores: {}, teams: {} };
+                }
                 sendChat(botData.client, command);
                 broadcastLog(targetBotId, `> ${command}`, 'command');
             }

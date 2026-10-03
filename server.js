@@ -155,24 +155,28 @@ function safeClientWrite(client, packetName, packetData) {
 function sendChat(client, message) {
     if (!client) return;
     try {
-        if (message.startsWith('/')) {
-            safeClientWrite(client, 'chat_command', {
-                command: message.slice(1),
-                timestamp: BigInt(Date.now()),
-                salt: BigInt(0),
-                argumentSignatures: [],
-                messageCount: 0,
-                acknowledged: Buffer.alloc(3)
-            });
+        if (typeof client.chat === 'function') {
+            client.chat(message);
         } else {
-            safeClientWrite(client, 'chat_message', {
-                message: message,
-                timestamp: BigInt(Date.now()),
-                salt: BigInt(0),
-                signature: Buffer.alloc(0),
-                offset: 0,
-                acknowledged: Buffer.alloc(3)
-            });
+            if (message.startsWith('/')) {
+                safeClientWrite(client, 'chat_command', {
+                    command: message.slice(1),
+                    timestamp: BigInt(Date.now()),
+                    salt: BigInt(0),
+                    argumentSignatures: [],
+                    messageCount: 0,
+                    acknowledged: Buffer.alloc(3)
+                });
+            } else {
+                safeClientWrite(client, 'chat_message', {
+                    message: message,
+                    timestamp: BigInt(Date.now()),
+                    salt: BigInt(0),
+                    signature: Buffer.alloc(0),
+                    offset: 0,
+                    acknowledged: Buffer.alloc(3)
+                });
+            }
         }
     } catch (e) {}
 }
@@ -276,7 +280,7 @@ function setupCustomPacketHandler(client, botId) {
         if (!activeObjName) {
             for (const [objName, scoresObj] of Object.entries(sb.scores)) {
                 const count = Object.keys(scoresObj).length;
-                if (count > 0 && count <= 15) {
+                if (count > 0 && count <= 25) {
                     activeObjName = objName;
                     break;
                 }
@@ -328,8 +332,8 @@ function setupCustomPacketHandler(client, botId) {
 
         lines.sort((a, b) => b.score - a.score);
         
-        // ⚡ MAKSIMUM 15 SATIR OLARAK ARTTIRILDI
-        const cleanLines = lines.slice(0, 15);
+        // ⚡ MAKSIMUM 25 SATIR OLARAK ARTTIRILDI
+        const cleanLines = lines.slice(0, 25);
         const scoreboardObj = { title, lines: cleanLines };
         
         botData.lastScoreboard = scoreboardObj;
@@ -398,12 +402,12 @@ function setupCustomPacketHandler(client, botId) {
                                     windowId: data.windowId,
                                     stateId: botData.currentStateId,
                                     slot: 12,
-                                    mouseButton: 1, // Sağ tık
+                                    mouseButton: 1,
                                     mode: 0,
                                     changedSlots: [],
                                     item: { itemCount: 0, itemId: -1 }
                                 });
-                                broadcastLog(botId, '🖱️ AFK menüsü 12. slota sağ tıklandı.', 'success');
+                                broadcastLog(botId, '🖱️️ AFK menüsü 12. slota sağ tıklandı.', 'success');
                             }
                         }, 400);
                     }

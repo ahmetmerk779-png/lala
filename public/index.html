@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Advanced MC Bot Dashboard</title>
+    <title>MC Cyber Dashboard</title>
     <script src="/socket.io/socket.io.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
@@ -13,9 +13,9 @@
             theme: {
                 extend: {
                     colors: {
-                        darkbg: '#090d16',
-                        cardbg: '#111827',
-                        cardborder: '#1f2937',
+                        darkbg: '#05070e',
+                        cardbg: 'rgba(13, 18, 30, 0.75)',
+                        cardborder: '#1e293b',
                         accent: '#6366f1'
                     }
                 }
@@ -23,133 +23,175 @@
         }
     </script>
     <style>
-        ::-webkit-scrollbar { width: 4px; height: 4px; }
-        ::-webkit-scrollbar-track { background: #090d16; }
-        ::-webkit-scrollbar-thumb { background: #374151; border-radius: 2px; }
-        .log-box { font-family: 'JetBrains Mono', 'Fira Code', monospace; font-size: 11px; }
-        .glass-panel { background: rgba(17, 24, 39, 0.85); backdrop-filter: blur(12px); }
+        ::-webkit-scrollbar { width: 3px; height: 3px; }
+        ::-webkit-scrollbar-track { background: #05070e; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 2px; }
+        .glass-box { background: rgba(15, 23, 42, 0.65); backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.08); }
+        .glow-active { box-shadow: 0 0 15px rgba(16, 185, 129, 0.25); }
+        .glow-indigo { box-shadow: 0 0 20px rgba(99, 102, 241, 0.2); }
+        .log-font { font-family: 'JetBrains Mono', monospace, sans-serif; font-size: 11px; }
     </style>
 </head>
-<body class="bg-darkbg text-slate-200 min-h-screen pb-16 md:pb-6 text-xs select-none">
+<body class="bg-darkbg text-slate-200 min-h-screen pb-12 text-xs select-none">
 
-    <!-- HEADER -->
-    <header class="sticky top-0 z-40 glass-panel border-b border-cardborder px-4 py-3">
-        <div class="max-w-7xl mx-auto flex items-center justify-between gap-3">
+    <!-- ÜST BAR / HEADER -->
+    <header class="sticky top-0 z-50 glass-box border-b border-slate-800 px-3 py-2.5 mb-3">
+        <div class="max-w-7xl mx-auto flex items-center justify-between">
             <div class="flex items-center gap-2.5">
-                <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white shadow-lg shadow-indigo-500/20">
-                    <i class="fa-solid fa-gamepad text-sm"></i>
+                <div class="relative flex items-center justify-center w-8 h-8 rounded-xl bg-gradient-to-tr from-indigo-600 to-purple-600 text-white shadow-lg glow-indigo">
+                    <i class="fa-solid fa-cube text-sm"></i>
+                    <span class="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-emerald-500 rounded-full animate-ping"></span>
                 </div>
                 <div>
-                    <h1 class="font-bold text-white text-sm tracking-wide">MC PRO DASHBOARD</h1>
+                    <h1 class="font-extrabold text-white text-xs tracking-wider flex items-center gap-1.5">
+                        MC PROTOCOL <span class="bg-indigo-500/20 text-indigo-400 text-[9px] px-1.5 py-0.2 rounded border border-indigo-500/30">PRO</span>
+                    </h1>
                     <div class="flex items-center gap-2 text-[10px] text-slate-400">
-                        <span id="globalHostBadge" class="text-indigo-400">Sunucu: Yükleniyor...</span>
+                        <span id="globalHostBadge" class="text-indigo-300 font-mono">play.donutsmp.net</span>
                         <span>•</span>
-                        <span id="activeBotStats" class="text-emerald-400">0/0 Aktif</span>
+                        <span id="activeBotStats" class="text-emerald-400 font-bold">0/0 Aktif</span>
                     </div>
                 </div>
             </div>
 
             <div class="flex items-center gap-1.5">
-                <button onclick="startAll()" class="px-3 py-1.5 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-500/30 rounded-lg font-medium transition flex items-center gap-1.5 text-[11px]">
-                    <i class="fa-solid fa-play"></i> <span class="hidden sm:inline">Tümünü Başlat</span>
+                <button onclick="startAll()" class="px-2.5 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 rounded-lg transition active:scale-95 flex items-center gap-1 text-[11px] font-semibold">
+                    <i class="fa-solid fa-play text-[10px]"></i> Başlat
                 </button>
-                <button onclick="stopAll()" class="px-3 py-1.5 bg-rose-600/20 hover:bg-rose-600/30 text-rose-400 border border-rose-500/30 rounded-lg font-medium transition flex items-center gap-1.5 text-[11px]">
-                    <i class="fa-solid fa-square"></i> <span class="hidden sm:inline">Durdur</span>
+                <button onclick="stopAll()" class="px-2.5 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/40 rounded-lg transition active:scale-95 flex items-center gap-1 text-[11px] font-semibold">
+                    <i class="fa-solid fa-stop text-[10px]"></i> Durdur
                 </button>
-                <button onclick="openGlobalConfigModal()" class="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg border border-cardborder transition">
-                    <i class="fa-solid fa-gear text-sm"></i>
+                <button onclick="openGlobalConfigModal()" class="p-1.5 bg-slate-800/80 text-slate-300 rounded-lg border border-slate-700">
+                    <i class="fa-solid fa-gear"></i>
                 </button>
             </div>
         </div>
     </header>
 
-    <!-- MAIN BODY -->
-    <main class="max-w-7xl mx-auto p-3 md:p-6 grid grid-cols-1 lg:grid-cols-12 gap-4">
+    <!-- MOBİL SEKMELER -->
+    <div class="max-w-7xl mx-auto px-3 mb-3 flex lg:hidden gap-1.5 border-b border-slate-800/60 pb-2">
+        <button onclick="switchTab('console')" id="tabBtnConsole" class="flex-1 py-1.5 rounded-lg bg-indigo-600 text-white font-semibold text-[11px] flex items-center justify-center gap-1">
+            <i class="fa-solid fa-terminal"></i> Konsol
+        </button>
+        <button onclick="switchTab('radar')" id="tabBtnRadar" class="flex-1 py-1.5 rounded-lg bg-slate-800 text-slate-400 font-semibold text-[11px] flex items-center justify-center gap-1">
+            <i class="fa-solid fa-radar"></i> Radar & Durum
+        </button>
+        <button onclick="switchTab('bots')" id="tabBtnBots" class="flex-1 py-1.5 rounded-lg bg-slate-800 text-slate-400 font-semibold text-[11px] flex items-center justify-center gap-1">
+            <i class="fa-solid fa-users"></i> Botlar
+        </button>
+    </div>
 
-        <!-- SOL PANEL: BOT LİSTESİ -->
-        <div class="lg:col-span-3 space-y-3">
-            <div class="bg-cardbg border border-cardborder rounded-xl p-3">
-                <div class="flex items-center justify-between mb-2">
-                    <span class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Bot Listesi</span>
-                    <button onclick="addBot()" class="text-xs bg-indigo-600 hover:bg-indigo-500 text-white px-2 py-0.5 rounded transition flex items-center gap-1">
-                        <i class="fa-solid fa-plus text-[10px]"></i> Yeni Bot
-                    </button>
+    <!-- MAIN BODY -->
+    <main class="max-w-7xl mx-auto px-3 grid grid-cols-1 lg:grid-cols-12 gap-3">
+
+        <!-- SOL PANEL: BOT LİSTESİ VE KONTROLLER -->
+        <div id="panelBots" class="lg:col-span-3 space-y-3 hidden lg:block">
+            
+            <!-- TOPLAM BOT SAYAÇ KARTI -->
+            <div class="glass-box rounded-xl p-3 border border-indigo-500/20 bg-gradient-to-r from-indigo-950/40 to-slate-900/40">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <span class="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Sistemdeki Botlar</span>
+                        <div class="text-lg font-black text-white font-mono mt-0.5" id="totalBotCountDisplay">0 Bot</div>
+                    </div>
+                    <div class="w-9 h-9 rounded-xl bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 font-bold text-sm">
+                        <i class="fa-solid fa-robot"></i>
+                    </div>
                 </div>
-                <div id="botListContainer" class="space-y-1.5 max-h-[380px] overflow-y-auto pr-1"></div>
             </div>
 
-            <div id="quickControls" class="bg-cardbg border border-cardborder rounded-xl p-3 space-y-2 hidden">
-                <span class="text-[11px] font-semibold text-indigo-400 uppercase tracking-wider block mb-1">Hızlı Modlar</span>
-                <div class="grid grid-cols-2 gap-2">
-                    <button id="btnAutoReconnect" onclick="toggleAutoReconnect()" class="p-2 bg-darkbg border border-cardborder rounded-lg text-left transition hover:border-indigo-500">
-                        <div class="text-[10px] text-slate-400">Oto-Yeniden Bağlan</div>
-                        <div id="statusAutoReconnect" class="text-xs font-bold text-rose-400">Devre Dışı</div>
+            <div class="glass-box rounded-xl p-3">
+                <div class="flex items-center justify-between mb-2">
+                    <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1">
+                        <i class="fa-solid fa-list text-indigo-400"></i> Bot Listesi
+                    </span>
+                    <button onclick="addBot()" class="text-[10px] bg-indigo-600 hover:bg-indigo-500 text-white px-2 py-0.5 rounded-md font-semibold transition flex items-center gap-1">
+                        <i class="fa-solid fa-plus"></i> Ekle
                     </button>
-                    <button id="btnAntiAfk" onclick="toggleAntiAfk()" class="p-2 bg-darkbg border border-cardborder rounded-lg text-left transition hover:border-indigo-500">
-                        <div class="text-[10px] text-slate-400">Anti-AFK Modu</div>
-                        <div id="statusAntiAfk" class="text-xs font-bold text-rose-400">Devre Dışı</div>
+                </div>
+                <div id="botListContainer" class="space-y-1.5 max-h-[340px] overflow-y-auto pr-0.5"></div>
+            </div>
+
+            <div id="quickControls" class="glass-box rounded-xl p-3 space-y-2 hidden">
+                <span class="text-[10px] font-bold text-indigo-400 uppercase tracking-widest block">Otomasyonlar</span>
+                <div class="grid grid-cols-2 gap-2">
+                    <button id="btnAutoReconnect" onclick="toggleAutoReconnect()" class="p-2 bg-slate-900/80 border border-slate-800 rounded-lg text-left transition hover:border-indigo-500">
+                        <div class="text-[9px] text-slate-400">Oto-Rejoin</div>
+                        <div id="statusAutoReconnect" class="text-[11px] font-extrabold text-rose-400">Kapalı</div>
+                    </button>
+                    <button id="btnAntiAfk" onclick="toggleAntiAfk()" class="p-2 bg-slate-900/80 border border-slate-800 rounded-lg text-left transition hover:border-indigo-500">
+                        <div class="text-[9px] text-slate-400">Anti-AFK</div>
+                        <div id="statusAntiAfk" class="text-[11px] font-extrabold text-rose-400">Kapalı</div>
                     </button>
                 </div>
             </div>
         </div>
 
-        <!-- ORTA PANEL: KONSOL VE DURUM -->
-        <div class="lg:col-span-6 space-y-3">
+        <!-- ORTA PANEL: KONSOL -->
+        <div id="panelConsole" class="lg:col-span-6 space-y-3">
             
-            <div class="bg-cardbg border border-cardborder rounded-xl p-3 flex flex-wrap items-center justify-between gap-3">
+            <div class="glass-box rounded-xl p-3 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 border border-indigo-500/20">
                 <div class="flex items-center gap-3">
-                    <img id="selectedBotHead" src="https://minotar.net/helm/Steve/32.png" class="w-8 h-8 rounded border border-cardborder">
+                    <div class="relative">
+                        <img id="selectedBotHead" src="https://minotar.net/helm/Steve/36.png" class="w-9 h-9 rounded-lg border border-slate-700 shadow">
+                        <span id="liveIndicator" class="absolute -bottom-1 -right-1 w-3 h-3 bg-slate-600 border-2 border-darkbg rounded-full"></span>
+                    </div>
                     <div>
                         <div class="flex items-center gap-2">
-                            <span id="selectedBotTitle" class="font-bold text-white text-sm">Tüm Botlar</span>
-                            <span id="selectedBotStatus" class="px-1.5 py-0.5 rounded text-[9px] font-medium bg-slate-800 text-slate-400">Offline</span>
+                            <span id="selectedBotTitle" class="font-extrabold text-white text-sm">Bot Seçilmedi</span>
+                            <span id="selectedBotStatus" class="px-1.5 py-0.2 rounded text-[9px] font-bold bg-slate-800 text-slate-400 uppercase">Offline</span>
                         </div>
-                        <div id="selectedBotSub" class="text-[10px] text-slate-400">Versiyon: Global</div>
+                        <div id="selectedBotSub" class="text-[10px] text-slate-400 font-mono">Listeden Bot Seçin</div>
                     </div>
                 </div>
 
-                <div class="flex items-center gap-4 w-full sm:w-auto">
-                    <div class="flex-1 sm:w-28 space-y-1">
-                        <div class="flex justify-between text-[10px] text-slate-400">
-                            <span>Can</span>
-                            <span id="hpText" class="text-rose-400 font-bold">20/20</span>
+                <div class="flex items-center gap-3 bg-slate-950/60 p-2 rounded-lg border border-slate-800/80">
+                    <div class="w-24 space-y-1">
+                        <div class="flex justify-between items-center text-[10px]">
+                            <span class="text-rose-400 font-bold flex items-center gap-1"><i class="fa-solid fa-heart text-[9px]"></i> Can</span>
+                            <span id="hpText" class="text-white font-mono font-bold">20</span>
                         </div>
-                        <div class="w-full bg-darkbg h-2 rounded-full overflow-hidden border border-cardborder">
-                            <div id="hpBar" class="bg-rose-500 h-full w-full transition-all duration-300"></div>
+                        <div class="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                            <div id="hpBar" class="bg-gradient-to-r from-rose-600 to-rose-400 h-full w-full transition-all duration-300"></div>
                         </div>
                     </div>
-                    <div class="flex-1 sm:w-28 space-y-1">
-                        <div class="flex justify-between text-[10px] text-slate-400">
-                            <span>Açlık</span>
-                            <span id="foodText" class="text-amber-400 font-bold">20/20</span>
+                    <div class="w-24 space-y-1">
+                        <div class="flex justify-between items-center text-[10px]">
+                            <span class="text-amber-400 font-bold flex items-center gap-1"><i class="fa-solid fa-drumstick-bite text-[9px]"></i> Açlık</span>
+                            <span id="foodText" class="text-white font-mono font-bold">20</span>
                         </div>
-                        <div class="w-full bg-darkbg h-2 rounded-full overflow-hidden border border-cardborder">
-                            <div id="foodBar" class="bg-amber-500 h-full w-full transition-all duration-300"></div>
+                        <div class="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                            <div id="foodBar" class="bg-gradient-to-r from-amber-600 to-amber-400 h-full w-full transition-all duration-300"></div>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <!-- KONSOL -->
-            <div class="bg-cardbg border border-cardborder rounded-xl p-3 flex flex-col h-[460px]">
-                <div class="flex items-center justify-between pb-2 mb-2 border-b border-cardborder gap-2">
-                    <div class="flex items-center gap-1 overflow-x-auto">
-                        <button onclick="setLogFilter('all')" class="log-filter-btn px-2 py-0.5 rounded bg-indigo-600 text-white text-[10px]">Tümü</button>
-                        <button onclick="setLogFilter('chat')" class="log-filter-btn px-2 py-0.5 rounded bg-slate-800 text-slate-400 hover:text-white text-[10px]">Sohbet</button>
-                        <button onclick="setLogFilter('system')" class="log-filter-btn px-2 py-0.5 rounded bg-slate-800 text-slate-400 hover:text-white text-[10px]">Sistem</button>
-                        <button onclick="setLogFilter('error')" class="log-filter-btn px-2 py-0.5 rounded bg-slate-800 text-slate-400 hover:text-white text-[10px]">Hatalar</button>
+            <!-- TERMINAL KONSOLU -->
+            <div class="glass-box rounded-xl p-3 flex flex-col h-[420px] relative overflow-hidden border border-slate-800">
+                <div class="flex items-center justify-between pb-2 mb-2 border-b border-slate-800/80 gap-2">
+                    <div class="flex items-center gap-1">
+                        <span class="w-2.5 h-2.5 rounded-full bg-rose-500/80 inline-block"></span>
+                        <span class="w-2.5 h-2.5 rounded-full bg-amber-500/80 inline-block"></span>
+                        <span class="w-2.5 h-2.5 rounded-full bg-emerald-500/80 inline-block"></span>
+                        <span class="text-[10px] font-mono text-slate-400 ml-2">bot_console.log</span>
                     </div>
-                    <button onclick="clearConsole()" class="p-1 text-slate-400 hover:text-rose-400 text-xs transition" title="Temizle"><i class="fa-solid fa-trash-can"></i></button>
+                    <div class="flex items-center gap-1">
+                        <button onclick="setLogFilter('all')" class="log-filter-btn px-2 py-0.5 rounded bg-indigo-600 text-white text-[9px] font-bold">Tümü</button>
+                        <button onclick="setLogFilter('chat')" class="log-filter-btn px-2 py-0.5 rounded bg-slate-800 text-slate-400 hover:text-white text-[9px]">Sohbet</button>
+                        <button onclick="setLogFilter('system')" class="log-filter-btn px-2 py-0.5 rounded bg-slate-800 text-slate-400 hover:text-white text-[9px]">Sistem</button>
+                        <button onclick="clearConsole()" class="p-1 text-slate-500 hover:text-rose-400 text-xs ml-1"><i class="fa-solid fa-trash-can"></i></button>
+                    </div>
                 </div>
 
-                <div id="logBox" class="log-box flex-1 bg-darkbg border border-cardborder rounded-lg p-2.5 overflow-y-auto space-y-1 text-slate-300">
-                    <div class="text-slate-500 italic">[Sistem] Konsol dinleniyor...</div>
+                <div id="logBox" class="log-font flex-1 bg-slate-950/90 border border-slate-900 rounded-lg p-2.5 overflow-y-auto space-y-1.5">
+                    <div class="text-slate-600 italic">[Sistem] Bot seçimi bekleniyor...</div>
                 </div>
 
-                <div class="mt-2.5 flex gap-2">
-                    <input type="text" id="cmdInput" placeholder="Komut veya mesaj gönder (örn: /gir asmp)..." onkeypress="if(event.key==='Enter') sendCommand()" class="flex-1 bg-darkbg border border-cardborder rounded-lg px-3 py-2 text-white focus:outline-none focus:border-indigo-500 text-xs">
-                    <button onclick="sendCommand()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-medium transition text-xs flex items-center gap-1">
-                        <i class="fa-solid fa-paper-plane"></i>
+                <div class="mt-2 flex gap-1.5">
+                    <input type="text" id="cmdInput" placeholder="Mesaj veya komut yazın..." onkeypress="if(event.key==='Enter') sendCommand()" class="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-indigo-500 text-xs font-mono">
+                    <button onclick="sendCommand()" class="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white rounded-lg transition font-bold flex items-center justify-center">
+                        <i class="fa-solid fa-paper-plane text-xs"></i>
                     </button>
                 </div>
             </div>
@@ -157,24 +199,28 @@
         </div>
 
         <!-- SAĞ PANEL: RADAR & TAB -->
-        <div class="lg:col-span-3 space-y-3">
-            <div class="bg-cardbg border border-cardborder rounded-xl p-3">
+        <div id="panelRadar" class="lg:col-span-3 space-y-3 hidden lg:block">
+            <div class="glass-box rounded-xl p-3 border border-indigo-500/20">
                 <div class="flex items-center justify-between mb-2">
-                    <span class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Radar & Konum</span>
-                    <span id="posBadge" class="text-[10px] text-indigo-400 font-mono">X:0 Y:0 Z:0</span>
+                    <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
+                        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span> RADAR
+                    </span>
+                    <span id="posBadge" class="text-[10px] text-emerald-400 font-mono font-bold">X:0 Y:0 Z:0</span>
                 </div>
-                <div class="flex justify-center relative">
-                    <canvas id="radarCanvas" width="160" height="160" class="bg-darkbg border border-cardborder rounded-lg"></canvas>
+                <div class="flex justify-center relative py-1">
+                    <canvas id="radarCanvas" width="180" height="180" class="bg-slate-950 rounded-full border border-indigo-500/30 shadow-inner"></canvas>
                 </div>
             </div>
 
-            <div class="bg-cardbg border border-cardborder rounded-xl p-3">
+            <div class="glass-box rounded-xl p-3">
                 <div class="flex items-center justify-between mb-2">
-                    <span class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Tab Listesi</span>
-                    <span id="tabCount" class="text-[10px] text-slate-500">0 Oyuncu</span>
+                    <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1">
+                        <i class="fa-solid fa-list-ul text-indigo-400"></i> Tab Listesi
+                    </span>
+                    <span id="tabCount" class="text-[10px] text-indigo-400 font-mono">0 Aktif</span>
                 </div>
-                <div id="tablistContainer" class="bg-darkbg border border-cardborder rounded-lg p-2 max-h-40 overflow-y-auto space-y-1 text-[11px] text-slate-300">
-                    <span class="text-slate-500 italic">Veri yok</span>
+                <div id="tablistContainer" class="bg-slate-950/80 border border-slate-900 rounded-lg p-2 max-h-36 overflow-y-auto space-y-1 text-[11px] font-mono">
+                    <span class="text-slate-600 italic">Veri yok</span>
                 </div>
             </div>
         </div>
@@ -182,45 +228,41 @@
     </main>
 
     <!-- MODAL -->
-    <div id="globalConfigModal" class="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4 hidden backdrop-blur-sm">
-        <div class="bg-cardbg border border-cardborder rounded-2xl max-w-md w-full p-5 space-y-4 shadow-2xl">
-            <div class="flex justify-between items-center border-b border-cardborder pb-3">
-                <h3 class="font-bold text-white text-sm flex items-center gap-2"><i class="fa-solid fa-sliders text-indigo-400"></i> Genel Sunucu Ayarları</h3>
+    <div id="globalConfigModal" class="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 hidden backdrop-blur-md">
+        <div class="glass-box rounded-2xl max-w-md w-full p-5 space-y-4 shadow-2xl border border-slate-700">
+            <div class="flex justify-between items-center border-b border-slate-800 pb-3">
+                <h3 class="font-bold text-white text-xs flex items-center gap-2"><i class="fa-solid fa-sliders text-indigo-400"></i> Sunucu Ayarları</h3>
                 <button onclick="closeGlobalConfigModal()" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark"></i></button>
             </div>
             
             <div class="space-y-3 text-xs">
                 <div>
                     <label class="text-slate-400 block mb-1">Sunucu IP</label>
-                    <input type="text" id="globalHost" class="w-full bg-darkbg border border-cardborder rounded-lg p-2 text-white">
+                    <input type="text" id="globalHost" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-white font-mono">
                 </div>
                 <div class="grid grid-cols-2 gap-2">
                     <div>
                         <label class="text-slate-400 block mb-1">Port</label>
-                        <input type="number" id="globalPort" value="25565" class="w-full bg-darkbg border border-cardborder rounded-lg p-2 text-white">
+                        <input type="number" id="globalPort" value="25565" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-white font-mono">
                     </div>
                     <div>
                         <label class="text-slate-400 block mb-1">Minecraft Sürümü</label>
-                        <select id="globalVersion" class="w-full bg-darkbg border border-cardborder rounded-lg p-2 text-white">
-                            <option value="1.21.1">1.21.1</option>
-                            <option value="1.21">1.21</option>
-                            <option value="1.20.6">1.20.6</option>
+                        <select id="globalVersion" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-white font-mono">
                             <option value="1.20.4" selected>1.20.4</option>
-                            <option value="1.20.1">1.20.1</option>
-                            <option value="1.16.5">1.16.5</option>
-                            <option value="1.12.2">1.12.2</option>
+                            <option value="1.20.6">1.20.6</option>
+                            <option value="1.21">1.21</option>
                         </select>
                     </div>
                 </div>
                 <div>
-                    <label class="text-slate-400 block mb-1">Otomatik Lobi / Aktarma Komutu</label>
-                    <input type="text" id="globalSubCmd" placeholder="/gir asmp" class="w-full bg-darkbg border border-cardborder rounded-lg p-2 text-white">
+                    <label class="text-slate-400 block mb-1">Oto Lobi / Aktarma Komutu</label>
+                    <input type="text" id="globalSubCmd" placeholder="/gir asmp" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-white font-mono">
                 </div>
             </div>
 
-            <div class="flex justify-end gap-2 pt-2 border-t border-cardborder">
+            <div class="flex justify-end gap-2 pt-2 border-t border-slate-800">
                 <button onclick="closeGlobalConfigModal()" class="px-3 py-1.5 bg-slate-800 text-slate-300 rounded-lg">İptal</button>
-                <button onclick="saveGlobalConfig()" class="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white font-medium rounded-lg">Kaydet</button>
+                <button onclick="saveGlobalConfig()" class="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-lg">Kaydet</button>
             </div>
         </div>
     </div>
@@ -228,9 +270,11 @@
     <script>
         const socket = io();
         let bots = [];
-        let selectedBotId = 'all';
+        let selectedBotId = null;
         let globalConfig = {};
         let activeLogFilter = 'all';
+        let currentBotPos = { x: 0, y: 64, z: 0 };
+        let radarAngle = 0;
 
         socket.on('init-data', (data) => {
             globalConfig = data.globalConfig || {};
@@ -241,11 +285,19 @@
             document.getElementById('globalVersion').value = globalConfig.version || '1.20.4';
             document.getElementById('globalSubCmd').value = globalConfig.autoSubServerCmd || '';
             
-            document.getElementById('globalHostBadge').innerText = `Sunucu: ${globalConfig.host || 'Tanımlanmadı'}`;
+            document.getElementById('globalHostBadge').innerText = globalConfig.host || 'play.donutsmp.net';
+
+            if (bots.length > 0 && !selectedBotId) {
+                selectedBotId = bots[0].id;
+            }
             renderBotList();
         });
 
-        socket.on('bot-added', (bot) => { bots.push(bot); renderBotList(); });
+        socket.on('bot-added', (bot) => { 
+            bots.push(bot); 
+            if (!selectedBotId) selectBot(bot.id);
+            else renderBotList(); 
+        });
 
         socket.on('status-update', ({ botId, status, health, food }) => {
             const bot = bots.find(b => b.id === botId);
@@ -259,54 +311,59 @@
         });
 
         socket.on('bot-log', (log) => {
-            if (selectedBotId === 'all' || selectedBotId === log.botId) appendLog(log);
+            if (selectedBotId === log.botId) appendLog(log);
         });
 
         socket.on('bot-tablist', ({ botId, players }) => {
             if (selectedBotId === botId) {
                 document.getElementById('tabCount').innerText = `${players.length} Oyuncu`;
                 document.getElementById('tablistContainer').innerHTML = players.map(p => 
-                    `<div class="flex justify-between border-b border-cardborder/50 pb-0.5">
+                    `<div class="flex justify-between border-b border-slate-900/60 pb-0.5">
                         <span class="text-slate-300">${p.name}</span>
-                        <span class="text-slate-500 font-mono">${p.ping}ms</span>
+                        <span class="text-emerald-400 font-mono">${p.ping}ms</span>
                     </div>`
-                ).join('') || '<span class="text-slate-500">Veri yok</span>';
+                ).join('') || '<span class="text-slate-600">Veri yok</span>';
             }
         });
 
         socket.on('bot-map-update', ({ botId, pos }) => {
             if (selectedBotId === botId) {
+                currentBotPos = pos;
                 document.getElementById('posBadge').innerText = `X:${pos.x} Y:${pos.y} Z:${pos.z}`;
-                drawRadar(pos);
             }
         });
 
         function renderBotList() {
             const container = document.getElementById('botListContainer');
             const activeCount = bots.filter(b => b.status === 'Online').length;
+            
             document.getElementById('activeBotStats').innerText = `${activeCount}/${bots.length} Aktif`;
+            document.getElementById('totalBotCountDisplay').innerText = `${bots.length} Bot`;
 
-            let html = `
-                <div onclick="selectBot('all')" class="p-2 rounded-lg border cursor-pointer transition flex items-center justify-between ${selectedBotId === 'all' ? 'bg-indigo-950/60 border-indigo-500 text-white' : 'bg-darkbg border-cardborder hover:border-slate-700'}">
-                    <div class="flex items-center gap-2">
-                        <i class="fa-solid fa-layer-group text-indigo-400"></i>
-                        <span class="font-medium">Tüm Botlar (Toplu)</span>
-                    </div>
-                </div>
-            `;
+            if (bots.length === 0) {
+                container.innerHTML = `<div class="p-3 text-center text-slate-600 italic text-xs">Henüz bot eklenmedi.</div>`;
+                showNoBotState();
+                return;
+            }
 
+            if (!selectedBotId && bots.length > 0) {
+                selectBot(bots[0].id);
+                return;
+            }
+
+            let html = '';
             bots.forEach(b => {
                 const isSelected = selectedBotId === b.id;
-                let statusBadge = b.status === 'Online' ? '<span class="w-2 h-2 rounded-full bg-emerald-400"></span>' :
-                                 (b.status === 'Connecting' ? '<span class="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>' : '<span class="w-2 h-2 rounded-full bg-slate-600"></span>');
+                let statusDot = b.status === 'Online' ? '<span class="w-2 h-2 rounded-full bg-emerald-400 glow-active"></span>' :
+                               (b.status === 'Connecting' ? '<span class="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>' : '<span class="w-2 h-2 rounded-full bg-slate-600"></span>');
 
                 html += `
-                    <div onclick="selectBot('${b.id}')" class="p-2 rounded-lg border cursor-pointer transition flex items-center justify-between ${isSelected ? 'bg-indigo-950/60 border-indigo-500' : 'bg-darkbg border-cardborder hover:border-slate-700'}">
+                    <div onclick="selectBot('${b.id}')" class="p-2 rounded-xl border cursor-pointer transition flex items-center justify-between ${isSelected ? 'bg-indigo-950/80 border-indigo-500 shadow-md' : 'bg-slate-950/60 border-slate-800 hover:border-slate-700'}">
                         <div class="flex items-center gap-2">
                             <img src="https://minotar.net/helm/${b.username}/20.png" onerror="this.src='https://minotar.net/helm/Steve/20.png'" class="w-5 h-5 rounded">
                             <div>
-                                <div class="font-medium flex items-center gap-1.5 text-white">${b.username} ${statusBadge}</div>
-                                <div class="text-[9px] text-slate-500">${b.status}</div>
+                                <div class="font-bold flex items-center gap-1.5 text-white">${b.username} ${statusDot}</div>
+                                <div class="text-[9px] text-slate-500 font-mono">${b.status}</div>
                             </div>
                         </div>
                         <div class="flex items-center gap-1">
@@ -324,35 +381,40 @@
             const quickControls = document.getElementById('quickControls');
             document.getElementById('logBox').innerHTML = '';
 
-            if (id === 'all') {
-                quickControls.classList.add('hidden');
-                document.getElementById('selectedBotTitle').innerText = 'Tüm Botlar (Toplu)';
-                document.getElementById('selectedBotStatus').innerText = 'Toplu Yönetim';
-                document.getElementById('selectedBotHead').src = 'https://minotar.net/helm/Steve/32.png';
-                updateHealthBars(20, 20);
-            } else {
-                quickControls.classList.remove('hidden');
-                const bot = bots.find(b => b.id === id);
-                if (bot) {
-                    updateBotHeader(bot);
-                    if (bot.logs) bot.logs.forEach(appendLog);
-                    updateQuickControlsUI(bot);
-                }
+            quickControls.classList.remove('hidden');
+            const bot = bots.find(b => b.id === id);
+            if (bot) {
+                updateBotHeader(bot);
+                if (bot.logs) bot.logs.forEach(appendLog);
+                updateQuickControlsUI(bot);
             }
             renderBotList();
+        }
+
+        function showNoBotState() {
+            document.getElementById('selectedBotTitle').innerText = 'Bot Yok';
+            document.getElementById('selectedBotStatus').innerText = 'Offline';
+            document.getElementById('selectedBotHead').src = 'https://minotar.net/helm/Steve/36.png';
+            document.getElementById('selectedBotSub').innerText = 'Lütfen yeni bir bot ekleyin';
+            document.getElementById('quickControls').classList.add('hidden');
+            updateHealthBars(20, 20);
         }
 
         function updateBotHeader(bot) {
             document.getElementById('selectedBotTitle').innerText = bot.username;
             document.getElementById('selectedBotStatus').innerText = bot.status;
-            document.getElementById('selectedBotHead').src = `https://minotar.net/helm/${bot.username}/32.png`;
+            document.getElementById('selectedBotHead').src = `https://minotar.net/helm/${bot.username}/36.png`;
             document.getElementById('selectedBotSub').innerText = `Sürüm: ${bot.version || globalConfig.version || '1.20.4'}`;
+            
+            const liveInd = document.getElementById('liveIndicator');
+            liveInd.className = `absolute -bottom-1 -right-1 w-3 h-3 border-2 border-darkbg rounded-full ${bot.status === 'Online' ? 'bg-emerald-400 glow-active' : 'bg-slate-600'}`;
+            
             updateHealthBars(bot.health ?? 20, bot.food ?? 20);
         }
 
         function updateHealthBars(hp, food) {
-            document.getElementById('hpText').innerText = `${hp}/20`;
-            document.getElementById('foodText').innerText = `${food}/20`;
+            document.getElementById('hpText').innerText = hp;
+            document.getElementById('foodText').innerText = food;
             document.getElementById('hpBar').style.width = `${(hp / 20) * 100}%`;
             document.getElementById('foodBar').style.width = `${(food / 20) * 100}%`;
         }
@@ -362,13 +424,12 @@
 
             const box = document.getElementById('logBox');
             const div = document.createElement('div');
-            let color = 'text-slate-300';
-            if (log.type === 'error') color = 'text-rose-400 font-medium';
-            if (log.type === 'system') color = 'text-amber-400';
-            if (log.type === 'chat') color = 'text-indigo-300';
+            let badge = '<span class="text-indigo-400">[CHAT]</span>';
+            if (log.type === 'error') badge = '<span class="text-rose-400 font-bold">[HATA]</span>';
+            if (log.type === 'system') badge = '<span class="text-amber-400">[SİSTEM]</span>';
 
-            div.className = `${color} border-b border-cardborder/40 pb-0.5 flex gap-1.5`;
-            div.innerHTML = `<span class="text-slate-500 shrink-0">[${log.timestamp}]</span> <span class="break-all">${escapeHtml(log.text)}</span>`;
+            div.className = `border-b border-slate-900/50 pb-0.5 flex gap-1.5 items-start text-slate-300`;
+            div.innerHTML = `<span class="text-slate-600 font-mono shrink-0">${log.timestamp}</span> ${badge} <span class="break-all font-mono">${escapeHtml(log.text)}</span>`;
             box.appendChild(div);
             box.scrollTop = box.scrollHeight;
         }
@@ -385,18 +446,14 @@
             event.target.classList.replace('text-slate-400', 'text-white');
             
             document.getElementById('logBox').innerHTML = '';
-            if (selectedBotId !== 'all') {
+            if (selectedBotId) {
                 const bot = bots.find(b => b.id === selectedBotId);
                 if (bot && bot.logs) bot.logs.forEach(appendLog);
             }
         }
 
         function clearConsole() { document.getElementById('logBox').innerHTML = ''; }
-        function addBot() {
-            const name = prompt('Bot Kullanıcı Adı:');
-            if (name) socket.emit('add-bot', { username: name });
-        }
-
+        function addBot() { const name = prompt('Bot Kullanıcı Adı:'); if (name) socket.emit('add-bot', { username: name }); }
         function startBot(id) { socket.emit('start-bot', id); }
         function stopBot(id) { socket.emit('stop-bot', id); }
         function startAll() { socket.emit('start-all'); }
@@ -404,14 +461,14 @@
 
         function sendCommand() {
             const input = document.getElementById('cmdInput');
-            if (input.value.trim()) {
+            if (input.value.trim() && selectedBotId) {
                 socket.emit('send-command', { targetBotId: selectedBotId, command: input.value.trim() });
                 input.value = '';
             }
         }
 
         function toggleAutoReconnect() {
-            if (selectedBotId === 'all') return;
+            if (!selectedBotId) return;
             const bot = bots.find(b => b.id === selectedBotId);
             if (bot) {
                 bot.autoReconnect = !bot.autoReconnect;
@@ -421,7 +478,7 @@
         }
 
         function toggleAntiAfk() {
-            if (selectedBotId === 'all') return;
+            if (!selectedBotId) return;
             const bot = bots.find(b => b.id === selectedBotId);
             if (bot) {
                 bot.antiAfk = !bot.antiAfk;
@@ -434,16 +491,15 @@
             const recEl = document.getElementById('statusAutoReconnect');
             const afkEl = document.getElementById('statusAntiAfk');
             
-            recEl.innerText = bot.autoReconnect ? 'Aktif' : 'Devre Dışı';
-            recEl.className = `text-xs font-bold ${bot.autoReconnect ? 'text-emerald-400' : 'text-rose-400'}`;
+            recEl.innerText = bot.autoReconnect ? 'Açık' : 'Kapalı';
+            recEl.className = `text-[11px] font-extrabold ${bot.autoReconnect ? 'text-emerald-400' : 'text-rose-400'}`;
 
-            afkEl.innerText = bot.antiAfk ? 'Aktif' : 'Devre Dışı';
-            afkEl.className = `text-xs font-bold ${bot.antiAfk ? 'text-emerald-400' : 'text-rose-400'}`;
+            afkEl.innerText = bot.antiAfk ? 'Açık' : 'Kapalı';
+            afkEl.className = `text-[11px] font-extrabold ${bot.antiAfk ? 'text-emerald-400' : 'text-rose-400'}`;
         }
 
         function openGlobalConfigModal() { document.getElementById('globalConfigModal').classList.remove('hidden'); }
         function closeGlobalConfigModal() { document.getElementById('globalConfigModal').classList.add('hidden'); }
-        
         function saveGlobalConfig() {
             const config = {
                 host: document.getElementById('globalHost').value.trim(),
@@ -455,24 +511,76 @@
             closeGlobalConfigModal();
         }
 
-        function drawRadar(centerPos) {
+        function switchTab(tabName) {
+            const pConsole = document.getElementById('panelConsole');
+            const pRadar = document.getElementById('panelRadar');
+            const pBots = document.getElementById('panelBots');
+
+            pConsole.classList.add('hidden');
+            pRadar.classList.add('hidden');
+            pBots.classList.add('hidden');
+
+            document.querySelectorAll('[id^="tabBtn"]').forEach(btn => {
+                btn.className = "flex-1 py-1.5 rounded-lg bg-slate-800 text-slate-400 font-semibold text-[11px] flex items-center justify-center gap-1";
+            });
+
+            if (tabName === 'console') {
+                pConsole.classList.remove('hidden');
+                document.getElementById('tabBtnConsole').className = "flex-1 py-1.5 rounded-lg bg-indigo-600 text-white font-semibold text-[11px] flex items-center justify-center gap-1";
+            } else if (tabName === 'radar') {
+                pRadar.classList.remove('hidden');
+                document.getElementById('tabBtnRadar').className = "flex-1 py-1.5 rounded-lg bg-indigo-600 text-white font-semibold text-[11px] flex items-center justify-center gap-1";
+            } else if (tabName === 'bots') {
+                pBots.classList.remove('hidden');
+                document.getElementById('tabBtnBots').className = "flex-1 py-1.5 rounded-lg bg-indigo-600 text-white font-semibold text-[11px] flex items-center justify-center gap-1";
+            }
+        }
+
+        function animateRadar() {
             const canvas = document.getElementById('radarCanvas');
+            if (!canvas) return;
             const ctx = canvas.getContext('2d');
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
             const cx = canvas.width / 2, cy = canvas.height / 2;
 
-            ctx.strokeStyle = '#1f2937';
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            ctx.strokeStyle = '#1e293b';
             ctx.lineWidth = 1;
-            ctx.beginPath();
-            ctx.arc(cx, cy, 30, 0, Math.PI * 2);
-            ctx.arc(cx, cy, 60, 0, Math.PI * 2);
+            ctx.beginPath(); ctx.arc(cx, cy, 25, 0, Math.PI * 2); ctx.stroke();
+            ctx.beginPath(); ctx.arc(cx, cy, 55, 0, Math.PI * 2); ctx.stroke();
+            ctx.beginPath(); ctx.arc(cx, cy, 80, 0, Math.PI * 2); ctx.stroke();
+
             ctx.moveTo(cx, 0); ctx.lineTo(cx, canvas.height);
             ctx.moveTo(0, cy); ctx.lineTo(canvas.width, cy);
             ctx.stroke();
 
+            radarAngle += 0.04;
+            ctx.save();
+            ctx.translate(cx, cy);
+            ctx.rotate(radarAngle);
+            
+            const gradient = ctx.createLinearGradient(0, 0, 80, 0);
+            gradient.addColorStop(0, 'rgba(16, 185, 129, 0.4)');
+            gradient.addColorStop(1, 'rgba(16, 185, 129, 0)');
+            
+            ctx.fillStyle = gradient;
+            ctx.beginPath();
+            ctx.moveTo(0, 0);
+            ctx.arc(0, 0, 80, 0, -0.6, true);
+            ctx.closePath();
+            ctx.fill();
+            ctx.restore();
+
             ctx.fillStyle = '#6366f1';
+            ctx.shadowColor = '#6366f1';
+            ctx.shadowBlur = 10;
             ctx.beginPath(); ctx.arc(cx, cy, 4, 0, Math.PI * 2); ctx.fill();
+            ctx.shadowBlur = 0;
+
+            requestAnimationFrame(animateRadar);
         }
+
+        window.onload = animateRadar;
     </script>
 </body>
 </html>

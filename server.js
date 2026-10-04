@@ -9,7 +9,6 @@ const io = new Server(server);
 
 app.use(express.static('public'));
 
-// Aktif Bot Listesi ve Genel Varsayılan Ayarlar
 let bots = [];
 let globalSettings = {
     host: 'oyna.aesirmc.com',
@@ -120,7 +119,6 @@ io.on('connection', (socket) => {
             health: 20,
             food: 20,
             pos: { x: 0, y: 0, z: 0 },
-            // Her bot oluşturulurken o anki genel ayarların bir kopyasını (bireysel ayar olarak) alır
             config: { ...globalSettings },
             logs: [],
             client: null
@@ -155,7 +153,6 @@ io.on('connection', (socket) => {
         }
     });
 
-    // Toplu Başlat
     socket.on('start-all', () => {
         bots.forEach(bot => {
             if (bot.status !== 'Online' && bot.status !== 'Connecting') {
@@ -164,7 +161,6 @@ io.on('connection', (socket) => {
         });
     });
 
-    // Toplu Durdur
     socket.on('stop-all', () => {
         bots.forEach(bot => {
             if (bot.client) {
@@ -176,7 +172,6 @@ io.on('connection', (socket) => {
         });
     });
 
-    // Global / Konsol Komut Gönderimi
     socket.on('global-command', (data) => {
         const { target, command } = data;
         bots.forEach(bot => {
@@ -187,12 +182,10 @@ io.on('connection', (socket) => {
         });
     });
 
-    // Sadece yeni eklenecek botlar için şablon ayarları günceller (Mevcut botları bozmaz)
     socket.on('update-global-settings', (newSettings) => {
         globalSettings = newSettings;
     });
 
-    // Belirli bir botun kendi bireysel ayarlarını günceller
     socket.on('update-bot-config', (data) => {
         const bot = bots.find(b => b.id === data.botId);
         if (bot) {

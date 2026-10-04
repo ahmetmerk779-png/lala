@@ -182,7 +182,6 @@
                 bot.logs.push({ timestamp: data.timestamp, text: data.text, type: data.type });
                 if (bot.logs.length > 50) bot.logs.shift();
                 
-                // Terminal içeriğini ve scroll konumunu doğrudan güncelle
                 const logContainer = document.getElementById(`logs_${data.botId}`);
                 if (logContainer) {
                     logContainer.innerHTML = bot.logs.map(l => {
@@ -241,7 +240,7 @@
                             </div>
                         </div>
 
-                        <!-- 4'lü Yan Yana Bilgi Panelleri (Scoreboard, Tab, Radar, Saat) -->
+                        <!-- 4'lü Yan Yana Bilgi Panelleri -->
                         <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
                             <!-- Scoreboard -->
                             <div class="bg-slate-950/60 border border-slate-800/80 rounded-xl p-2">
@@ -366,7 +365,7 @@
                 port: Number(document.getElementById('botPort').value),
                 version: document.getElementById('botVersion').value.trim(),
                 password: document.getElementById('botPassword').value.trim(),
-                autoSubServerCmd: document.getElementById('botSubCmd'].value.trim()
+                autoSubServerCmd: document.getElementById('botSubCmd').value.trim()
             };
             socket.emit('update-bot-config', { botId, config });
             closeBotSettings();

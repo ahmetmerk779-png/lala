@@ -9,18 +9,16 @@ const io = new Server(server);
 
 app.use(express.static('public'));
 
-// Tüm botların tutulduğu ana dizi
 let bots = [];
 
 function addLog(bot, text, type = 'info') {
     const timestamp = new Date().toLocaleTimeString('tr-TR');
     if (!bot.logs) bot.logs = [];
     bot.logs.push({ timestamp, text, type });
-    if (bot.logs.length > 100) bot.logs.shift();
+    if (bot.logs.length > 80) bot.logs.shift();
     io.emit('bot-log', { botId: bot.id, timestamp, text, type });
 }
 
-// Renk kodlarını temizleme ve JSON chat çevirme
 function parseChat(chat) {
     if (!chat) return '';
     if (typeof chat === 'string') {
@@ -45,50 +43,54 @@ function startBotInstance(bot) {
     bot.entities = {}; 
     bot.radarEntities = [];
 
-    addLog(bot, `${bot.username}, ${bot.config.host}:${bot.config.port} adresine bağlanıyor...`, 'system');
+    addLog(bot, `${bot.username} sunucuya bağlanıyor (${bot.config.host}:${bot.config.port} - Ver: ${bot.config.version || 'Auto'})`, 'system');
     io.emit('bot-updated', bot);
 
     try {
-        bot.client = mc.createClient({
+        const clientOptions = {
             host: bot.config.host,
-            port: Number(bot.config.port),
+            port: Number(bot.config.port) || 25565,
             username: bot.username,
-            version: bot.config.version || false,
             skipValidation: true
-        });
+        };
+
+        if (bot.config.version && bot.config.version !== 'auto') {
+            clientOptions.version = bot.config.version;
+        }
+
+        bot.client = mc.createClient(clientOptions);
 
         bot.client.once('login', () => {
             bot.status = 'Online';
-            addLog(bot, 'Sunucuya başarıyla giriş yapıldı.', 'system');
+            addLog(bot, 'Giriş başarılı! Sunucu paketleri işleniyor...', 'system');
             
             if (bot.config.password) {
                 setTimeout(() => {
                     if (bot.client && bot.status === 'Online') {
                         bot.client.write('chat', { message: `/login ${bot.config.password}` });
-                        addLog(bot, `Giriş şifresi gönderildi.`, 'system');
+                        addLog(bot, `Giriş şifresi gönderildi (/login).`, 'system');
                     }
                 }, 1500);
             }
+
             if (bot.config.autoSubServerCmd) {
                 setTimeout(() => {
                     if (bot.client && bot.status === 'Online') {
                         bot.client.write('chat', { message: bot.config.autoSubServerCmd });
-                        addLog(bot, `Yönlendirme yapıldı: ${bot.config.autoSubServerCmd}`, 'system');
+                        addLog(bot, `Yönlendirme komutu gönderildi: ${bot.config.autoSubServerCmd}`, 'system');
                     }
                 }, 3000);
             }
         });
 
-        // Pozisyon
         bot.client.on('position', (packet) => {
             bot.pos = { x: packet.x, y: packet.y, z: packet.z };
         });
 
-        // Tab Listesi (Oyuncular ve Ping)
         bot.client.on('player_info_update', (packet) => {
             if(packet.data) {
                 packet.data.forEach(p => {
-                    if (!bot.tabPlayers[p.UUID]) bot.tabPlayers[p.UUID] = { name: 'Bilinmeyen', ping: 0 };
+                    if (!bot.tabPlayers[p.UUID]) bot.tabPlayers[p.UUID] = { name: 'Oyuncu', ping: 0 };
                     if (p.player && p.player.name) bot.tabPlayers[p.UUID].name = p.player.name;
                     if (p.latency !== undefined) bot.tabPlayers[p.UUID].ping = p.latency;
                 });
@@ -103,7 +105,6 @@ function startBotInstance(bot) {
             }
         });
 
-        // Scoreboard Verileri
         bot.client.on('scoreboard_objective', (packet) => {
             if (packet.action === 0 || packet.action === 2) {
                 bot.scoreboard.title = parseChat(packet.displayText) || packet.name;
@@ -116,7 +117,6 @@ function startBotInstance(bot) {
             else if (packet.action === 1) delete bot.scoreboard.items[cleanName];
         });
 
-        // Radar Varlıkları (Yakındaki varlıkları yakalama)
         bot.client.on('spawn_entity', (packet) => { bot.entities[packet.entityId] = { x: packet.x, z: packet.z }; });
         bot.client.on('entity_teleport', (packet) => {
             if (bot.entities[packet.entityId]) { bot.entities[packet.entityId].x = packet.x; bot.entities[packet.entityId].z = packet.z; }
@@ -125,7 +125,6 @@ function startBotInstance(bot) {
             if(packet.entityIds) packet.entityIds.forEach(id => delete bot.entities[id]);
         });
 
-        // Terminal (Chat) Okuma
         bot.client.on('chat', (packet) => {
             const text = parseChat(packet.message);
             if(text) addLog(bot, `[Chat] ${text}`);
@@ -145,7 +144,6 @@ function startBotInstance(bot) {
             io.emit('bot-updated', bot);
         });
 
-        // Arayüze saniyede 1 kez varlık koordinatlarını gönder
         bot.updateInterval = setInterval(() => {
             if (bot.status === 'Online') {
                 bot.radarEntities = Object.values(bot.entities).map(e => ({ x: e.x, z: e.z }));
@@ -155,7 +153,7 @@ function startBotInstance(bot) {
 
     } catch (err) {
         bot.status = 'Error';
-        addLog(bot, `Sistem Hatası: ${err.message}`, 'error');
+        addLog(bot, `Başlatma Hatası: ${err.message}`, 'error');
         io.emit('bot-updated', bot);
     }
 }
@@ -163,11 +161,10 @@ function startBotInstance(bot) {
 io.on('connection', (socket) => {
     socket.emit('init-data', { botList: bots });
 
-    // Yeni Bot Ekleme (Her botun bağımsız ayarlarıyla eklenir)
     socket.on('add-bot', (data) => {
         const newBot = {
             id: 'bot_' + Date.now(),
-            username: data.username,
+            username: data.username || 'Bot_' + Math.floor(Math.random() * 1000),
             status: 'Offline',
             pos: { x: 0, y: 0, z: 0 },
             scoreboard: { title: 'Yükleniyor...', items: {} },
@@ -177,7 +174,7 @@ io.on('connection', (socket) => {
             config: {
                 host: data.host || 'oyna.aesirmc.com',
                 port: data.port || 25565,
-                version: data.version || '1.20.6',
+                version: data.version || 'auto',
                 password: data.password || '',
                 autoSubServerCmd: data.autoSubServerCmd || ''
             },
@@ -187,12 +184,11 @@ io.on('connection', (socket) => {
         io.emit('bot-added', newBot);
     });
 
-    // Bota Özel Ayarları Güncelleme
     socket.on('update-bot-config', (data) => {
         const bot = bots.find(b => b.id === data.botId);
         if (bot) {
             bot.config = { ...bot.config, ...data.config };
-            addLog(bot, 'Botun özel ayarları başarıyla güncellendi.', 'system');
+            addLog(bot, 'Bot konfigürasyonu güncellendi.', 'system');
             io.emit('bot-updated', bot);
         }
     });
@@ -203,7 +199,7 @@ io.on('connection', (socket) => {
         if (bot && bot.client) {
             try { bot.client.end(); } catch (e) {}
             bot.status = 'Offline';
-            addLog(bot, 'Bot durduruldu.', 'system');
+            addLog(bot, 'Bot manuel olarak durduruldu.', 'system');
             io.emit('bot-updated', bot);
         }
     });

@@ -67,12 +67,11 @@ function startBotInstance(bot) {
     }
     if (bot.updateInterval) clearInterval(bot.updateInterval);
     if (bot.loginTimeout) clearTimeout(bot.loginTimeout);
-    if (bot.subServerTimeout) clearTimeout(bot.subServerTimeout);
 
     bot.status = 'Connecting';
     bot.onlineTimeSeconds = 0;
     bot.pos = { x: 0, y: 0, z: 0 };
-    bot.scoreboard = { title: 'AESIRMCASMP', items: {} };
+    bot.scoreboard = { title: bot.config.host, items: {} };
     bot.tabPlayers = {};
     bot.tabList = [];
     bot.entities = {}; 
@@ -98,57 +97,44 @@ function startBotInstance(bot) {
 
         bot.client.once('login', () => {
             bot.status = 'Online';
-            addLog(bot, 'Giriş başarılı! Sunucu paketleri işleniyor...', 'system');
+            addLog(bot, 'Sunucuya giriş başarılı!', 'system');
             
-            // 1. Şifre Gönderimi (/login)
             if (bot.config.password) {
                 bot.loginTimeout = setTimeout(() => {
                     if (bot.client && bot.status === 'Online') {
                         sendCommand(bot, `/login ${bot.config.password}`);
-                        addLog(bot, 'Şifre otomatik gönderildi (/login).', 'system');
+                        addLog(bot, 'Şifre gönderildi (/login).', 'system');
                     }
-                }, 2500);
+                }, 2000);
             }
-
-            // 2. Alt Sunucuya Geçiş (/gir asmp) - Soket stabilizasyonu için süre uzatıldı
-            bot.subServerTimeout = setTimeout(() => {
-                if (bot.client && bot.status === 'Online') {
-                    const subCmd = bot.config.autoSubServerCmd || '/gir asmp';
-                    addLog(bot, `[Otomasyon] Sunucuya geçiliyor: ${subCmd}`, 'system');
-                    sendCommand(bot, subCmd);
-                }
-            }, 6500);
         });
 
-        // Pozisyon Takibi
         bot.client.on('position', (packet) => { 
             bot.pos = { x: Math.round(packet.x), y: Math.round(packet.y), z: Math.round(packet.z) }; 
         });
 
-        // TAB OYUNCU LİSTESİ PAKETLERİ
         bot.client.on('player_info_update', (packet) => {
             if (packet.data) {
                 packet.data.forEach(p => {
-                    if (!bot.tabPlayers[p.UUID]) bot.tabPlayers[p.UUID] = { name: 'Oyuncu', ping: 0 };
+                    if (!bot.tabPlayers[p.UUID]) bot.tabPlayers[p.UUID] = { name: '', ping: 0 };
                     if (p.player && p.player.name) bot.tabPlayers[p.UUID].name = p.player.name;
                     if (p.latency !== undefined) bot.tabPlayers[p.UUID].ping = p.latency;
                 });
-                bot.tabList = Object.values(bot.tabPlayers).filter(x => x.name !== 'Oyuncu');
+                bot.tabList = Object.values(bot.tabPlayers).filter(x => x.name && x.name.length > 0);
             }
         });
 
         bot.client.on('player_info', (packet) => {
             if (packet.action === 0 && packet.data) {
                 packet.data.forEach(p => {
-                    bot.tabPlayers[p.UUID] = { name: p.name || 'Oyuncu', ping: p.ping || 0 };
+                    bot.tabPlayers[p.UUID] = { name: p.name || '', ping: p.ping || 0 };
                 });
             } else if (packet.action === 4 && packet.data) {
                 packet.data.forEach(p => { delete bot.tabPlayers[p.UUID]; });
             }
-            bot.tabList = Object.values(bot.tabPlayers).filter(x => x.name !== 'Oyuncu');
+            bot.tabList = Object.values(bot.tabPlayers).filter(x => x.name && x.name.length > 0);
         });
 
-        // SCOREBOARD (Görseldeki Tam Detaylı Yapı)
         bot.client.on('scoreboard_objective', (packet) => {
             if (packet.action === 0 || packet.action === 2) {
                 bot.scoreboard.title = parseChat(packet.displayText) || packet.name;
@@ -166,24 +152,20 @@ function startBotInstance(bot) {
             }
         });
 
-        // SOHBET VE MESAJLAR
         bot.client.on('chat', (packet) => {
             const text = parseChat(packet.message);
             if (text) addLog(bot, text, 'chat');
         });
-
         bot.client.on('systemChat', (packet) => {
             const text = parseChat(packet.content);
             if (text) addLog(bot, text, 'system');
         });
-
         bot.client.on('playerChat', (packet) => {
             const sender = packet.senderName ? parseChat(packet.senderName) : 'Oyuncu';
             const msg = parseChat(packet.formattedMessage || packet.unsignedContent || packet.plainMessage);
             addLog(bot, `<${sender}> ${msg}`, 'chat');
         });
 
-        // RADAR VARLIKLARI
         bot.client.on('named_entity_spawn', (packet) => {
             bot.entities[packet.entityId] = { x: packet.x / 32, z: packet.z / 32, type: 'player' };
         });
@@ -194,18 +176,11 @@ function startBotInstance(bot) {
             if (packet.entityIds) packet.entityIds.forEach(id => delete bot.entities[id]);
         });
 
-        // BAĞLANTI KOPMASI VE OTO-YENİDEN BAĞLANMA
         bot.client.on('end', (reason) => {
             bot.status = 'Offline';
             if (bot.updateInterval) clearInterval(bot.updateInterval);
-            addLog(bot, `Bağlantı kesildi: ${reason}. 10 sn sonra yeniden bağlanılacak...`, 'error');
+            addLog(bot, `Bağlantı kesildi: ${reason}`, 'error');
             io.emit('bot-updated', bot);
-
-            setTimeout(() => {
-                if (bot.status === 'Offline') {
-                    startBotInstance(bot);
-                }
-            }, 10000);
         });
 
         bot.client.on('error', (err) => {
@@ -235,20 +210,19 @@ io.on('connection', (socket) => {
     socket.on('add-bot', (data) => {
         const newBot = {
             id: 'bot_' + Date.now(),
-            username: data.username || 'banyedin',
+            username: data.username || 'Bot',
             status: 'Offline',
             onlineTimeSeconds: 0,
             pos: { x: 0, y: 0, z: 0 },
-            scoreboard: { title: 'AESIRMCASMP', items: {} },
+            scoreboard: { title: data.host || 'SUNUCU', items: {} },
             tabList: [],
             radarEntities: [],
             logs: [],
             config: {
                 host: data.host || 'oyna.aesirmc.com',
-                port: data.port || 25565,
+                port: Number(data.port) || 25565,
                 version: data.version || 'auto',
-                password: data.password || '',
-                autoSubServerCmd: '/gir asmp'
+                password: data.password || ''
             },
             client: null
         };

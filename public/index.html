@@ -1,981 +1,376 @@
 <!DOCTYPE html>
-<html lang="tr">
+<html lang="tr" class="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Minecraft Bot Panel</title>
+    <title>MC Bot Manager</title>
     <script src="/socket.io/socket.io.js"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: { extend: { colors: { darkbg: '#0b0f19', cardbg: '#111827', cardborder: '#1f2937' } } }
+        }
+    </script>
     <style>
-        :root {
-            --bg-body: #0b0f17;
-            --bg-card: #151c28;
-            --bg-input: #1e293b;
-            --border-color: #27354a;
-            --accent-primary: #6366f1;
-            --accent-hover: #4f46e5;
-            --success: #10b981;
-            --warning: #f59e0b;
-            --danger: #ef4444;
-            --text-main: #f8fafc;
-            --text-muted: #94a3b8;
-        }
-
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-            font-family: 'Inter', system-ui, -apple-system, sans-serif;
-            -webkit-tap-highlight-color: transparent;
-        }
-
-        body {
-            background-color: var(--bg-body);
-            color: var(--text-main);
-            padding: 12px;
-            font-size: 14px;
-        }
-
-        .container {
-            max-width: 800px;
-            margin: 0 auto;
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
-        }
-
-        .header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            background: var(--bg-card);
-            border: 1px solid var(--border-color);
-            padding: 14px 16px;
-            border-radius: 12px;
-        }
-
-        .header h1 {
-            font-size: 16px;
-            font-weight: 700;
-            background: linear-gradient(135deg, #a5b4fc, #6366f1);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-        }
-
-        .card {
-            background: var(--bg-card);
-            border: 1px solid var(--border-color);
-            border-radius: 12px;
-            padding: 14px;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
-        }
-
-        .card-header {
-            font-size: 12px;
-            font-weight: 600;
-            color: var(--text-muted);
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-            margin-bottom: 10px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .form-group {
-            display: flex;
-            gap: 8px;
-        }
-
-        input, select {
-            background: var(--bg-input);
-            border: 1px solid var(--border-color);
-            color: var(--text-main);
-            padding: 10px 12px;
-            border-radius: 8px;
-            font-size: 13px;
-            outline: none;
-        }
-
-        button {
-            border: none;
-            padding: 9px 14px;
-            border-radius: 8px;
-            font-size: 12px;
-            font-weight: 600;
-            cursor: pointer;
-            color: #fff;
-        }
-
-        .btn-primary { background: var(--accent-primary); }
-        .btn-success { background: #059669; }
-        .btn-warning { background: #d97706; }
-        .btn-danger { background: #dc2626; }
-        .btn-secondary { background: #334155; color: var(--text-main); }
-
-        .bot-card {
-            background: #0f172a;
-            border: 1px solid var(--border-color);
-            border-radius: 10px;
-            padding: 12px;
-            margin-bottom: 12px;
-        }
-
-        .bot-top {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 8px;
-            flex-wrap: wrap;
-            gap: 8px;
-        }
-
-        .bot-title {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            flex-wrap: wrap;
-        }
-
-        .bot-name { font-weight: 700; font-size: 15px; color: #f1f5f9; }
-
-        .bot-details-bar {
-            font-size: 11px;
-            color: var(--text-muted);
-            background: #090d16;
-            padding: 6px 10px;
-            border-radius: 6px;
-            border: 1px solid #1e293b;
-            margin-bottom: 10px;
-            display: flex;
-            justify-content: space-between;
-            flex-wrap: wrap;
-            gap: 6px;
-        }
-
-        .badge {
-            font-size: 11px;
-            padding: 3px 8px;
-            border-radius: 20px;
-            font-weight: 600;
-        }
-        .badge-Online { background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3); }
-        .badge-Offline { background: rgba(239, 68, 68, 0.15); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.3); }
-        .badge-Connecting { background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.3); }
-
-        .coords-badge {
-            font-family: 'Fira Code', monospace;
-            font-size: 11px;
-            color: #38bdf8;
-            background: rgba(56, 189, 248, 0.1);
-            padding: 3px 8px;
-            border-radius: 6px;
-            border: 1px solid rgba(56, 189, 248, 0.25);
-        }
-
-        .log-box {
-            background: #020617;
-            border: 1px solid #1e293b;
-            height: 110px;
-            overflow-y: auto;
-            padding: 8px;
-            font-family: 'Fira Code', monospace;
-            font-size: 11px;
-            border-radius: 6px;
-            margin-bottom: 10px;
-        }
-
-        .log-line { margin-bottom: 3px; word-break: break-all; }
-        .log-info { color: #38bdf8; }
-        .log-success { color: #4ade80; }
-        .log-warn { color: #fbbf24; }
-        .log-error { color: #f87171; }
-        .log-chat { color: #e879f9; }
-        .log-command { color: #a7f3d0; font-weight: bold; }
-
-        .inventory-wrapper {
-            background: #090d16;
-            border: 1px solid #1e293b;
-            padding: 10px;
-            border-radius: 10px;
-            margin-bottom: 10px;
-        }
-
-        .inventory-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 8px;
-        }
-
-        .inventory-title { font-size: 12px; color: #a5b4fc; font-weight: 700; }
-
-        .inventory-grid {
-            display: grid;
-            grid-template-columns: repeat(9, 1fr);
-            gap: 4px;
-        }
-
-        .armor-grid {
-            display: grid;
-            grid-template-columns: repeat(5, 1fr);
-            gap: 4px;
-            margin-bottom: 8px;
-            padding-bottom: 8px;
-            border-bottom: 1px dashed #1e293b;
-        }
-
-        .inv-slot {
-            background: #111827;
-            border: 1px solid #1f293d;
-            aspect-ratio: 1;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            position: relative;
-            border-radius: 6px;
-            cursor: pointer;
-            user-select: none;
-        }
-
-        .inv-slot.has-item {
-            background: #1e293b;
-            border-color: #3b82f6;
-        }
-
-        .inv-slot img {
-            width: 26px;
-            height: 26px;
-            image-rendering: pixelated;
-            object-fit: contain;
-            pointer-events: none;
-        }
-
-        .inv-slot-count {
-            position: absolute;
-            bottom: 1px;
-            right: 3px;
-            color: #facc15;
-            font-weight: 800;
-            font-size: 10px;
-            text-shadow: 1px 1px 2px #000;
-            pointer-events: none;
-        }
-
-        .inv-slot-id { opacity: 0.2; font-size: 9px; color: #64748b; pointer-events: none; }
-
-        .inv-info-bar {
-            margin-top: 8px;
-            background: #0f172a;
-            border: 1px solid #1e293b;
-            padding: 6px 10px;
-            border-radius: 6px;
-            font-size: 11px;
-            color: #e2e8f0;
-            min-height: 28px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-        }
-
-        .bot-widgets-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
-            gap: 10px;
-        }
-
-        .radar-box {
-            background: #090d16;
-            border: 1px solid #1e293b;
-            border-radius: 10px;
-            padding: 10px;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-        }
-
-        .radar-title {
-            font-size: 12px;
-            color: #a5b4fc;
-            font-weight: 700;
-            margin-bottom: 8px;
-            width: 100%;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .radar-canvas {
-            background: #020617;
-            border: 1px solid #1e293b;
-            border-radius: 8px;
-            width: 100%;
-            max-width: 220px;
-            height: 220px;
-            cursor: pointer;
-        }
-
-        .radar-tooltip {
-            margin-top: 6px;
-            font-size: 11px;
-            color: #38bdf8;
-            min-height: 16px;
-            text-align: center;
-        }
-
-        .tablist-box {
-            background: #090d16;
-            border: 1px solid #1e293b;
-            border-radius: 10px;
-            padding: 10px;
-            display: flex;
-            flex-direction: column;
-        }
-
-        .tablist-title {
-            font-size: 12px;
-            color: #a5b4fc;
-            font-weight: 700;
-            margin-bottom: 8px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .tablist-container { max-height: 190px; overflow-y: auto; }
-        .tablist-table { width: 100%; border-collapse: collapse; font-size: 11px; }
-        .tablist-table th { text-align: left; color: var(--text-muted); padding: 4px 6px; border-bottom: 1px solid #1e293b; font-size: 10px; }
-        .tablist-table td { padding: 4px 6px; border-bottom: 1px dashed #1e293b; color: var(--text-main); }
-
-        .scoreboard-box {
-            background: #090d16;
-            border: 1px solid #1e293b;
-            border-radius: 10px;
-            padding: 10px;
-            font-family: 'Fira Code', monospace;
-        }
-
-        .scoreboard-title {
-            text-align: center;
-            font-weight: bold;
-            color: #facc15;
-            border-bottom: 1px solid #1e293b;
-            padding-bottom: 6px;
-            margin-bottom: 8px;
-            font-size: 12px;
-        }
-
-        .scoreboard-line {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 3px;
-            font-size: 11px;
-        }
-
-        .modal-overlay {
-            position: fixed;
-            top: 0; left: 0; right: 0; bottom: 0;
-            background: rgba(0, 0, 0, 0.75);
-            backdrop-filter: blur(4px);
-            display: none;
-            align-items: center;
-            justify-content: center;
-            z-index: 1000;
-            padding: 15px;
-        }
-
-        .modal {
-            background: var(--bg-card);
-            border: 1px solid var(--border-color);
-            width: 100%;
-            max-width: 400px;
-            border-radius: 12px;
-            padding: 16px;
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
-        }
-        .field { display: flex; flex-direction: column; gap: 4px; }
-        .field label { font-size: 11px; color: var(--text-muted); font-weight: 600; }
+        ::-webkit-scrollbar { width: 3px; height: 3px; }
+        ::-webkit-scrollbar-thumb { background: #374151; border-radius: 4px; }
     </style>
 </head>
-<body>
+<body class="bg-darkbg text-slate-200 min-h-screen p-3 text-xs flex flex-col font-sans">
 
-<div class="container">
-    <div class="header">
-        <h1>🤖 MC Bot Manager</h1>
-        <button class="btn-secondary" onclick="openGlobalSettings()">⚙️ Genel Ayarlar</button>
-    </div>
+    <!-- ANA ÜST BAR -->
+    <header class="bg-cardbg border border-cardborder rounded-2xl p-3 mb-3 flex items-center justify-between shadow-lg">
+        <div class="flex items-center gap-2">
+            <div class="w-8 h-8 rounded-xl bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400">
+                <i class="fa-solid fa-robot text-sm"></i>
+            </div>
+            <h1 class="font-bold text-white text-sm tracking-wide">MC Bot Manager</h1>
+        </div>
+        <button onclick="openGlobalSettings()" class="px-3 py-1.5 bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-700/60 rounded-xl font-medium flex items-center gap-1.5 transition">
+            <i class="fa-solid fa-gear text-[11px]"></i> Genel Ayarlar
+        </button>
+    </header>
 
-    <div class="card">
-        <div class="card-header">💬 Konsol & Komut Gönderimi</div>
-        <div class="form-group">
-            <select id="targetBotSelect" style="max-width: 130px;">
+    <!-- KONSOL & KOMUT GÖNDERİMİ -->
+    <section class="bg-cardbg border border-cardborder rounded-2xl p-3 mb-3 shadow-md space-y-2.5">
+        <div class="font-bold text-slate-300 text-[11px] flex items-center gap-1.5">
+            <i class="fa-solid fa-terminal text-indigo-400"></i> TOPLU KONSOL & KOMUT
+        </div>
+        <div class="flex gap-2">
+            <select id="globalTargetSelect" class="bg-slate-900 border border-slate-800 text-slate-300 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-indigo-500 font-medium">
                 <option value="all">Tüm Botlar</option>
             </select>
-            <input type="text" id="globalCmdInput" placeholder="Komut yazın (/afk, /login...)" style="flex: 1;">
-            <button class="btn-primary" onclick="sendGlobalCommand()">Gönder</button>
+            <input type="text" id="globalCommandInput" placeholder="Komut yazın (/afk, /login...)" onkeypress="if(event.key==='Enter') sendGlobalCommand()" class="flex-1 bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-white font-mono placeholder:text-slate-500 focus:outline-none focus:border-indigo-500 text-xs">
+            <button onclick="sendGlobalCommand()" class="px-4 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl shadow transition">Gönder</button>
+        </div>
+    </section>
+
+    <!-- BOT YÖNETİMİ -->
+    <section class="bg-cardbg border border-cardborder rounded-2xl p-3 mb-3 shadow-md space-y-2.5">
+        <div class="font-bold text-slate-300 text-[11px] flex items-center gap-1.5">
+            <i class="fa-solid fa-users-gear text-emerald-400"></i> BOT YÖNETİMİ
+        </div>
+        <div class="flex gap-2">
+            <input type="text" id="newBotUsernameInput" placeholder="Yeni Bot Kullanıcı Adı" onkeypress="if(event.key==='Enter') addNewBot()" class="flex-1 bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-white placeholder:text-slate-500 focus:outline-none focus:border-emerald-500 text-xs font-mono">
+            <button onclick="addNewBot()" class="px-4 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl shadow transition">Ekle</button>
+        </div>
+        <div class="grid grid-cols-2 gap-2 pt-1">
+            <button onclick="startAllBots()" class="py-2.5 bg-emerald-600/10 hover:bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 rounded-xl font-bold flex items-center justify-center gap-2 transition">
+                <i class="fa-solid fa-bolt text-xs"></i> Tümünü Başlat
+            </button>
+            <button onclick="stopAllBots()" class="py-2.5 bg-rose-600/10 hover:bg-rose-600/20 text-rose-400 border border-rose-500/30 rounded-xl font-bold flex items-center justify-center gap-2 transition">
+                <i class="fa-solid fa-square text-xs"></i> Tümünü Durdur
+            </button>
+        </div>
+    </section>
+
+    <!-- AKTİF BOT LİSTESİ VE DETAYLI PANELLER -->
+    <section class="bg-cardbg border border-cardborder rounded-2xl p-3 flex-1 flex flex-col shadow-md">
+        <div class="flex items-center justify-between pb-2 mb-2.5 border-b border-slate-800/80">
+            <div class="font-bold text-slate-300 text-[11px] flex items-center gap-1.5">
+                <i class="fa-solid fa-list-check text-amber-400"></i> BOTLAR VE KONTROL PANELLERİ
+            </div>
+            <div class="bg-slate-900 border border-slate-800 px-2.5 py-1 rounded-xl text-[10px] text-slate-400 font-bold">
+                TOPLAM BOT: <span id="totalBotCount" class="text-emerald-400">0</span>
+            </div>
+        </div>
+
+        <div id="botCardList" class="space-y-4 overflow-y-auto flex-1 max-h-[600px]">
+            <div class="text-center text-slate-500 py-12 italic text-xs">Henüz bot bulunmuyor...</div>
+        </div>
+    </section>
+
+    <!-- GENEL AYARLAR MODALI -->
+    <div id="settingsModal" class="fixed inset-0 bg-darkbg/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+        <div class="bg-cardbg border border-cardborder rounded-2xl p-4 w-full max-w-sm space-y-3 shadow-2xl">
+            <div class="flex items-center justify-between pb-2 border-b border-slate-800">
+                <h3 class="font-bold text-white text-xs flex items-center gap-2"><i class="fa-solid fa-sliders text-indigo-400"></i> Genel Şablon Ayarları</h3>
+                <button onclick="closeGlobalSettings()" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="space-y-2.5">
+                <div>
+                    <label class="text-slate-400 block mb-1 text-[11px]">Sunucu IP / Host</label>
+                    <input type="text" id="defHost" class="w-full bg-slate-900 border border-slate-800 rounded-xl p-2 text-white font-mono text-xs">
+                </div>
+                <div class="grid grid-cols-2 gap-2">
+                    <div>
+                        <label class="text-slate-400 block mb-1 text-[11px]">Port</label>
+                        <input type="number" id="defPort" class="w-full bg-slate-900 border border-slate-800 rounded-xl p-2 text-white font-mono text-xs">
+                    </div>
+                    <div>
+                        <label class="text-slate-400 block mb-1 text-[11px]">Sürüm</label>
+                        <input type="text" id="defVersion" class="w-full bg-slate-900 border border-slate-800 rounded-xl p-2 text-white font-mono text-xs">
+                    </div>
+                </div>
+                <div>
+                    <label class="text-slate-400 block mb-1 text-[11px]">Giriş Şifresi (/login)</label>
+                    <input type="text" id="defPassword" class="w-full bg-slate-900 border border-slate-800 rounded-xl p-2 text-white font-mono text-xs">
+                </div>
+                <div>
+                    <label class="text-slate-400 block mb-1 text-[11px]">Lobi / Sunucu Komutu</label>
+                    <input type="text" id="defSubCmd" class="w-full bg-slate-900 border border-slate-800 rounded-xl p-2 text-white font-mono text-xs">
+                </div>
+            </div>
+            <button onclick="saveGlobalSettings()" class="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl shadow transition">Kaydet</button>
         </div>
     </div>
 
-    <div class="card">
-        <div class="card-header">➕ Bot Yönetimi</div>
-        <div class="form-group" style="margin-bottom: 10px;">
-            <input type="text" id="newBotUsername" placeholder="Yeni Bot Kullanıcı Adı" style="flex: 1;">
-            <button class="btn-success" onclick="addBot()">Ekle</button>
-        </div>
-        <div style="display: flex; gap: 8px;">
-            <button class="btn-success" style="flex: 1;" onclick="socket.emit('start-all')">⚡ Tümünü Başlat</button>
-            <button class="btn-danger" style="flex: 1;" onclick="socket.emit('stop-all')">🛑 Tümünü Durdur</button>
-        </div>
-    </div>
-
-    <div class="card">
-        <div class="card-header">
-            <span>📋 Aktif Bot Listesi</span>
-            <span id="botCountBadge" style="font-size: 11px; background: #1e293b; padding: 2px 8px; border-radius: 12px; color: #38bdf8;">Toplam Bot: 0</span>
-        </div>
-        <div id="botListContainer"></div>
-    </div>
-</div>
-
-<div class="modal-overlay" id="botSettingsModal">
-    <div class="modal">
-        <div class="modal-title">⚙️ Bot Ayarları (<span id="modalBotName"></span>)</div>
-        <input type="hidden" id="modalBotId">
-        <div class="field"><label>Sunucu IP</label><input type="text" id="modalHost"></div>
-        <div class="field"><label>Port</label><input type="number" id="modalPort"></div>
-        <div class="field"><label>Versiyon</label><input type="text" id="modalVersion"></div>
-        <div class="field"><label>Şifre (/login)</label><input type="text" id="modalPassword"></div>
-        <div class="field"><label>Alt Sunucu Komutu</label><input type="text" id="modalSubCmd"></div>
-        <div style="display: flex; gap: 8px; margin-top: 8px;">
-            <button class="btn-primary" style="flex: 1;" onclick="saveBotSettings()">Kaydet</button>
-            <button class="btn-secondary" onclick="closeModal('botSettingsModal')">İptal</button>
-        </div>
-    </div>
-</div>
-
-<div class="modal-overlay" id="globalSettingsModal">
-    <div class="modal">
-        <div class="modal-title">🌐 Genel Varsayılan Ayarlar</div>
-        <div class="field"><label>IP</label><input type="text" id="gModalHost"></div>
-        <div class="field"><label>Port</label><input type="number" id="gModalPort"></div>
-        <div class="field"><label>Versiyon</label><input type="text" id="gModalVersion"></div>
-        <div class="field"><label>Şifre</label><input type="text" id="gModalPassword"></div>
-        <div class="field"><label>Alt Sunucu Komutu</label><input type="text" id="gModalSubCmd"></div>
-        <div style="display: flex; gap: 8px; margin-top: 8px;">
-            <button class="btn-primary" style="flex: 1;" onclick="saveGlobalSettings()">Kaydet</button>
-            <button class="btn-secondary" onclick="closeModal('globalSettingsModal')">Kapat</button>
+    <!-- TEKİL BOT ÖZEL AYARLARI MODALI -->
+    <div id="botSettingsModal" class="fixed inset-0 bg-darkbg/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+        <div class="bg-cardbg border border-cardborder rounded-2xl p-4 w-full max-w-sm space-y-3 shadow-2xl">
+            <div class="flex items-center justify-between pb-2 border-b border-slate-800">
+                <h3 class="font-bold text-white text-xs flex items-center gap-2"><i class="fa-solid fa-gear text-amber-400"></i> Bot Ayarları: <span id="modalBotName" class="text-amber-400 font-mono"></span></h3>
+                <button onclick="closeBotSettings()" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <input type="hidden" id="editBotId">
+            <div class="space-y-2.5">
+                <div>
+                    <label class="text-slate-400 block mb-1 text-[11px]">Sunucu IP / Host</label>
+                    <input type="text" id="botHost" class="w-full bg-slate-900 border border-slate-800 rounded-xl p-2 text-white font-mono text-xs">
+                </div>
+                <div class="grid grid-cols-2 gap-2">
+                    <div>
+                        <label class="text-slate-400 block mb-1 text-[11px]">Port</label>
+                        <input type="number" id="botPort" class="w-full bg-slate-900 border border-slate-800 rounded-xl p-2 text-white font-mono text-xs">
+                    </div>
+                    <div>
+                        <label class="text-slate-400 block mb-1 text-[11px]">Sürüm</label>
+                        <input type="text" id="botVersion" class="w-full bg-slate-900 border border-slate-800 rounded-xl p-2 text-white font-mono text-xs">
+                    </div>
+                </div>
+                <div>
+                    <label class="text-slate-400 block mb-1 text-[11px]">Giriş Şifresi (/login)</label>
+                    <input type="text" id="botPassword" class="w-full bg-slate-900 border border-slate-800 rounded-xl p-2 text-white font-mono text-xs">
+                </div>
+                <div>
+                    <label class="text-slate-400 block mb-1 text-[11px]">Lobi / Sunucu Komutu</label>
+                    <input type="text" id="botSubCmd" class="w-full bg-slate-900 border border-slate-800 rounded-xl p-2 text-white font-mono text-xs">
+                </div>
+            </div>
+            <button onclick="saveBotSettings()" class="w-full py-2.5 bg-amber-600 hover:bg-amber-500 text-white font-bold rounded-xl shadow transition">Kaydet</button>
         </div>
     </div>
-</div>
 
-<script>
-    const socket = io();
-    let botsMap = new Map();
-    let globalConfig = {};
+    <script>
+        const socket = io();
+        let bots = [];
+        let globalSettings = {};
 
-    const radarEntitiesMap = new Map();
+        socket.on('init-data', (data) => {
+            bots = data.botList || [];
+            globalSettings = data.globalSettings || {};
+            updateUI();
+        });
 
-    setInterval(() => {
-        botsMap.forEach((bot, botId) => {
-            if (bot.status === 'Online' && bot.onlineSince) {
-                const diffSec = Math.floor((Date.now() - bot.onlineSince) / 1000);
-                const h = Math.floor(diffSec / 3600);
-                const m = Math.floor((diffSec % 3600) / 60);
-                const s = diffSec % 60;
-                const timeStr = `${h > 0 ? h + 's ' : ''}${m}dk ${s}sn`;
-                const uptimeEl = document.getElementById(`uptime-${botId}`);
-                if (uptimeEl) uptimeEl.innerText = `⏱️ Süre: ${timeStr}`;
+        socket.on('bot-added', (bot) => {
+            bots.push(bot);
+            updateUI();
+        });
+
+        socket.on('bot-updated', (updatedBot) => {
+            const idx = bots.findIndex(b => b.id === updatedBot.id);
+            if (idx !== -1) bots[idx] = updatedBot;
+            updateUI();
+        });
+
+        socket.on('bot-log', (data) => {
+            const bot = bots.find(b => b.id === data.botId);
+            if (bot) {
+                if (!bot.logs) bot.logs = [];
+                bot.logs.push({ timestamp: data.timestamp, text: data.text, type: data.type });
+                if (bot.logs.length > 50) bot.logs.shift();
+                
+                const logContainer = document.getElementById(`logs_${data.botId}`);
+                if (logContainer) {
+                    logContainer.innerHTML = bot.logs.map(l => {
+                        let colorClass = 'text-slate-300';
+                        if (l.type === 'error') colorClass = 'text-rose-400 font-bold';
+                        else if (l.type === 'system') colorClass = 'text-amber-400';
+                        return `<div class="${colorClass}"><span class="text-slate-500">[${l.timestamp}]</span> ${l.text}</div>`;
+                    }).join('');
+                    logContainer.scrollTop = logContainer.scrollHeight;
+                }
             }
         });
-    }, 1000);
 
-    socket.on('init-data', (data) => {
-        botsMap.clear();
-        globalConfig = data.globalConfig || {};
-        data.botList.forEach(bot => botsMap.set(bot.id, bot));
-        renderBotList();
-    });
-
-    socket.on('bot-added', (bot) => {
-        botsMap.set(bot.id, bot);
-        renderBotList();
-    });
-
-    socket.on('bot-deleted', (botId) => {
-        botsMap.delete(botId);
-        renderBotList();
-    });
-
-    socket.on('bot-updated', ({ botId, config }) => {
-        if (botsMap.has(botId)) {
-            Object.assign(botsMap.get(botId), config);
-            renderBotList();
-        }
-    });
-
-    socket.on('config-updated', (cfg) => { globalConfig = cfg; });
-
-    socket.on('status-update', ({ botId, status, onlineSince }) => {
-        if (botsMap.has(botId)) {
-            const bot = botsMap.get(botId);
-            bot.status = status;
-            bot.onlineSince = onlineSince;
+        function updateUI() {
+            document.getElementById('totalBotCount').innerText = bots.length;
             
-            const badge = document.getElementById(`badge-${botId}`);
-            if (badge) {
-                badge.innerText = status;
-                badge.className = `badge badge-${status}`;
+            const select = document.getElementById('globalTargetSelect');
+            select.innerHTML = `<option value="all">Tüm Botlar</option>` + bots.map(b => `<option value="${b.id}">${b.username}</option>`).join('');
+
+            const list = document.getElementById('botCardList');
+            if (bots.length === 0) {
+                list.innerHTML = `<div class="text-center text-slate-500 py-12 italic text-xs">Henüz bot bulunmuyor...</div>`;
+                return;
             }
-            if (status === 'Offline') {
-                const uptimeEl = document.getElementById(`uptime-${botId}`);
-                if (uptimeEl) uptimeEl.innerText = `⏱️ Çevrimdışı`;
-            }
-        }
-    });
 
-    socket.on('bot-log', (log) => {
-        if (botsMap.has(log.botId)) {
-            const bot = botsMap.get(log.botId);
-            bot.logs.push(log);
-            if (bot.logs.length > 20) bot.logs.shift();
+            list.innerHTML = bots.map(b => {
+                const logsHtml = (b.logs && b.logs.length > 0) ? b.logs.map(l => {
+                    let colorClass = 'text-slate-300';
+                    if (l.type === 'error') colorClass = 'text-rose-400 font-bold';
+                    else if (l.type === 'system') colorClass = 'text-amber-400';
+                    return `<div class="${colorClass}"><span class="text-slate-500">[${l.timestamp}]</span> ${l.text}</div>`;
+                }).join('') : `<div class="text-slate-500 italic">Henüz log yok...</div>`;
 
-            const logBox = document.getElementById(`logs-${log.botId}`);
-            if (logBox) {
-                const div = document.createElement('div');
-                div.className = `log-line log-${log.type}`;
-                div.innerText = `[${log.timestamp}] ${log.text}`;
-                logBox.appendChild(div);
-                logBox.scrollTop = logBox.scrollHeight;
-            }
-        }
-    });
-
-    socket.on('bot-inventory', ({ botId, inventory }) => {
-        if (botsMap.has(botId)) {
-            botsMap.get(botId).inventory = inventory;
-            renderInventoryGrid(botId, inventory);
-        }
-    });
-
-    socket.on('bot-map-update', ({ botId, pos, entities }) => {
-        if (botsMap.has(botId)) {
-            const bot = botsMap.get(botId);
-            bot.pos = pos;
-            bot.entities = entities;
-
-            const coordsEl = document.getElementById(`coords-${botId}`);
-            if (coordsEl) {
-                coordsEl.innerText = `📍 X: ${pos.x} | Y: ${pos.y} | Z: ${pos.z}`;
-            }
-            drawRadar(botId, pos, entities);
-        }
-    });
-
-    socket.on('bot-tablist', ({ botId, players }) => {
-        if (botsMap.has(botId)) {
-            const bot = botsMap.get(botId);
-            bot.tabList = players;
-            renderTabList(botId, players);
-        }
-    });
-
-    socket.on('bot-scoreboard', ({ botId, scoreboard }) => {
-        const titleEl = document.getElementById(`sb-title-${botId}`);
-        const linesEl = document.getElementById(`sb-lines-${botId}`);
-        if (!linesEl) return;
-
-        if (!scoreboard || !scoreboard.lines || scoreboard.lines.length === 0) {
-            if (titleEl) titleEl.innerText = '📊 Scoreboard';
-            linesEl.innerHTML = `<div style="color: #64748b; text-align: center; padding: 4px;">Aktif Scoreboard yok</div>`;
-            return;
-        }
-
-        if (titleEl && scoreboard.title) titleEl.innerText = `📊 ${scoreboard.title}`;
-        linesEl.innerHTML = '';
-        scoreboard.lines.forEach(item => {
-            const row = document.createElement('div');
-            row.className = 'scoreboard-line';
-            row.innerHTML = `<span style="color:#e2e8f0">${item.text}</span><span style="color:#ef4444; font-weight:bold;">${item.score}</span>`;
-            linesEl.appendChild(row);
-        });
-    });
-
-    function renderBotList() {
-        const container = document.getElementById('botListContainer');
-        const select = document.getElementById('targetBotSelect');
-        const countBadge = document.getElementById('botCountBadge');
-        
-        container.innerHTML = '';
-        select.innerHTML = '<option value="all">Tüm Botlar</option>';
-        if (countBadge) countBadge.innerText = `Toplam Bot: ${botsMap.size}`;
-
-        botsMap.forEach((bot) => {
-            const opt = document.createElement('option');
-            opt.value = bot.id;
-            opt.innerText = bot.username;
-            select.appendChild(opt);
-
-            const pos = bot.pos || { x: 0, y: 0, z: 0 };
-            const botHost = bot.host || globalConfig.host || 'Bilinmiyor';
-            const botPort = bot.port || globalConfig.port || 25565;
-            const botPassword = bot.autoPassword !== undefined && bot.autoPassword !== '' ? bot.autoPassword : (globalConfig.autoPassword || 'Yok');
-
-            const card = document.createElement('div');
-            card.className = 'bot-card';
-            card.innerHTML = `
-                <div class="bot-top">
-                    <div class="bot-title">
-                        <span class="bot-name">${bot.username}</span>
-                        <span id="badge-${bot.id}" class="badge badge-${bot.status}">${bot.status}</span>
-                        <span class="coords-badge" id="coords-${bot.id}">📍 X: ${pos.x} | Y: ${pos.y} | Z: ${pos.z}</span>
-                    </div>
-                    <div class="bot-actions" style="display:flex; gap:4px;">
-                        <button class="btn-success" onclick="socket.emit('start-bot', '${bot.id}')">Başlat</button>
-                        <button class="btn-warning" onclick="socket.emit('stop-bot', '${bot.id}')">Durdur</button>
-                        <button class="btn-secondary" onclick="openBotSettings('${bot.id}')">⚙</button>
-                        <button class="btn-danger" onclick="socket.emit('delete-bot', '${bot.id}')">X</button>
-                    </div>
-                </div>
-
-                <div class="bot-details-bar">
-                    <span>🌐 IP: <b>${botHost}:${botPort}</b></span>
-                    <span>🔑 Şifre: <b>${botPassword}</b></span>
-                    <span id="uptime-${bot.id}" style="color: #38bdf8;">⏱️ Çevrimdışı</span>
-                </div>
-
-                <div class="log-box" id="logs-${bot.id}">
-                    ${(bot.logs || []).map(l => `<div class="log-line log-${l.type}">[${l.timestamp}]${l.text}</div>`).join('')}
-                </div>
-
-                <div class="form-group" style="margin-bottom: 8px;">
-                    <input type="text" id="cmd-${bot.id}" placeholder="Özel komut gönder..." style="flex: 1;">
-                    <button class="btn-primary" onclick="sendSingleCommand('${bot.id}')">Gönder</button>
-                </div>
-
-                <div class="inventory-wrapper">
-                    <div class="inventory-header">
-                        <div class="inventory-title">🎒 Envanter Görünümü</div>
-                    </div>
-                    <div class="armor-grid" id="armor-grid-${bot.id}"></div>
-                    <div class="inventory-grid" id="inv-grid-${bot.id}"></div>
-                    <div class="inv-info-bar" id="inv-info-${bot.id}">
-                        <span>Detayları görmek için eşyaya dokunun</span>
-                    </div>
-                </div>
-
-                <div class="bot-widgets-grid">
-                    <div class="radar-box">
-                        <div class="radar-title">
-                            <span>🗺️ 2D Radar</span>
-                            <span style="font-size:10px; color:#64748b;">(Tıklayarak Oyuncu Gör)</span>
+                return `
+                    <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-3 space-y-3 shadow-lg">
+                        <!-- Üst Bilgi Satırı -->
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center gap-2.5">
+                                <img src="https://minotar.net/helm/${b.username}/32.png" class="w-8 h-8 rounded-xl border border-slate-700">
+                                <div>
+                                    <div class="font-bold text-white text-xs flex items-center gap-2">
+                                        ${b.username}
+                                        <span class="text-[9px] px-2 py-0.5 rounded font-bold ${b.status === 'Online' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : b.status === 'Connecting' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' : b.status === 'Error' ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30' : 'bg-slate-800 text-slate-400'}">${b.status}</span>
+                                        <span class="text-[10px] bg-slate-800 text-cyan-400 px-2 py-0.5 rounded font-mono"><i class="fa-solid fa-clock"></i> ${b.time?.timeString || '00:00'}</span>
+                                    </div>
+                                    <div class="text-[10px] text-slate-400 mt-0.5 font-mono">
+                                        X:${b.pos?.x || 0} Y:${b.pos?.y || 0} Z:${b.pos?.z || 0}
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="flex gap-1.5">
+                                <button onclick="openBotSettings('${b.id}')" class="w-7 h-7 bg-amber-500/10 text-amber-400 border border-amber-500/30 rounded-lg flex items-center justify-center hover:bg-amber-500/20 transition" title="Ayarlar"><i class="fa-solid fa-gear text-[10px]"></i></button>
+                                <button onclick="startBot('${b.id}')" class="w-7 h-7 bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 rounded-lg flex items-center justify-center hover:bg-emerald-500/20 transition" title="Başlat"><i class="fa-solid fa-play text-[10px]"></i></button>
+                                <button onclick="stopBot('${b.id}')" class="w-7 h-7 bg-rose-500/10 text-rose-400 border border-rose-500/30 rounded-lg flex items-center justify-center hover:bg-rose-500/20 transition" title="Durdur"><i class="fa-solid fa-square text-[10px]"></i></button>
+                                <button onclick="deleteBot('${b.id}')" class="w-7 h-7 bg-slate-800 text-slate-400 rounded-lg flex items-center justify-center hover:bg-rose-600 hover:text-white transition" title="Sil"><i class="fa-solid fa-trash text-[10px]"></i></button>
+                            </div>
                         </div>
-                        <canvas id="map-canvas-${bot.id}" class="radar-canvas" width="220" height="220"></canvas>
-                        <div class="radar-tooltip" id="radar-tip-${bot.id}">Noktaya tıklayın</div>
-                    </div>
 
-                    <div class="tablist-box">
-                        <div class="tablist-title">
-                            <span>📋 Tab Oyuncu Listesi</span>
-                            <span style="font-size:10px; color:#38bdf8;" id="tab-count-${bot.id}">0 Oyuncu</span>
+                        <!-- 4'lü Yan Yana Bilgi Panelleri -->
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
+                            <!-- Scoreboard -->
+                            <div class="bg-slate-950/60 border border-slate-800/80 rounded-xl p-2">
+                                <div class="text-[10px] font-bold text-indigo-400 mb-1 border-b border-slate-800 pb-1"><i class="fa-solid fa-table-list"></i> Scoreboard</div>
+                                <div class="space-y-0.5 font-mono text-[10px] text-slate-300 h-16 overflow-y-auto">
+                                    <div>Sunucu Skorbord</div>
+                                    <div class="text-slate-500">Aktif veri yok</div>
+                                </div>
+                            </div>
+                            <!-- Tab List -->
+                            <div class="bg-slate-950/60 border border-slate-800/80 rounded-xl p-2">
+                                <div class="text-[10px] font-bold text-emerald-400 mb-1 border-b border-slate-800 pb-1"><i class="fa-solid fa-users"></i> Tab Oyuncular</div>
+                                <div class="space-y-0.5 font-mono text-[10px] text-slate-300 h-16 overflow-y-auto">
+                                    <div>${b.username}</div>
+                                </div>
+                            </div>
+                            <!-- Radar -->
+                            <div class="bg-slate-950/60 border border-slate-800/80 rounded-xl p-2 flex flex-col items-center justify-center relative">
+                                <div class="absolute top-1 left-2 text-[9px] font-bold text-amber-400"><i class="fa-solid fa-radar"></i> Radar</div>
+                                <div class="w-12 h-12 rounded-full border border-amber-500/30 bg-amber-500/5 relative flex items-center justify-center mt-2">
+                                    <div class="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-ping"></div>
+                                    <div class="w-1 h-1 bg-emerald-500 rounded-full absolute"></div>
+                                </div>
+                            </div>
+                            <!-- Oyun Zamanı Bilgisi -->
+                            <div class="bg-slate-950/60 border border-slate-800/80 rounded-xl p-2 flex flex-col justify-center items-center text-center">
+                                <div class="text-[10px] font-bold text-cyan-400 mb-1"><i class="fa-solid fa-clock"></i> Oyun Saati</div>
+                                <div class="text-base font-bold font-mono text-white">${b.time?.timeString || '00:00'}</div>
+                                <div class="text-[9px] text-slate-400">Minecraft Time</div>
+                            </div>
                         </div>
-                        <div class="tablist-container">
-                            <table class="tablist-table">
-                                <thead>
-                                    <tr>
-                                        <th>Oyuncu</th>
-                                        <th style="text-align: right;">Ping</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="tab-body-${bot.id}">
-                                    <tr><td colspan="2" style="text-align:center; color:#64748b; padding:8px;">Veri bekleniyor...</td></tr>
-                                </tbody>
-                            </table>
+
+                        <!-- Açık Terminal ve Komut Yazma Alanı -->
+                        <div class="bg-slate-950 border border-slate-800 rounded-xl p-2.5 space-y-2">
+                            <div class="text-[10px] font-bold text-cyan-400 flex items-center justify-between">
+                                <span><i class="fa-solid fa-terminal"></i> Terminal / Konsol</span>
+                                <span class="text-slate-500 text-[9px]">Doğrudan komut veya chat yazabilirsin</span>
+                            </div>
+                            <div id="logs_${b.id}" class="h-28 bg-slate-900/50 rounded-lg p-2 font-mono text-[10px] overflow-y-auto space-y-1 select-text">
+                                ${logsHtml}
+                            </div>
+                            <div class="flex gap-2">
+                                <input type="text" id="cmdInput_${b.id}" placeholder="Komut veya mesaj yazın (/login, /afk, selam...)" onkeypress="if(event.key==='Enter') sendBotCommand('${b.id}')" class="flex-1 bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-white font-mono text-[11px] focus:outline-none focus:border-cyan-500 placeholder:text-slate-600">
+                                <button onclick="sendBotCommand('${b.id}')" class="px-3 bg-cyan-600 hover:bg-cyan-500 text-white font-bold rounded-lg text-[11px] transition">Gönder</button>
+                            </div>
                         </div>
                     </div>
-
-                    <div class="scoreboard-box">
-                        <div class="scoreboard-title" id="sb-title-${bot.id}">📊 Scoreboard</div>
-                        <div id="sb-lines-${bot.id}">
-                            <div style="color: #64748b; text-align: center;">Skor bekleniyor...</div>
-                        </div>
-                    </div>
-                </div>
-            `;
-            container.appendChild(card);
-
-            renderInventoryGrid(bot.id, bot.inventory || {});
-            drawRadar(bot.id, pos, bot.entities || []);
-            renderTabList(bot.id, bot.tabList || []);
-
-            const lb = document.getElementById(`logs-${bot.id}`);
-            if (lb) lb.scrollTop = lb.scrollHeight;
-        });
-    }
-
-    function drawRadar(botId, pos, entities) {
-        const canvas = document.getElementById(`map-canvas-${botId}`);
-        if (!canvas) return;
-        const ctx = canvas.getContext('2d');
-        const w = canvas.width;
-        const h = canvas.height;
-        const cx = w / 2;
-        const cy = h / 2;
-        const scale = 3;
-
-        ctx.fillStyle = '#020617';
-        ctx.fillRect(0, 0, w, h);
-
-        ctx.strokeStyle = '#1e293b';
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(cx, 0); ctx.lineTo(cx, h);
-        ctx.moveTo(0, cy); ctx.lineTo(w, cy);
-        ctx.stroke();
-
-        const entityCoordsMap = new Map();
-        if (!radarEntitiesMap.has(botId)) radarEntitiesMap.set(botId, new Map());
-        const currentBotRadarMap = radarEntitiesMap.get(botId);
-        currentBotRadarMap.clear();
-
-        const botObj = botsMap.get(botId);
-        const tabPlayers = botObj && Array.isArray(botObj.tabList) ? botObj.tabList : [];
-
-        if (Array.isArray(entities)) {
-            entities.forEach(ent => {
-                const dx = (ent.x - pos.x) * scale;
-                const dz = (ent.z - pos.z) * scale;
-                const rx = cx + dx;
-                const ry = cy + dz;
-
-                if (rx >= 0 && rx <= w && ry >= 0 && ry <= h) {
-                    let displayName = ent.name || `Varlık #${ent.id}`;
-                    
-                    if (tabPlayers.length > 0) {
-                        const matchedPlayer = tabPlayers.find(p => p.name && (displayName.includes(p.name) || p.name.includes(ent.id)));
-                        if (matchedPlayer) {
-                            displayName = matchedPlayer.displayName || matchedPlayer.name;
-                        }
-                    }
-
-                    currentBotRadarMap.set(`${Math.round(rx)}_${Math.round(ry)}`, displayName);
-                    
-                    ctx.fillStyle = '#ef4444';
-                    ctx.beginPath();
-                    ctx.arc(rx, ry, 4, 0, Math.PI * 2);
-                    ctx.fill();
-                }
-            });
+                `;
+            }).join('');
         }
 
-        ctx.fillStyle = '#10b981';
-        ctx.beginPath();
-        ctx.arc(cx, cy, 5, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.strokeStyle = '#34d399';
-        ctx.lineWidth = 2;
-        ctx.stroke();
-
-        canvas.onclick = (e) => {
-            const rect = canvas.getBoundingClientRect();
-            const clickX = e.clientX - rect.left;
-            const clickY = e.clientY - rect.top;
-            const tipEl = document.getElementById(`radar-tip-${botId}`);
-
-            let foundName = null;
-            let minDist = 999;
-
-            currentBotRadarMap.forEach((name, key) => {
-                const [ex, ey] = key.split('_').map(Number);
-                const dist = Math.hypot(ex - clickX, ey - clickY);
-                if (dist < 14 && dist < minDist) {
-                    minDist = dist;
-                    foundName = name;
-                }
-            });
-
-            if (tipEl) {
-                if (foundName) {
-                    tipEl.innerText = `👤 Oyuncu: ${foundName}`;
-                    tipEl.style.color = '#4ade80';
-                } else {
-                    tipEl.innerText = `Koordinat: X:${pos.x}, Z:${pos.z}`;
-                    tipEl.style.color = '#38bdf8';
-                }
+        function addNewBot() {
+            const input = document.getElementById('newBotUsernameInput');
+            if (input.value.trim()) {
+                socket.emit('add-bot', { username: input.value.trim() });
+                input.value = '';
             }
-        };
-    }
-
-    function renderTabList(botId, players) {
-        const tbody = document.getElementById(`tab-body-${botId}`);
-        const countEl = document.getElementById(`tab-count-${botId}`);
-        if (!tbody) return;
-
-        if (countEl) countEl.innerText = `${players ? players.length : 0} Oyuncu`;
-        tbody.innerHTML = '';
-
-        if (!players || players.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="2" style="text-align:center; color:#64748b; padding:8px;">Tab listesi boş</td></tr>`;
-            return;
         }
 
-        players.forEach(p => {
-            const tr = document.createElement('tr');
-            const name = p.displayName || p.name || 'Bilinmeyen';
-            const ping = p.ping !== undefined ? `${p.ping}ms` : '-';
-            
-            let pingColor = '#10b981';
-            if (p.ping > 150) pingColor = '#f59e0b';
-            if (p.ping > 300) pingColor = '#ef4444';
+        function startBot(id) { socket.emit('start-bot', id); }
+        function stopBot(id) { socket.emit('stop-bot', id); }
+        function deleteBot(id) { if (confirm('Botu silmek istiyor musunuz?')) socket.emit('delete-bot', id); }
+        function startAllBots() { socket.emit('start-all'); }
+        function stopAllBots() { socket.emit('stop-all'); }
 
-            tr.innerHTML = `
-                <td><b>${name}</b></td>
-                <td style="text-align: right; color: ${pingColor}; font-family: 'Fira Code', monospace;">${ping}</td>
-            `;
-            tbody.appendChild(tr);
-        });
-    }
-
-    function getItemImageUrl(itemName) {
-        if (!itemName || itemName === 'unknown') return null;
-        return `https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20.1/assets/minecraft/textures/item/${itemName}.png`;
-    }
-
-    function getBlockImageUrl(itemName) {
-        return `https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20.1/assets/minecraft/textures/block/${itemName}.png`;
-    }
-
-    function renderInventoryGrid(botId, inventory) {
-        const grid = document.getElementById(`inv-grid-${botId}`);
-        const armorGrid = document.getElementById(`armor-grid-${botId}`);
-        if (!grid || !armorGrid) return;
-
-        grid.innerHTML = '';
-        armorGrid.innerHTML = '';
-
-        const armorSlots = [
-            { slotId: 5, label: '🪖 Kask' },
-            { slotId: 6, label: '👕 Göğüslük' },
-            { slotId: 7, label: '👖 Pantolon' },
-            { slotId: 8, label: '🥾 Bot' },
-            { slotId: 45, label: '🛡️ Sol El' }
-        ];
-
-        armorSlots.forEach(arm => {
-            const item = inventory[arm.slotId];
-            armorGrid.appendChild(createSlotElement(botId, arm.slotId, item, arm.label));
-        });
-
-        for (let i = 9; i <= 44; i++) {
-            const item = inventory[i];
-            grid.appendChild(createSlotElement(botId, i, item));
+        function sendBotCommand(botId) {
+            const input = document.getElementById(`cmdInput_${botId}`);
+            if (input && input.value.trim()) {
+                socket.emit('bot-command', { botId, command: input.value.trim() });
+                input.value = '';
+            }
         }
-    }
 
-    function createSlotElement(botId, slotIndex, item, placeholderText = null) {
-        const slot = document.createElement('div');
-        if (item) {
-            slot.className = 'inv-slot has-item';
-            const itemImg = getItemImageUrl(item.name);
-            const blockImg = getBlockImageUrl(item.name);
-            slot.innerHTML = `
-                <img src="${itemImg}" onerror="if(this.src!=='${blockImg}'){this.src='${blockImg}';}else{this.style.display='none';}" alt="${item.displayName}">
-                <span class="inv-slot-count">${item.count > 1 ? item.count : ''}</span>
-            `;
-            slot.onclick = () => selectItem(botId, item.displayName, item.count, slotIndex);
-        } else {
-            slot.className = 'inv-slot';
-            slot.innerHTML = `<span class="inv-slot-id">${placeholderText ? placeholderText : slotIndex}</span>`;
-            slot.onclick = () => selectItem(botId, 'Boş Slot', 0, slotIndex);
+        function sendGlobalCommand() {
+            const target = document.getElementById('globalTargetSelect').value;
+            const input = document.getElementById('globalCommandInput');
+            if (input.value.trim()) {
+                socket.emit('global-command', { target, command: input.value.trim() });
+                input.value = '';
+            }
         }
-        return slot;
-    }
 
-    function selectItem(botId, name, count, slot) {
-        const infoBar = document.getElementById(`inv-info-${botId}`);
-        if (!infoBar) return;
-        if (count > 0) {
-            infoBar.innerHTML = `<span style="color: #38bdf8; font-weight:700;">📦 ${name}</span><span style="color: #94a3b8; font-size:10px;">Adet: <b>${count}</b> | Slot: ${slot}</span>`;
-        } else {
-            infoBar.innerHTML = `<span style="color: #64748b;">Boş Slot (${slot})</span>`;
+        function openGlobalSettings() {
+            document.getElementById('defHost').value = globalSettings.host || '';
+            document.getElementById('defPort').value = globalSettings.port || 25565;
+            document.getElementById('defVersion').value = globalSettings.version || '';
+            document.getElementById('defPassword').value = globalSettings.password || '';
+            document.getElementById('defSubCmd').value = globalSettings.autoSubServerCmd || '';
+            document.getElementById('settingsModal').classList.remove('hidden');
         }
-    }
-
-    function openBotSettings(botId) {
-        const bot = botsMap.get(botId);
-        if (!bot) return;
-        document.getElementById('modalBotId').value = bot.id;
-        document.getElementById('modalBotName').innerText = bot.username;
-        document.getElementById('modalHost').value = bot.host || globalConfig.host || '';
-        document.getElementById('modalPort').value = bot.port || globalConfig.port || 25565;
-        document.getElementById('modalVersion').value = bot.version || globalConfig.version || '';
-        document.getElementById('modalPassword').value = bot.autoPassword !== undefined ? bot.autoPassword : (globalConfig.autoPassword || '');
-        document.getElementById('modalSubCmd').value = bot.autoSubServerCmd !== undefined ? bot.autoSubServerCmd : (globalConfig.autoSubServerCmd || '');
-        document.getElementById('botSettingsModal').style.display = 'flex';
-    }
-
-    function saveBotSettings() {
-        const botId = document.getElementById('modalBotId').value;
-        const config = {
-            host: document.getElementById('modalHost').value.trim(),
-            port: Number(document.getElementById('modalPort').value),
-            version: document.getElementById('modalVersion').value.trim(),
-            autoPassword: document.getElementById('modalPassword').value.trim(),
-            autoSubServerCmd: document.getElementById('modalSubCmd').value.trim()
-        };
-        socket.emit('update-bot-config', { botId, config });
-        closeModal('botSettingsModal');
-    }
-
-    function openGlobalSettings() {
-        document.getElementById('gModalHost').value = globalConfig.host || '';
-        document.getElementById('gModalPort').value = globalConfig.port || 25565;
-        document.getElementById('gModalVersion').value = globalConfig.version || '';
-        document.getElementById('gModalPassword').value = globalConfig.autoPassword || '';
-        document.getElementById('gModalSubCmd').value = globalConfig.autoSubServerCmd || '';
-        document.getElementById('globalSettingsModal').style.display = 'flex';
-    }
-
-    function saveGlobalSettings() {
-        const newConfig = {
-            host: document.getElementById('gModalHost').value.trim(),
-            port: Number(document.getElementById('gModalPort').value),
-            version: document.getElementById('gModalVersion').value.trim(),
-            autoPassword: document.getElementById('gModalPassword').value.trim() || '',
-            autoSubServerCmd: document.getElementById('gModalSubCmd').value.trim()
-        };
-        socket.emit('update-config', newConfig);
-        closeModal('globalSettingsModal');
-    }
-
-    function closeModal(id) { document.getElementById(id).style.display = 'none'; }
-
-    function addBot() {
-        const input = document.getElementById('newBotUsername');
-        if (input.value.trim()) {
-            socket.emit('add-bot', { username: input.value.trim() });
-            input.value = '';
+        function closeGlobalSettings() { document.getElementById('settingsModal').classList.add('hidden'); }
+        function saveGlobalSettings() {
+            const newSettings = {
+                host: document.getElementById('defHost').value.trim(),
+                port: Number(document.getElementById('defPort').value),
+                version: document.getElementById('defVersion').value.trim(),
+                password: document.getElementById('defPassword').value.trim(),
+                autoSubServerCmd: document.getElementById('defSubCmd').value.trim()
+            };
+            socket.emit('update-global-settings', newSettings);
+            closeGlobalSettings();
+            alert('Genel şablon ayarları kaydedildi!');
         }
-    }
 
-    function sendGlobalCommand() {
-        const target = document.getElementById('targetBotSelect').value;
-        const cmd = document.getElementById('globalCmdInput').value;
-        if (cmd.trim()) {
-            socket.emit('send-command', { targetBotId: target, command: cmd.trim() });
-            document.getElementById('globalCmdInput').value = '';
+        function openBotSettings(id) {
+            const bot = bots.find(b => b.id === id);
+            if (!bot) return;
+            document.getElementById('editBotId').value = bot.id;
+            document.getElementById('modalBotName').innerText = bot.username;
+            document.getElementById('botHost').value = bot.config?.host || '';
+            document.getElementById('botPort').value = bot.config?.port || 25565;
+            document.getElementById('botVersion').value = bot.config?.version || '';
+            document.getElementById('botPassword').value = bot.config?.password || '';
+            document.getElementById('botSubCmd').value = bot.config?.autoSubServerCmd || '';
+            document.getElementById('botSettingsModal').classList.remove('hidden');
         }
-    }
-
-    function sendSingleCommand(botId) {
-        const input = document.getElementById(`cmd-${botId}`);
-        if (input && input.value.trim()) {
-            socket.emit('send-command', { targetBotId: botId, command: input.value.trim() });
-            input.value = '';
+        function closeBotSettings() { document.getElementById('botSettingsModal').classList.add('hidden'); }
+        function saveBotSettings() {
+            const botId = document.getElementById('editBotId').value;
+            const config = {
+                host: document.getElementById('botHost').value.trim(),
+                port: Number(document.getElementById('botPort').value),
+                version: document.getElementById('botVersion').value.trim(),
+                password: document.getElementById('botPassword').value.trim(),
+                autoSubServerCmd: document.getElementById('botSubCmd').value.trim()
+            };
+            socket.emit('update-bot-config', { botId, config });
+            closeBotSettings();
+            alert('Bot ayarları güncellendi!');
         }
-    }
-</script>
+    </script>
 </body>
 </html>

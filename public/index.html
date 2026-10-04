@@ -9,14 +9,14 @@
     <style>
         /* --- SOFT DARK (TEMİZ/MODERN) TEMA --- */
         :root {
-            --bg-body: #111827;       /* Çok koyu, yumuşak lacivert/gri arka plan */
+            --bg-body: #111827;       /* Koyu, yumuşak lacivert/gri arka plan */
             --bg-card: #1f2937;       /* Kartların arka planı */
             --bg-inner: #374151;      /* Kart içi bölmeler ve inputlar */
             
             --border-color: #374151;  /* Yumuşak sınır çizgileri */
             --border-hover: #4b5563;
             
-            --text-main: #f9fafb;     /* Beyaza yakın temiz metin */
+            --text-main: #f9fafb;     /* Temiz beyaz metin */
             --text-muted: #9ca3af;    /* İkincil soluk metin */
             
             --color-primary: #3b82f6; /* Modern Mavi */
@@ -30,7 +30,6 @@
             box-sizing: border-box;
             margin: 0;
             padding: 0;
-            /* Temiz, sistem fontları (Okunabilirliği maksimuma çıkarır) */
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
             -webkit-tap-highlight-color: transparent;
         }
@@ -43,18 +42,18 @@
         }
 
         .container {
-            max-width: 900px;
+            max-width: 950px;
             margin: 0 auto;
             display: flex;
             flex-direction: column;
             gap: 16px;
         }
 
-        /* --- MODERN KARTLAR (Yuvarlatılmış ve Gölgeli) --- */
+        /* --- MODERN KARTLAR --- */
         .header, .card, .bot-card, .modal {
             background: var(--bg-card);
             border: 1px solid var(--border-color);
-            border-radius: 12px; /* Yumuşak köşeler */
+            border-radius: 12px;
             box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
         }
 
@@ -150,7 +149,7 @@
             gap: 12px;
         }
 
-        .bot-title { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+        .bot-title { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
         .bot-name { font-weight: 700; font-size: 16px; color: #ffffff; }
 
         .bot-details-bar {
@@ -169,17 +168,29 @@
 
         .bot-details-bar b { color: var(--text-main); font-weight: 600; }
 
-        /* --- ROZETLER (BADGE) --- */
+        /* --- ROZETLER (BADGE) & SÜRE SAYAÇ --- */
         .badge {
             font-size: 11px;
             padding: 4px 10px;
-            border-radius: 20px; /* Tam yuvarlak hap rozetler */
+            border-radius: 20px;
             font-weight: 600;
         }
         
         .badge-Online { background: rgba(16, 185, 129, 0.15); color: var(--color-success); }
         .badge-Offline { background: rgba(239, 68, 68, 0.15); color: var(--color-danger); }
         .badge-Connecting { background: rgba(245, 158, 11, 0.15); color: var(--color-warning); }
+
+        .uptime-badge {
+            font-size: 11px;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-weight: 600;
+            background: rgba(59, 130, 246, 0.15);
+            color: #60a5fa;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
 
         .coords-badge {
             font-family: 'Consolas', monospace;
@@ -188,6 +199,28 @@
             background: rgba(59, 130, 246, 0.1);
             padding: 4px 10px;
             border-radius: 6px;
+        }
+
+        /* --- RADAR BÖLÜMÜ --- */
+        .radar-box {
+            background: var(--bg-body);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+
+        .radar-canvas {
+            background-color: #0b0f19;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            width: 100%;
+            max-width: 320px;
+            height: 200px;
+            display: block;
         }
 
         /* --- LOG KUTUSU --- */
@@ -213,7 +246,7 @@
         /* --- WIDGET IZGARASI (Scoreboard & Tablist) --- */
         .bot-widgets-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
             gap: 16px;
         }
 
@@ -238,29 +271,20 @@
             padding-bottom: 8px;
         }
 
-        /* SCOREBOARD ÖZEL DÜZELTMELERİ */
+        /* SCOREBOARD HİZALAMASI */
         .scoreboard-line {
             display: flex;
-            justify-content: space-between; /* İsim sola, sayı sağa yaslanır */
+            justify-content: space-between;
             align-items: center;
             margin-bottom: 6px;
             font-size: 13px;
-            font-family: 'Consolas', monospace; /* Hizasının düzgün durması için */
+            font-family: 'Consolas', monospace;
         }
-        .sb-text {
-            color: var(--text-main);
-            flex: 1; /* Aradaki boşluğu otomatik doldurur */
-        }
-        .sb-score {
-            color: var(--color-danger); /* Skor genelde kırmızı/turuncu gösterilir */
-            font-weight: bold;
-            margin-left: 10px;
-            min-width: 20px;
-            text-align: right;
-        }
+        .sb-text { color: var(--text-main); flex: 1; }
+        .sb-score { color: var(--color-danger); font-weight: bold; margin-left: 10px; min-width: 20px; text-align: right; }
 
         /* TABLIST */
-        .tablist-container { max-height: 200px; overflow-y: auto; }
+        .tablist-container { max-height: 180px; overflow-y: auto; }
         .tab-line {
             display: flex;
             justify-content: space-between;
@@ -274,9 +298,8 @@
         ::-webkit-scrollbar { width: 6px; height: 6px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: var(--bg-inner); border-radius: 4px; }
-        ::-webkit-scrollbar-thumb:hover { background: var(--border-hover); }
 
-        /* --- MODAL PENCERELER --- */
+        /* MODAL */
         .modal-overlay {
             position: fixed; top: 0; left: 0; right: 0; bottom: 0;
             background: rgba(0, 0, 0, 0.6); backdrop-filter: blur(2px);
@@ -288,7 +311,6 @@
             width: 100%; max-width: 400px;
             padding: 24px; display: flex; flex-direction: column; gap: 16px;
         }
-        
         .modal-title { font-size: 16px; font-weight: 600; border-bottom: 1px solid var(--border-color); padding-bottom: 12px; }
         .field { display: flex; flex-direction: column; gap: 6px; }
         .field label { font-size: 12px; color: var(--text-muted); font-weight: 600; }
@@ -329,6 +351,7 @@
     </div>
 </div>
 
+<!-- MODALLAR -->
 <div class="modal-overlay" id="botSettingsModal">
     <div class="modal">
         <div class="modal-title">Bot Ayarları (<span id="modalBotName"></span>)</div>
@@ -365,13 +388,106 @@
     let botsMap = new Map();
     let globalConfig = {};
 
-    // 1. KRİTİK DÜZELTME: MİNECRAFT ÖZEL KARAKTERLERİNİ (☒) TEMİZLEME FONKSİYONU
+    // UNICODE TEMİZLEME (BOZUK KUTU ☒ ENGELLER)
     function cleanMCString(str) {
         if (!str) return '';
-        // \uE000-\uF8FF aralığı, Minecraft Sunucularının Resource Pack ikonları için kullandığı boş(bozuk) karakterleri temsil eder.
         return str.replace(/[\uE000-\uF8FF]/g, '').trim();
     }
 
+    // CANLI SÜRE (UPTIME) FORMATLAYICI
+    function formatUptime(onlineSince) {
+        if (!onlineSince) return 'Offline';
+        const totalSeconds = Math.floor((Date.now() - onlineSince) / 1000);
+        if (totalSeconds < 0) return '0sn';
+
+        const days = Math.floor(totalSeconds / 86400);
+        const hours = Math.floor((totalSeconds % 86400) / 3600);
+        const minutes = Math.floor((totalSeconds % 3600) / 60);
+        const seconds = totalSeconds % 60;
+
+        let parts = [];
+        if (days > 0) parts.push(`${days}g`);
+        if (hours > 0 || days > 0) parts.push(`${hours}sa`);
+        parts.push(`${minutes}dk`);
+        parts.push(`${seconds < 10 ? '0' : ''}${seconds}sn`);
+        return parts.join(' ');
+    }
+
+    // SANİYELİK CANLI SÜRE GÜNCELLEME DÖNGÜSÜ
+    setInterval(() => {
+        botsMap.forEach((bot) => {
+            const uptimeEl = document.getElementById(`uptime-${bot.id}`);
+            if (uptimeEl) {
+                if (bot.status === 'Online' && bot.onlineSince) {
+                    uptimeEl.innerText = `⏱️ ${formatUptime(bot.onlineSince)}`;
+                } else {
+                    uptimeEl.innerText = '⏱️ Offline';
+                }
+            }
+        });
+    }, 1000);
+
+    // RADAR ÇİZİM MOTORU (OYUNCU İSİMLERİ İLE)
+    function drawRadar(botId, players = [], botPos = { x: 0, z: 0 }) {
+        const canvas = document.getElementById(`radar-canvas-${botId}`);
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        
+        const width = canvas.width;
+        const height = canvas.height;
+        const centerX = width / 2;
+        const centerY = height / 2;
+        const scale = 2.5; // Blok ölçeği
+
+        // Arka Plan
+        ctx.clearRect(0, 0, width, height);
+        ctx.fillStyle = '#0b0f19';
+        ctx.fillRect(0, 0, width, height);
+
+        // Izgara Çizgileri ve Halka
+        ctx.strokeStyle = '#1f2937';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.arc(centerX, centerY, 35, 0, 2 * Math.PI);
+        ctx.arc(centerX, centerY, 70, 0, 2 * Math.PI);
+        ctx.stroke();
+
+        // Botun Kendisi (Merkez - Yeşil Nokta)
+        ctx.fillStyle = '#10b981';
+        ctx.beginPath();
+        ctx.arc(centerX, centerY, 5, 0, 2 * Math.PI);
+        ctx.fill();
+
+        // Yakındaki Oyuncular ve İsimleri
+        if (players && players.length > 0) {
+            players.forEach(p => {
+                // Göreli Pozisyon Hesaplama
+                const relX = ((p.x || 0) - botPos.x) * scale;
+                const relZ = ((p.z || 0) - botPos.z) * scale;
+
+                const drawX = centerX + relX;
+                const drawY = centerY + relZ;
+
+                // Canvas Sınırları İçinde İse Çiz
+                if (drawX >= 5 && drawX <= width - 5 && drawY >= 5 && drawY <= height - 5) {
+                    // Oyuncu Noktası (Kırmızı/Pembe)
+                    ctx.fillStyle = '#ef4444';
+                    ctx.beginPath();
+                    ctx.arc(drawX, drawY, 4, 0, 2 * Math.PI);
+                    ctx.fill();
+
+                    // OYUNCU İSMİNİ ÇİZ (Radar Düzeltmesi)
+                    const cleanName = cleanMCString(p.name || p.username || 'Oyuncu');
+                    ctx.fillStyle = '#f3f4f6';
+                    ctx.font = '10px Inter, sans-serif';
+                    ctx.textAlign = 'left';
+                    ctx.fillText(cleanName, drawX + 7, drawY + 3);
+                }
+            });
+        }
+    }
+
+    // SOCKET DINLEYICILERI
     socket.on('init-data', (data) => {
         botsMap.clear();
         globalConfig = data.globalConfig || {};
@@ -429,20 +545,29 @@
         }
     });
 
-    socket.on('bot-map-update', ({ botId, pos }) => {
+    socket.on('bot-map-update', ({ botId, pos, nearbyPlayers }) => {
         if (botsMap.has(botId)) {
-            botsMap.get(botId).pos = pos;
+            const bot = botsMap.get(botId);
+            bot.pos = pos;
+            if (nearbyPlayers) bot.nearbyPlayers = nearbyPlayers;
+
             const coordsEl = document.getElementById(`coords-${botId}`);
-            if (coordsEl) {
+            if (coordsEl && pos) {
                 coordsEl.innerText = `X:${Math.round(pos.x)} Y:${Math.round(pos.y)} Z:${Math.round(pos.z)}`;
             }
+
+            // Radarı Güncelle
+            drawRadar(botId, bot.nearbyPlayers || bot.tabList || [], pos);
         }
     });
 
     socket.on('bot-tablist', ({ botId, players }) => {
         if (botsMap.has(botId)) {
-            botsMap.get(botId).tabList = players;
+            const bot = botsMap.get(botId);
+            bot.tabList = players;
             renderTabList(botId, players);
+            // Tablist geldikçe konumlu oyuncular varsa radara da yansıt
+            drawRadar(botId, bot.nearbyPlayers || players, bot.pos);
         }
     });
 
@@ -457,21 +582,15 @@
             return;
         }
 
-        // Başlığı temizle
         if (titleEl && scoreboard.title) {
             titleEl.innerText = cleanMCString(scoreboard.title);
         }
         
         linesEl.innerHTML = '';
-        
-        // 2. KRİTİK DÜZELTME: SCOREBOARD SATIRLARINI DÜZGÜN HİZALAMA VE TEMİZLEME
         scoreboard.lines.forEach(item => {
             const row = document.createElement('div');
             row.className = 'scoreboard-line';
-            
-            const cleanText = cleanMCString(item.text); // Bozuk karakterleri kaldırır
-            
-            // Flex yapısı: Metin sola, Skor sağa
+            const cleanText = cleanMCString(item.text);
             row.innerHTML = `
                 <span class="sb-text">${cleanText}</span>
                 <span class="sb-score">${item.score}</span>
@@ -505,6 +624,7 @@
                     <div class="bot-title">
                         <span class="bot-name">${bot.username}</span>
                         <span id="badge-${bot.id}" class="badge badge-${bot.status}">${bot.status}</span>
+                        <span id="uptime-${bot.id}" class="uptime-badge">⏱️ ${formatUptime(bot.onlineSince)}</span>
                         <span class="coords-badge" id="coords-${bot.id}">X:${Math.round(pos.x)} Y:${Math.round(pos.y)} Z:${Math.round(pos.z)}</span>
                     </div>
                     <div style="display:flex; gap:6px;">
@@ -519,12 +639,18 @@
                     <span>IP: <b>${botHost}:${botPort}</b></span>
                 </div>
 
+                <!-- CANLI RADAR WIDGETI -->
+                <div class="radar-box">
+                    <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 6px; font-weight: 600;">Canlı Radar (Harita)</div>
+                    <canvas id="radar-canvas-${bot.id}" class="radar-canvas" width="300" height="180"></canvas>
+                </div>
+
                 <div class="log-box" id="logs-${bot.id}">
                     ${(bot.logs || []).map(l => `<div class="log-line log-${l.type}">[${l.timestamp}]${l.text}</div>`).join('')}
                 </div>
 
                 <div class="form-group" style="margin-bottom: 16px;">
-                    <input type="text" id="cmd-${bot.id}" placeholder="Bağımsız komut gönder (/say merhaba)" style="flex: 1;">
+                    <input type="text" id="cmd-${bot.id}" placeholder="Komut gönder (/say merhaba)" style="flex: 1;">
                     <button class="btn-primary" onclick="sendSingleCommand('${bot.id}')">Gönder</button>
                 </div>
 
@@ -550,8 +676,10 @@
                 </div>
             `;
             container.appendChild(card);
-            renderTabList(bot.id, bot.tabList || []);
             
+            renderTabList(bot.id, bot.tabList || []);
+            drawRadar(bot.id, bot.nearbyPlayers || bot.tabList || [], pos);
+
             const lb = document.getElementById(`logs-${bot.id}`);
             if (lb) lb.scrollTop = lb.scrollHeight;
         });
@@ -573,11 +701,7 @@
         players.forEach(p => {
             const row = document.createElement('div');
             row.className = 'tab-line';
-            
-            // İsimleri de temizliyoruz (Tab'da clan taglarında ikon varsa temizlenir)
-            let name = p.displayName || p.name || 'Bilinmiyor';
-            name = cleanMCString(name);
-            
+            let name = cleanMCString(p.displayName || p.name || 'Bilinmiyor');
             const ping = p.ping !== undefined ? `${p.ping}ms` : '-';
             let pingColor = 'var(--color-success)';
             if (p.ping > 150) pingColor = 'var(--color-warning)';

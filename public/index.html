@@ -3,401 +3,388 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Minecraft Bot Panel</title>
+    <title>Minecraft Bot Panel - Solid Gamer Theme</title>
     <script src="/socket.io/socket.io.js"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+    
+    <!-- YENİ FONTLAR: Poppins (Arayüz) ve JetBrains Mono (Veri/Kod) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700;800&family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    
     <style>
+        /* --- KATI (SOLID) VE YÜKSEK KONTRASTLI RENK PALETİ --- */
         :root {
-            --bg-body: #0b0f17;
-            --bg-card: #151c28;
-            --bg-input: #1e293b;
-            --border-color: #27354a;
-            --accent-primary: #6366f1;
-            --accent-hover: #4f46e5;
-            --success: #10b981;
-            --warning: #f59e0b;
-            --danger: #ef4444;
+            --bg-body: #05070a;        /* En arka plan mat siyah */
+            --bg-card: #0d121a;        /* Kartlar için koyu mat */
+            --bg-inner: #151b26;       /* Kart içi bileşenler */
+            --bg-input: #080b10;       /* Input arka planı */
+            
+            --border-color: #202b3d;   /* Keskin sınır çizgileri */
+            --border-hover: #334563;
+            
+            --accent-primary: #3b82f6; /* Canlı Mavi */
+            --accent-hover: #2563eb;
+            
+            --neon-green: #00ffa3;     /* Online / Başarı */
+            --neon-red: #ff3366;       /* Offline / Hata / Düşman */
+            --neon-gold: #fbbf24;      /* Uyarı / Puan */
+            --neon-cyan: #0ea5e9;      /* Bilgi / Koordinat */
+            
             --text-main: #f8fafc;
-            --text-muted: #94a3b8;
+            --text-muted: #64748b;
         }
 
+        /* --- GENEL AYARLAR --- */
         * {
             box-sizing: border-box;
             margin: 0;
             padding: 0;
-            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            font-family: 'Poppins', sans-serif;
             -webkit-tap-highlight-color: transparent;
         }
 
         body {
             background-color: var(--bg-body);
             color: var(--text-main);
-            padding: 12px;
+            padding: 15px;
             font-size: 14px;
         }
 
+        /* --- ÖZEL SCROLLBAR (Oyuncu Tarzı) --- */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: var(--bg-inner); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--accent-primary); }
+
         .container {
-            max-width: 800px;
+            max-width: 900px;
             margin: 0 auto;
             display: flex;
             flex-direction: column;
-            gap: 12px;
+            gap: 16px;
+        }
+
+        /* --- KART TASARIMLARI (Mat ve Keskin) --- */
+        .header, .card, .bot-card, .modal {
+            background: var(--bg-card);
+            border: 2px solid var(--border-color);
+            border-radius: 8px; /* Daha keskin köşeler */
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
         }
 
         .header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            background: var(--bg-card);
-            border: 1px solid var(--border-color);
-            padding: 14px 16px;
-            border-radius: 12px;
+            padding: 16px 20px;
         }
 
         .header h1 {
-            font-size: 16px;
-            font-weight: 700;
-            background: linear-gradient(135deg, #a5b4fc, #6366f1);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
+            font-size: 18px;
+            font-weight: 800;
+            letter-spacing: 1px;
+            color: #ffffff;
+            display: flex;
+            align-items: center;
+            gap: 10px;
         }
 
-        .card {
-            background: var(--bg-card);
-            border: 1px solid var(--border-color);
-            border-radius: 12px;
-            padding: 14px;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
-        }
+        .card { padding: 18px; }
 
         .card-header {
-            font-size: 12px;
-            font-weight: 600;
-            color: var(--text-muted);
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--neon-cyan);
             text-transform: uppercase;
-            letter-spacing: 0.05em;
-            margin-bottom: 10px;
+            letter-spacing: 1px;
+            margin-bottom: 12px;
             display: flex;
             justify-content: space-between;
             align-items: center;
+            border-bottom: 2px solid var(--bg-inner);
+            padding-bottom: 8px;
         }
 
-        .form-group {
-            display: flex;
-            gap: 8px;
-        }
+        /* --- FORM VE İNPUTLAR --- */
+        .form-group { display: flex; gap: 8px; }
 
         input, select {
             background: var(--bg-input);
-            border: 1px solid var(--border-color);
+            border: 2px solid var(--border-color);
             color: var(--text-main);
-            padding: 10px 12px;
-            border-radius: 8px;
+            padding: 10px 14px;
+            border-radius: 6px;
             font-size: 13px;
+            font-family: 'JetBrains Mono', monospace; /* Input içini kod fontu yapalım, havalı durur */
+            font-weight: 600;
             outline: none;
+            transition: border-color 0.2s;
         }
 
+        input:focus, select:focus {
+            border-color: var(--accent-primary);
+        }
+
+        /* --- BUTONLAR (Katı ve Neon Vurgulu) --- */
         button {
             border: none;
-            padding: 9px 14px;
-            border-radius: 8px;
+            padding: 10px 16px;
+            border-radius: 6px;
             font-size: 12px;
-            font-weight: 600;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
             cursor: pointer;
             color: #fff;
+            transition: all 0.2s ease;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
         }
 
-        .btn-primary { background: var(--accent-primary); }
-        .btn-success { background: #059669; }
-        .btn-warning { background: #d97706; }
-        .btn-danger { background: #dc2626; }
-        .btn-secondary { background: #334155; color: var(--text-main); }
+        button:active { transform: scale(0.96); }
 
+        .btn-primary { background: var(--accent-primary); }
+        .btn-primary:hover { background: var(--accent-hover); box-shadow: 0 0 12px rgba(59, 130, 246, 0.4); }
+
+        .btn-success { background: #059669; }
+        .btn-success:hover { background: #10b981; box-shadow: 0 0 12px rgba(16, 185, 129, 0.4); }
+
+        .btn-warning { background: #d97706; }
+        .btn-warning:hover { background: #f59e0b; box-shadow: 0 0 12px rgba(245, 158, 11, 0.4); }
+
+        .btn-danger { background: #be123c; }
+        .btn-danger:hover { background: #e11d48; box-shadow: 0 0 12px rgba(225, 29, 72, 0.4); }
+
+        .btn-secondary { background: var(--border-color); color: var(--text-main); }
+        .btn-secondary:hover { background: var(--border-hover); }
+
+        /* --- BOT KARTI DETAYLARI --- */
         .bot-card {
-            background: #0f172a;
-            border: 1px solid var(--border-color);
-            border-radius: 10px;
-            padding: 12px;
-            margin-bottom: 12px;
+            padding: 16px;
+            margin-bottom: 16px;
+            background: #0d121a;
+            border-left: 4px solid var(--border-color);
         }
 
         .bot-top {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 8px;
+            margin-bottom: 12px;
             flex-wrap: wrap;
-            gap: 8px;
+            gap: 10px;
         }
 
-        .bot-title {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            flex-wrap: wrap;
-        }
-
-        .bot-name { font-weight: 700; font-size: 15px; color: #f1f5f9; }
+        .bot-title { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+        .bot-name { font-weight: 800; font-size: 16px; color: #ffffff; letter-spacing: 0.5px; }
 
         .bot-details-bar {
             font-size: 11px;
             color: var(--text-muted);
-            background: #090d16;
-            padding: 6px 10px;
+            background: var(--bg-inner);
+            padding: 8px 12px;
             border-radius: 6px;
-            border: 1px solid #1e293b;
-            margin-bottom: 10px;
+            margin-bottom: 12px;
             display: flex;
             justify-content: space-between;
             flex-wrap: wrap;
-            gap: 6px;
+            gap: 8px;
+            font-family: 'JetBrains Mono', monospace;
         }
 
+        .bot-details-bar b { color: var(--text-main); font-weight: 700; }
+
+        /* --- BADGELER (Rozetler) --- */
         .badge {
             font-size: 11px;
-            padding: 3px 8px;
-            border-radius: 20px;
-            font-weight: 600;
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-weight: 800;
+            text-transform: uppercase;
         }
-        .badge-Online { background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3); }
-        .badge-Offline { background: rgba(239, 68, 68, 0.15); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.3); }
-        .badge-Connecting { background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.3); }
+        
+        .badge-Online { background: #064e3b; color: var(--neon-green); border: 1px solid #047857; }
+        .badge-Offline { background: #4c0519; color: var(--neon-red); border: 1px solid #881337; }
+        .badge-Connecting { background: #451a03; color: var(--neon-gold); border: 1px solid #78350f; }
 
         .coords-badge {
-            font-family: 'Fira Code', monospace;
+            font-family: 'JetBrains Mono', monospace;
             font-size: 11px;
-            color: #38bdf8;
-            background: rgba(56, 189, 248, 0.1);
-            padding: 3px 8px;
-            border-radius: 6px;
-            border: 1px solid rgba(56, 189, 248, 0.25);
+            font-weight: 700;
+            color: var(--neon-cyan);
+            background: #082f49;
+            padding: 4px 10px;
+            border-radius: 4px;
+            border: 1px solid #0c4a6e;
         }
 
+        /* --- LOG KUTUSU (Terminal Tarzı) --- */
         .log-box {
-            background: #020617;
-            border: 1px solid #1e293b;
-            height: 110px;
+            background: #000000;
+            border: 2px solid var(--bg-inner);
+            border-left: 2px solid var(--border-color);
+            height: 120px;
             overflow-y: auto;
-            padding: 8px;
-            font-family: 'Fira Code', monospace;
-            font-size: 11px;
+            padding: 10px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11.5px;
             border-radius: 6px;
-            margin-bottom: 10px;
+            margin-bottom: 12px;
+            line-height: 1.4;
         }
 
-        .log-line { margin-bottom: 3px; word-break: break-all; }
-        .log-info { color: #38bdf8; }
-        .log-success { color: #4ade80; }
-        .log-warn { color: #fbbf24; }
-        .log-error { color: #f87171; }
-        .log-chat { color: #e879f9; }
+        .log-line { margin-bottom: 4px; word-break: break-all; }
+        .log-info { color: var(--neon-cyan); }
+        .log-success { color: var(--neon-green); }
+        .log-warn { color: var(--neon-gold); }
+        .log-error { color: var(--neon-red); font-weight: 700; }
+        .log-chat { color: #d946ef; }
         .log-command { color: #a7f3d0; font-weight: bold; }
 
+        /* --- ENVANTER (Mat Minecraft UI) --- */
         .inventory-wrapper {
-            background: #090d16;
-            border: 1px solid #1e293b;
-            padding: 10px;
-            border-radius: 10px;
-            margin-bottom: 10px;
+            background: var(--bg-inner);
+            border: 2px solid var(--border-color);
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 12px;
         }
 
-        .inventory-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 8px;
-        }
+        .inventory-header { margin-bottom: 10px; }
+        .inventory-title { font-size: 13px; color: var(--text-main); font-weight: 800; text-transform: uppercase; letter-spacing: 1px; }
 
-        .inventory-title { font-size: 12px; color: #a5b4fc; font-weight: 700; }
-
-        .inventory-grid {
-            display: grid;
-            grid-template-columns: repeat(9, 1fr);
-            gap: 4px;
-        }
-
+        .inventory-grid { display: grid; grid-template-columns: repeat(9, 1fr); gap: 4px; }
         .armor-grid {
-            display: grid;
-            grid-template-columns: repeat(5, 1fr);
-            gap: 4px;
-            margin-bottom: 8px;
-            padding-bottom: 8px;
-            border-bottom: 1px dashed #1e293b;
+            display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px;
+            margin-bottom: 10px; padding-bottom: 10px; border-bottom: 2px solid var(--bg-card);
         }
 
         .inv-slot {
-            background: #111827;
-            border: 1px solid #1f293d;
+            background: var(--bg-input);
+            border: 2px solid var(--bg-card);
             aspect-ratio: 1;
             display: flex;
             align-items: center;
             justify-content: center;
             position: relative;
-            border-radius: 6px;
+            border-radius: 4px;
             cursor: pointer;
             user-select: none;
+            transition: background 0.2s, border-color 0.2s;
         }
 
-        .inv-slot.has-item {
-            background: #1e293b;
-            border-color: #3b82f6;
-        }
+        .inv-slot:hover { border-color: var(--text-muted); }
 
-        .inv-slot img {
-            width: 26px;
-            height: 26px;
-            image-rendering: pixelated;
-            object-fit: contain;
-            pointer-events: none;
-        }
+        .inv-slot.has-item { background: #1e293b; border-color: #3b82f6; }
+        .inv-slot.has-item:hover { border-color: var(--neon-cyan); box-shadow: 0 0 10px rgba(14, 165, 233, 0.3); }
 
+        .inv-slot img { width: 28px; height: 28px; image-rendering: pixelated; object-fit: contain; pointer-events: none; }
+        
         .inv-slot-count {
-            position: absolute;
-            bottom: 1px;
-            right: 3px;
-            color: #facc15;
-            font-weight: 800;
-            font-size: 10px;
-            text-shadow: 1px 1px 2px #000;
+            position: absolute; bottom: 2px; right: 4px;
+            color: #ffffff; font-family: 'JetBrains Mono', monospace; font-weight: 800; font-size: 11px;
+            text-shadow: 2px 2px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000;
             pointer-events: none;
         }
 
-        .inv-slot-id { opacity: 0.2; font-size: 9px; color: #64748b; pointer-events: none; }
+        .inv-slot-id { opacity: 0.3; font-size: 10px; font-weight: 700; color: var(--text-muted); pointer-events: none; }
 
         .inv-info-bar {
-            margin-top: 8px;
-            background: #0f172a;
-            border: 1px solid #1e293b;
-            padding: 6px 10px;
-            border-radius: 6px;
-            font-size: 11px;
-            color: #e2e8f0;
-            min-height: 28px;
+            margin-top: 10px;
+            background: var(--bg-card);
+            border: 2px solid var(--border-color);
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--text-main);
+            min-height: 32px;
             display: flex;
             align-items: center;
             justify-content: space-between;
         }
 
+        /* --- WIDGET IZGARASI (Radar, Tablist, Scoreboard) --- */
         .bot-widgets-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
-            gap: 10px;
+            gap: 12px;
         }
 
-        .radar-box {
-            background: #090d16;
-            border: 1px solid #1e293b;
-            border-radius: 10px;
-            padding: 10px;
+        .radar-box, .tablist-box, .scoreboard-box {
+            background: var(--bg-inner);
+            border: 2px solid var(--border-color);
+            border-radius: 8px;
+            padding: 12px;
             display: flex;
             flex-direction: column;
-            align-items: center;
         }
 
-        .radar-title {
-            font-size: 12px;
-            color: #a5b4fc;
-            font-weight: 700;
-            margin-bottom: 8px;
-            width: 100%;
+        .radar-title, .tablist-title, .scoreboard-title {
+            font-size: 13px;
+            color: var(--text-main);
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 10px;
             display: flex;
             justify-content: space-between;
             align-items: center;
+            border-bottom: 2px solid var(--bg-card);
+            padding-bottom: 6px;
         }
 
+        .scoreboard-title { color: var(--neon-gold); text-align: center; justify-content: center; }
+
+        /* RADAR */
+        .radar-box { align-items: center; }
         .radar-canvas {
-            background: #020617;
-            border: 1px solid #1e293b;
-            border-radius: 8px;
+            background: #000000;
+            border: 2px solid var(--border-color);
+            border-radius: 6px;
             width: 100%;
             max-width: 220px;
             height: 220px;
-            cursor: pointer;
+            cursor: crosshair;
         }
-
         .radar-tooltip {
-            margin-top: 6px;
-            font-size: 11px;
-            color: #38bdf8;
-            min-height: 16px;
-            text-align: center;
+            margin-top: 8px; font-family: 'JetBrains Mono', monospace; font-size: 11px;
+            font-weight: 700; color: var(--neon-cyan); min-height: 16px; text-align: center;
         }
 
-        .tablist-box {
-            background: #090d16;
-            border: 1px solid #1e293b;
-            border-radius: 10px;
-            padding: 10px;
-            display: flex;
-            flex-direction: column;
-        }
+        /* TABLIST */
+        .tablist-container { max-height: 190px; overflow-y: auto; padding-right: 4px; }
+        .tablist-table { width: 100%; border-collapse: collapse; font-family: 'JetBrains Mono', monospace; font-size: 11.5px; }
+        .tablist-table th { text-align: left; color: var(--text-muted); padding: 6px; border-bottom: 2px solid var(--bg-card); font-size: 10px; text-transform: uppercase; }
+        .tablist-table td { padding: 6px; border-bottom: 1px solid var(--bg-card); color: var(--text-main); font-weight: 600; }
 
-        .tablist-title {
-            font-size: 12px;
-            color: #a5b4fc;
-            font-weight: 700;
-            margin-bottom: 8px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .tablist-container { max-height: 190px; overflow-y: auto; }
-        .tablist-table { width: 100%; border-collapse: collapse; font-size: 11px; }
-        .tablist-table th { text-align: left; color: var(--text-muted); padding: 4px 6px; border-bottom: 1px solid #1e293b; font-size: 10px; }
-        .tablist-table td { padding: 4px 6px; border-bottom: 1px dashed #1e293b; color: var(--text-main); }
-
-        .scoreboard-box {
-            background: #090d16;
-            border: 1px solid #1e293b;
-            border-radius: 10px;
-            padding: 10px;
-            font-family: 'Fira Code', monospace;
-        }
-
-        .scoreboard-title {
-            text-align: center;
-            font-weight: bold;
-            color: #facc15;
-            border-bottom: 1px solid #1e293b;
-            padding-bottom: 6px;
-            margin-bottom: 8px;
-            font-size: 12px;
-        }
-
+        /* SCOREBOARD */
+        .scoreboard-box { font-family: 'JetBrains Mono', monospace; }
         .scoreboard-line {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 3px;
-            font-size: 11px;
+            display: flex; justify-content: space-between; align-items: center;
+            margin-bottom: 5px; font-size: 12px; font-weight: 600;
+            background: var(--bg-card); padding: 4px 8px; border-radius: 4px;
         }
 
+        /* --- MODAL (Açılır Pencereler) --- */
         .modal-overlay {
-            position: fixed;
-            top: 0; left: 0; right: 0; bottom: 0;
-            background: rgba(0, 0, 0, 0.75);
-            backdrop-filter: blur(4px);
-            display: none;
-            align-items: center;
-            justify-content: center;
-            z-index: 1000;
-            padding: 15px;
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0, 0, 0, 0.85); /* Blur yok, keskin karartma */
+            display: none; align-items: center; justify-content: center;
+            z-index: 1000; padding: 15px;
         }
 
         .modal {
-            background: var(--bg-card);
-            border: 1px solid var(--border-color);
-            width: 100%;
-            max-width: 400px;
-            border-radius: 12px;
-            padding: 16px;
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
+            width: 100%; max-width: 420px;
+            padding: 20px; display: flex; flex-direction: column; gap: 14px;
         }
-        .field { display: flex; flex-direction: column; gap: 4px; }
-        .field label { font-size: 11px; color: var(--text-muted); font-weight: 600; }
+        
+        .modal-title { font-size: 16px; font-weight: 800; color: #fff; border-bottom: 2px solid var(--bg-inner); padding-bottom: 10px; margin-bottom: 5px; }
+        
+        .field { display: flex; flex-direction: column; gap: 6px; }
+        .field label { font-size: 12px; color: var(--text-muted); font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
     </style>
 </head>
 <body>
@@ -411,7 +398,7 @@
     <div class="card">
         <div class="card-header">💬 Konsol & Komut Gönderimi</div>
         <div class="form-group">
-            <select id="targetBotSelect" style="max-width: 130px;">
+            <select id="targetBotSelect" style="max-width: 140px;">
                 <option value="all">Tüm Botlar</option>
             </select>
             <input type="text" id="globalCmdInput" placeholder="Komut yazın (/afk, /login...)" style="flex: 1;">
@@ -421,11 +408,11 @@
 
     <div class="card">
         <div class="card-header">➕ Bot Yönetimi</div>
-        <div class="form-group" style="margin-bottom: 10px;">
+        <div class="form-group" style="margin-bottom: 12px;">
             <input type="text" id="newBotUsername" placeholder="Yeni Bot Kullanıcı Adı" style="flex: 1;">
             <button class="btn-success" onclick="addBot()">Ekle</button>
         </div>
-        <div style="display: flex; gap: 8px;">
+        <div style="display: flex; gap: 10px;">
             <button class="btn-success" style="flex: 1;" onclick="socket.emit('start-all')">⚡ Tümünü Başlat</button>
             <button class="btn-danger" style="flex: 1;" onclick="socket.emit('stop-all')">🛑 Tümünü Durdur</button>
         </div>
@@ -434,7 +421,7 @@
     <div class="card">
         <div class="card-header">
             <span>📋 Aktif Bot Listesi</span>
-            <span id="botCountBadge" style="font-size: 11px; background: #1e293b; padding: 2px 8px; border-radius: 12px; color: #38bdf8;">Toplam Bot: 0</span>
+            <span id="botCountBadge" style="font-size: 11px; background: var(--bg-inner); padding: 4px 10px; border-radius: 4px; color: var(--neon-cyan); border: 1px solid var(--border-color);">Toplam Bot: 0</span>
         </div>
         <div id="botListContainer"></div>
     </div>
@@ -442,16 +429,16 @@
 
 <div class="modal-overlay" id="botSettingsModal">
     <div class="modal">
-        <div class="modal-title">⚙️ Bot Ayarları (<span id="modalBotName"></span>)</div>
+        <div class="modal-title">⚙️ Bot Ayarları (<span id="modalBotName" style="color:var(--neon-cyan);"></span>)</div>
         <input type="hidden" id="modalBotId">
         <div class="field"><label>Sunucu IP</label><input type="text" id="modalHost"></div>
         <div class="field"><label>Port</label><input type="number" id="modalPort"></div>
         <div class="field"><label>Versiyon</label><input type="text" id="modalVersion"></div>
         <div class="field"><label>Şifre (/login)</label><input type="text" id="modalPassword"></div>
         <div class="field"><label>Alt Sunucu Komutu</label><input type="text" id="modalSubCmd"></div>
-        <div style="display: flex; gap: 8px; margin-top: 8px;">
+        <div style="display: flex; gap: 10px; margin-top: 10px;">
             <button class="btn-primary" style="flex: 1;" onclick="saveBotSettings()">Kaydet</button>
-            <button class="btn-secondary" onclick="closeModal('botSettingsModal')">İptal</button>
+            <button class="btn-secondary" style="flex: 1;" onclick="closeModal('botSettingsModal')">İptal</button>
         </div>
     </div>
 </div>
@@ -464,13 +451,14 @@
         <div class="field"><label>Versiyon</label><input type="text" id="gModalVersion"></div>
         <div class="field"><label>Şifre</label><input type="text" id="gModalPassword"></div>
         <div class="field"><label>Alt Sunucu Komutu</label><input type="text" id="gModalSubCmd"></div>
-        <div style="display: flex; gap: 8px; margin-top: 8px;">
+        <div style="display: flex; gap: 10px; margin-top: 10px;">
             <button class="btn-primary" style="flex: 1;" onclick="saveGlobalSettings()">Kaydet</button>
-            <button class="btn-secondary" onclick="closeModal('globalSettingsModal')">Kapat</button>
+            <button class="btn-secondary" style="flex: 1;" onclick="closeModal('globalSettingsModal')">Kapat</button>
         </div>
     </div>
 </div>
 
+<!-- JAVASCRIPT KISMI BİREBİR AYNI -->
 <script>
     const socket = io();
     let botsMap = new Map();
@@ -528,6 +516,11 @@
             if (badge) {
                 badge.innerText = status;
                 badge.className = `badge badge-${status}`;
+                
+                // Solid temaya özel border rengi güncellemesi (opsiyonel ama şık)
+                if(status === 'Online') document.getElementById(`card-${botId}`).style.borderLeftColor = 'var(--neon-green)';
+                else if(status === 'Offline') document.getElementById(`card-${botId}`).style.borderLeftColor = 'var(--neon-red)';
+                else document.getElementById(`card-${botId}`).style.borderLeftColor = 'var(--neon-gold)';
             }
             if (status === 'Offline') {
                 const uptimeEl = document.getElementById(`uptime-${botId}`);
@@ -540,7 +533,7 @@
         if (botsMap.has(log.botId)) {
             const bot = botsMap.get(log.botId);
             bot.logs.push(log);
-            if (bot.logs.length > 20) bot.logs.shift();
+            if (bot.logs.length > 30) bot.logs.shift(); // Biraz daha fazla log tutsun
 
             const logBox = document.getElementById(`logs-${log.botId}`);
             if (logBox) {
@@ -588,8 +581,8 @@
         if (!linesEl) return;
 
         if (!scoreboard || !scoreboard.lines || scoreboard.lines.length === 0) {
-            if (titleEl) titleEl.innerText = '📊 Scoreboard';
-            linesEl.innerHTML = `<div style="color: #64748b; text-align: center; padding: 4px;">Aktif Scoreboard yok</div>`;
+            if (titleEl) titleEl.innerText = '📊 SCOREBOARD';
+            linesEl.innerHTML = `<div style="color: var(--text-muted); text-align: center; padding: 4px;">Aktif Scoreboard yok</div>`;
             return;
         }
 
@@ -598,7 +591,7 @@
         scoreboard.lines.forEach(item => {
             const row = document.createElement('div');
             row.className = 'scoreboard-line';
-            row.innerHTML = `<span style="color:#e2e8f0">${item.text}</span><span style="color:#ef4444; font-weight:bold;">${item.score}</span>`;
+            row.innerHTML = `<span style="color:var(--text-main)">${item.text}</span><span style="color:var(--neon-red); font-weight:800;">${item.score}</span>`;
             linesEl.appendChild(row);
         });
     });
@@ -623,8 +616,16 @@
             const botPort = bot.port || globalConfig.port || 25565;
             const botPassword = bot.autoPassword !== undefined && bot.autoPassword !== '' ? bot.autoPassword : (globalConfig.autoPassword || 'Yok');
 
+            // Başlangıç border rengi
+            let borderColor = 'var(--border-color)';
+            if(bot.status === 'Online') borderColor = 'var(--neon-green)';
+            if(bot.status === 'Offline') borderColor = 'var(--neon-red)';
+
             const card = document.createElement('div');
             card.className = 'bot-card';
+            card.id = `card-${bot.id}`;
+            card.style.borderLeftColor = borderColor;
+            
             card.innerHTML = `
                 <div class="bot-top">
                     <div class="bot-title">
@@ -632,9 +633,9 @@
                         <span id="badge-${bot.id}" class="badge badge-${bot.status}">${bot.status}</span>
                         <span class="coords-badge" id="coords-${bot.id}">📍 X: ${pos.x} | Y: ${pos.y} | Z: ${pos.z}</span>
                     </div>
-                    <div class="bot-actions" style="display:flex; gap:4px;">
-                        <button class="btn-success" onclick="socket.emit('start-bot', '${bot.id}')">Başlat</button>
-                        <button class="btn-warning" onclick="socket.emit('stop-bot', '${bot.id}')">Durdur</button>
+                    <div class="bot-actions" style="display:flex; gap:6px;">
+                        <button class="btn-success" onclick="socket.emit('start-bot', '${bot.id}')">BAŞLAT</button>
+                        <button class="btn-warning" onclick="socket.emit('stop-bot', '${bot.id}')">DURDUR</button>
                         <button class="btn-secondary" onclick="openBotSettings('${bot.id}')">⚙</button>
                         <button class="btn-danger" onclick="socket.emit('delete-bot', '${bot.id}')">X</button>
                     </div>
@@ -643,16 +644,16 @@
                 <div class="bot-details-bar">
                     <span>🌐 IP: <b>${botHost}:${botPort}</b></span>
                     <span>🔑 Şifre: <b>${botPassword}</b></span>
-                    <span id="uptime-${bot.id}" style="color: #38bdf8;">⏱️ Çevrimdışı</span>
+                    <span id="uptime-${bot.id}" style="color: var(--neon-cyan);">⏱️ Çevrimdışı</span>
                 </div>
 
                 <div class="log-box" id="logs-${bot.id}">
                     ${(bot.logs || []).map(l => `<div class="log-line log-${l.type}">[${l.timestamp}]${l.text}</div>`).join('')}
                 </div>
 
-                <div class="form-group" style="margin-bottom: 8px;">
+                <div class="form-group" style="margin-bottom: 12px;">
                     <input type="text" id="cmd-${bot.id}" placeholder="Özel komut gönder..." style="flex: 1;">
-                    <button class="btn-primary" onclick="sendSingleCommand('${bot.id}')">Gönder</button>
+                    <button class="btn-primary" onclick="sendSingleCommand('${bot.id}')">GÖNDER</button>
                 </div>
 
                 <div class="inventory-wrapper">
@@ -662,15 +663,15 @@
                     <div class="armor-grid" id="armor-grid-${bot.id}"></div>
                     <div class="inventory-grid" id="inv-grid-${bot.id}"></div>
                     <div class="inv-info-bar" id="inv-info-${bot.id}">
-                        <span>Detayları görmek için eşyaya dokunun</span>
+                        <span style="color:var(--text-muted);">Detayları görmek için eşyaya dokunun</span>
                     </div>
                 </div>
 
                 <div class="bot-widgets-grid">
                     <div class="radar-box">
                         <div class="radar-title">
-                            <span>🗺️ 2D Radar</span>
-                            <span style="font-size:10px; color:#64748b;">(Tıklayarak Oyuncu Gör)</span>
+                            <span>🗺️️ 2D Radar</span>
+                            <span style="font-size:10px; color:var(--text-muted); font-family:'Poppins', sans-serif;">(Tıkla)</span>
                         </div>
                         <canvas id="map-canvas-${bot.id}" class="radar-canvas" width="220" height="220"></canvas>
                         <div class="radar-tooltip" id="radar-tip-${bot.id}">Noktaya tıklayın</div>
@@ -678,8 +679,8 @@
 
                     <div class="tablist-box">
                         <div class="tablist-title">
-                            <span>📋 Tab Oyuncu Listesi</span>
-                            <span style="font-size:10px; color:#38bdf8;" id="tab-count-${bot.id}">0 Oyuncu</span>
+                            <span>📋 TAB LİSTESİ</span>
+                            <span style="font-size:11px; color:var(--neon-cyan); font-family:'JetBrains Mono', monospace;" id="tab-count-${bot.id}">0 Oyuncu</span>
                         </div>
                         <div class="tablist-container">
                             <table class="tablist-table">
@@ -690,16 +691,16 @@
                                     </tr>
                                 </thead>
                                 <tbody id="tab-body-${bot.id}">
-                                    <tr><td colspan="2" style="text-align:center; color:#64748b; padding:8px;">Veri bekleniyor...</td></tr>
+                                    <tr><td colspan="2" style="text-align:center; color:var(--text-muted); padding:8px;">Veri bekleniyor...</td></tr>
                                 </tbody>
                             </table>
                         </div>
                     </div>
 
                     <div class="scoreboard-box">
-                        <div class="scoreboard-title" id="sb-title-${bot.id}">📊 Scoreboard</div>
+                        <div class="scoreboard-title" id="sb-title-${bot.id}">📊 SCOREBOARD</div>
                         <div id="sb-lines-${bot.id}">
-                            <div style="color: #64748b; text-align: center;">Skor bekleniyor...</div>
+                            <div style="color: var(--text-muted); text-align: center;">Skor bekleniyor...</div>
                         </div>
                     </div>
                 </div>
@@ -725,10 +726,10 @@
         const cy = h / 2;
         const scale = 3;
 
-        ctx.fillStyle = '#020617';
+        ctx.fillStyle = '#000000'; // Tam Siyah
         ctx.fillRect(0, 0, w, h);
 
-        ctx.strokeStyle = '#1e293b';
+        ctx.strokeStyle = '#202b3d';
         ctx.lineWidth = 1;
         ctx.beginPath();
         ctx.moveTo(cx, 0); ctx.lineTo(cx, h);
@@ -762,20 +763,20 @@
 
                     currentBotRadarMap.set(`${Math.round(rx)}_${Math.round(ry)}`, displayName);
                     
-                    ctx.fillStyle = '#ef4444';
+                    ctx.fillStyle = '#ff3366'; // Neon Kırmızı
                     ctx.beginPath();
-                    ctx.arc(rx, ry, 4, 0, Math.PI * 2);
+                    ctx.arc(rx, ry, 4.5, 0, Math.PI * 2);
                     ctx.fill();
                 }
             });
         }
 
-        ctx.fillStyle = '#10b981';
+        ctx.fillStyle = '#00ffa3'; // Neon Yeşil
         ctx.beginPath();
-        ctx.arc(cx, cy, 5, 0, Math.PI * 2);
+        ctx.arc(cx, cy, 5.5, 0, Math.PI * 2);
         ctx.fill();
-        ctx.strokeStyle = '#34d399';
-        ctx.lineWidth = 2;
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 1.5;
         ctx.stroke();
 
         canvas.onclick = (e) => {
@@ -798,11 +799,11 @@
 
             if (tipEl) {
                 if (foundName) {
-                    tipEl.innerText = `👤 Oyuncu: ${foundName}`;
-                    tipEl.style.color = '#4ade80';
+                    tipEl.innerHTML = `👤 OYUNCU: <span style="color:#ffffff">${foundName}</span>`;
+                    tipEl.style.color = 'var(--neon-green)';
                 } else {
-                    tipEl.innerText = `Koordinat: X:${pos.x}, Z:${pos.z}`;
-                    tipEl.style.color = '#38bdf8';
+                    tipEl.innerText = `KOORDİNAT: X:${pos.x}, Z:${pos.z}`;
+                    tipEl.style.color = 'var(--neon-cyan)';
                 }
             }
         };
@@ -817,7 +818,7 @@
         tbody.innerHTML = '';
 
         if (!players || players.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="2" style="text-align:center; color:#64748b; padding:8px;">Tab listesi boş</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="2" style="text-align:center; color:var(--text-muted); padding:8px;">Tab listesi boş</td></tr>`;
             return;
         }
 
@@ -826,13 +827,13 @@
             const name = p.displayName || p.name || 'Bilinmeyen';
             const ping = p.ping !== undefined ? `${p.ping}ms` : '-';
             
-            let pingColor = '#10b981';
-            if (p.ping > 150) pingColor = '#f59e0b';
-            if (p.ping > 300) pingColor = '#ef4444';
+            let pingColor = 'var(--neon-green)';
+            if (p.ping > 150) pingColor = 'var(--neon-gold)';
+            if (p.ping > 300) pingColor = 'var(--neon-red)';
 
             tr.innerHTML = `
-                <td><b>${name}</b></td>
-                <td style="text-align: right; color: ${pingColor}; font-family: 'Fira Code', monospace;">${ping}</td>
+                <td>${name}</td>
+                <td style="text-align: right; color: ${pingColor};">${ping}</td>
             `;
             tbody.appendChild(tr);
         });
@@ -856,11 +857,11 @@
         armorGrid.innerHTML = '';
 
         const armorSlots = [
-            { slotId: 5, label: '🪖 Kask' },
-            { slotId: 6, label: '👕 Göğüslük' },
-            { slotId: 7, label: '👖 Pantolon' },
-            { slotId: 8, label: '🥾 Bot' },
-            { slotId: 45, label: '🛡️ Sol El' }
+            { slotId: 5, label: 'Kask' },
+            { slotId: 6, label: 'Göğüs' },
+            { slotId: 7, label: 'Pant' },
+            { slotId: 8, label: 'Bot' },
+            { slotId: 45, label: 'S. El' }
         ];
 
         armorSlots.forEach(arm => {
@@ -897,9 +898,9 @@
         const infoBar = document.getElementById(`inv-info-${botId}`);
         if (!infoBar) return;
         if (count > 0) {
-            infoBar.innerHTML = `<span style="color: #38bdf8; font-weight:700;">📦 ${name}</span><span style="color: #94a3b8; font-size:10px;">Adet: <b>${count}</b> | Slot: ${slot}</span>`;
+            infoBar.innerHTML = `<span style="color: var(--neon-cyan); font-weight:800; text-transform:uppercase;">📦 ${name}</span><span style="color: var(--text-main); font-size:11px;">Adet: <b>${count}</b> | Slot: ${slot}</span>`;
         } else {
-            infoBar.innerHTML = `<span style="color: #64748b;">Boş Slot (${slot})</span>`;
+            infoBar.innerHTML = `<span style="color: var(--text-muted);">Boş Slot (${slot})</span>`;
         }
     }
 

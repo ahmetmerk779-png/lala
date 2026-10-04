@@ -1,243 +1,956 @@
-const express = require('express');
-const http = require('http');
-const { Server } = require('socket.io');
-const mc = require('minecraft-protocol');
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Minecraft Bot Panel</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-body: #0b0f17;
+            --bg-card: #151c28;
+            --bg-input: #1e293b;
+            --border-color: #27354a;
+            --accent-primary: #6366f1;
+            --accent-hover: #4f46e5;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+        }
 
-const app = express();
-const server = http.createServer(app);
-const io = new Server(server);
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            -webkit-tap-highlight-color: transparent;
+        }
 
-app.use(express.static('public'));
+        body {
+            background-color: var(--bg-body);
+            color: var(--text-main);
+            padding: 12px;
+            font-size: 14px;
+        }
 
-let bots = [];
-let globalSettings = {
-    host: 'oyna.aesirmc.com',
-    port: 25565,
-    version: '1.20.6',
-    password: 'eniyisiben',
-    autoSubServerCmd: '/gir asmp'
-};
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
 
-function addLog(bot, text, type = 'info') {
-    const timestamp = new Date().toLocaleTimeString('tr-TR');
-    if (!bot.logs) bot.logs = [];
-    bot.logs.push({ timestamp, text, type });
-    if (bot.logs.length > 100) bot.logs.shift();
-    io.emit('bot-log', { botId: bot.id, timestamp, text, type });
-}
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            padding: 14px 16px;
+            border-radius: 12px;
+        }
 
-function startBotInstance(bot) {
-    if (bot.client) {
-        try { bot.client.end(); } catch (e) {}
+        .header h1 {
+            font-size: 16px;
+            font-weight: 700;
+            background: linear-gradient(135deg, #a5b4fc, #6366f1);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 14px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+        }
+
+        .card-header {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 10px;
+        }
+
+        .form-group {
+            display: flex;
+            gap: 8px;
+        }
+
+        input, select {
+            background: var(--bg-input);
+            border: 1px solid var(--border-color);
+            color: var(--text-main);
+            padding: 10px 12px;
+            border-radius: 8px;
+            font-size: 13px;
+            outline: none;
+        }
+
+        button {
+            border: none;
+            padding: 9px 14px;
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            color: #fff;
+        }
+
+        .btn-primary { background: var(--accent-primary); }
+        .btn-success { background: #059669; }
+        .btn-warning { background: #d97706; }
+        .btn-danger { background: #dc2626; }
+        .btn-secondary { background: #334155; color: var(--text-main); }
+
+        .bot-card {
+            background: #0f172a;
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 12px;
+            margin-bottom: 12px;
+        }
+
+        .bot-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .bot-title {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .bot-name { font-weight: 700; font-size: 15px; color: #f1f5f9; }
+
+        .badge {
+            font-size: 11px;
+            padding: 3px 8px;
+            border-radius: 20px;
+            font-weight: 600;
+        }
+        .badge-Online { background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3); }
+        .badge-Offline { background: rgba(239, 68, 68, 0.15); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.3); }
+        .badge-Connecting { background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.3); }
+
+        .coords-badge {
+            font-family: 'Fira Code', monospace;
+            font-size: 11px;
+            color: #38bdf8;
+            background: rgba(56, 189, 248, 0.1);
+            padding: 3px 8px;
+            border-radius: 6px;
+            border: 1px solid rgba(56, 189, 248, 0.25);
+        }
+
+        .log-box {
+            background: #020617;
+            border: 1px solid #1e293b;
+            height: 110px;
+            overflow-y: auto;
+            padding: 8px;
+            font-family: 'Fira Code', monospace;
+            font-size: 11px;
+            border-radius: 6px;
+            margin-bottom: 10px;
+        }
+
+        .log-line { margin-bottom: 3px; word-break: break-all; }
+        .log-info { color: #38bdf8; }
+        .log-success { color: #4ade80; }
+        .log-warn { color: #fbbf24; }
+        .log-error { color: #f87171; }
+        .log-chat { color: #e879f9; }
+        .log-command { color: #a7f3d0; font-weight: bold; }
+
+        /* ENVANTER TASARIMI */
+        .inventory-wrapper {
+            background: #090d16;
+            border: 1px solid #1e293b;
+            padding: 10px;
+            border-radius: 10px;
+            margin-bottom: 10px;
+        }
+
+        .inventory-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .inventory-title {
+            font-size: 12px;
+            color: #a5b4fc;
+            font-weight: 700;
+        }
+
+        .inventory-grid {
+            display: grid;
+            grid-template-columns: repeat(9, 1fr);
+            gap: 4px;
+        }
+
+        .armor-grid {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 4px;
+            margin-bottom: 8px;
+            padding-bottom: 8px;
+            border-bottom: 1px dashed #1e293b;
+        }
+
+        .inv-slot {
+            background: #111827;
+            border: 1px solid #1f293d;
+            aspect-ratio: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            user-select: none;
+        }
+
+        .inv-slot:hover, .inv-slot:active {
+            border-color: #6366f1;
+            background: #1e1b4b;
+        }
+
+        .inv-slot.has-item {
+            background: #1e293b;
+            border-color: #3b82f6;
+            box-shadow: inset 0 0 8px rgba(59, 130, 246, 0.15);
+        }
+
+        .inv-slot img {
+            width: 26px;
+            height: 26px;
+            image-rendering: pixelated;
+            object-fit: contain;
+            pointer-events: none;
+        }
+
+        .inv-slot-count {
+            position: absolute;
+            bottom: 1px;
+            right: 3px;
+            color: #facc15;
+            font-weight: 800;
+            font-size: 10px;
+            text-shadow: 1px 1px 2px #000;
+            pointer-events: none;
+        }
+
+        .inv-slot-id {
+            opacity: 0.2;
+            font-size: 9px;
+            color: #64748b;
+            pointer-events: none;
+        }
+
+        .inv-info-bar {
+            margin-top: 8px;
+            background: #0f172a;
+            border: 1px solid #1e293b;
+            padding: 6px 10px;
+            border-radius: 6px;
+            font-size: 11px;
+            color: #e2e8f0;
+            min-height: 28px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .inv-info-name { font-weight: 700; color: #38bdf8; }
+        .inv-info-slot { color: #94a3b8; font-size: 10px; }
+
+        /* WIDGET IZGARASI (SCOREBOARD, HARİTA, TAB LIST) */
+        .bot-widgets-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+            gap: 10px;
+        }
+
+        /* 2D RADAR HARİTA TASARIMI */
+        .radar-box {
+            background: #090d16;
+            border: 1px solid #1e293b;
+            border-radius: 10px;
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .radar-title {
+            font-size: 12px;
+            color: #a5b4fc;
+            font-weight: 700;
+            margin-bottom: 8px;
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .radar-canvas {
+            background: #020617;
+            border: 1px solid #1e293b;
+            border-radius: 8px;
+            width: 100%;
+            max-width: 220px;
+            height: 220px;
+        }
+
+        /* TAB LIST TASARIMI */
+        .tablist-box {
+            background: #090d16;
+            border: 1px solid #1e293b;
+            border-radius: 10px;
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .tablist-title {
+            font-size: 12px;
+            color: #a5b4fc;
+            font-weight: 700;
+            margin-bottom: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .tablist-container {
+            max-height: 190px;
+            overflow-y: auto;
+        }
+
+        .tablist-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 11px;
+        }
+
+        .tablist-table th {
+            text-align: left;
+            color: var(--text-muted);
+            padding: 4px 6px;
+            border-bottom: 1px solid #1e293b;
+            font-size: 10px;
+        }
+
+        .tablist-table td {
+            padding: 4px 6px;
+            border-bottom: 1px dashed #1e293b;
+            color: var(--text-main);
+        }
+
+        /* SCOREBOARD TASARIMI */
+        .scoreboard-box {
+            background: #090d16;
+            border: 1px solid #1e293b;
+            border-radius: 10px;
+            padding: 10px;
+            font-family: 'Fira Code', monospace;
+        }
+
+        .scoreboard-title {
+            text-align: center;
+            font-weight: bold;
+            color: #facc15;
+            border-bottom: 1px solid #1e293b;
+            padding-bottom: 6px;
+            margin-bottom: 8px;
+            font-size: 12px;
+        }
+
+        .scoreboard-line {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 3px;
+            font-size: 11px;
+        }
+
+        .scoreboard-text { color: #e2e8f0; }
+        .scoreboard-val { color: #ef4444; font-weight: bold; margin-left: 8px; }
+
+        .modal-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0, 0, 0, 0.75);
+            backdrop-filter: blur(4px);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            padding: 15px;
+        }
+
+        .modal {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            width: 100%;
+            max-width: 400px;
+            border-radius: 12px;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .field { display: flex; flex-direction: column; gap: 4px; }
+        .field label { font-size: 11px; color: var(--text-muted); font-weight: 600; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="header">
+        <h1>🤖 MC Bot Manager</h1>
+        <button class="btn-secondary" onclick="openGlobalSettings()">⚙️ Genel Ayarlar</button>
+    </div>
+
+    <div class="card">
+        <div class="card-header">💬 Konsol & Komut Gönderimi</div>
+        <div class="form-group">
+            <select id="targetBotSelect" style="max-width: 130px;">
+                <option value="all">Tüm Botlar</option>
+            </select>
+            <input type="text" id="globalCmdInput" placeholder="Komut yazın (/afk, /login...)" style="flex: 1;">
+            <button class="btn-primary" onclick="sendGlobalCommand()">Gönder</button>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header">➕ Bot Yönetimi</div>
+        <div class="form-group" style="margin-bottom: 10px;">
+            <input type="text" id="newBotUsername" placeholder="Yeni Bot Kullanıcı Adı" style="flex: 1;">
+            <button class="btn-success" onclick="addBot()">Ekle</button>
+        </div>
+        <div style="display: flex; gap: 8px;">
+            <button class="btn-success" style="flex: 1;" onclick="socket.emit('start-all')">⚡ Tümünü Başlat</button>
+            <button class="btn-danger" style="flex: 1;" onclick="socket.emit('stop-all')">🛑 Tümünü Durdur</button>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header">📋 Aktif Bot Listesi</div>
+        <div id="botListContainer"></div>
+    </div>
+</div>
+
+<div class="modal-overlay" id="botSettingsModal">
+    <div class="modal">
+        <div class="modal-title">⚙️ Bot Ayarları (<span id="modalBotName"></span>)</div>
+        <input type="hidden" id="modalBotId">
+        <div class="field"><label>Sunucu IP</label><input type="text" id="modalHost"></div>
+        <div class="field"><label>Port</label><input type="number" id="modalPort"></div>
+        <div class="field"><label>Versiyon</label><input type="text" id="modalVersion"></div>
+        <div class="field"><label>Şifre (/login)</label><input type="text" id="modalPassword"></div>
+        <div class="field"><label>Alt Sunucu Komutu</label><input type="text" id="modalSubCmd"></div>
+        <div style="display: flex; gap: 8px; margin-top: 8px;">
+            <button class="btn-primary" style="flex: 1;" onclick="saveBotSettings()">Kaydet</button>
+            <button class="btn-secondary" onclick="closeModal('botSettingsModal')">İptal</button>
+        </div>
+    </div>
+</div>
+
+<div class="modal-overlay" id="globalSettingsModal">
+    <div class="modal">
+        <div class="modal-title">🌐 Genel Varsayılan Ayarlar</div>
+        <div class="field"><label>IP</label><input type="text" id="gModalHost"></div>
+        <div class="field"><label>Port</label><input type="number" id="gModalPort"></div>
+        <div class="field"><label>Versiyon</label><input type="text" id="gModalVersion"></div>
+        <div class="field"><label>Şifre</label><input type="text" id="gModalPassword"></div>
+        <div class="field"><label>Alt Sunucu Komutu</label><input type="text" id="gModalSubCmd"></div>
+        <div style="display: flex; gap: 8px; margin-top: 8px;">
+            <button class="btn-primary" style="flex: 1;" onclick="saveGlobalSettings()">Kaydet</button>
+            <button class="btn-secondary" onclick="closeModal('globalSettingsModal')">Kapat</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    const socket = io();
+    let botsMap = new Map();
+    let globalConfig = {};
+
+    socket.on('init-data', (data) => {
+        botsMap.clear();
+        globalConfig = data.globalConfig || {};
+        data.botList.forEach(bot => botsMap.set(bot.id, bot));
+        renderBotList();
+    });
+
+    socket.on('bot-added', (bot) => {
+        botsMap.set(bot.id, bot);
+        renderBotList();
+    });
+
+    socket.on('bot-deleted', (botId) => {
+        botsMap.delete(botId);
+        renderBotList();
+    });
+
+    socket.on('bot-updated', ({ botId, config }) => {
+        if (botsMap.has(botId)) {
+            Object.assign(botsMap.get(botId), config);
+            renderBotList();
+        }
+    });
+
+    socket.on('config-updated', (cfg) => { globalConfig = cfg; });
+
+    socket.on('status-update', ({ botId, status }) => {
+        if (botsMap.has(botId)) {
+            botsMap.get(botId).status = status;
+            const badge = document.getElementById(`badge-${botId}`);
+            if (badge) {
+                badge.innerText = status;
+                badge.className = `badge badge-${status}`;
+            }
+        }
+    });
+
+    socket.on('bot-log', (log) => {
+        if (botsMap.has(log.botId)) {
+            const bot = botsMap.get(log.botId);
+            bot.logs.push(log);
+            if (bot.logs.length > 20) bot.logs.shift();
+
+            const logBox = document.getElementById(`logs-${log.botId}`);
+            if (logBox) {
+                const div = document.createElement('div');
+                div.className = `log-line log-${log.type}`;
+                div.innerText = `[${log.timestamp}] ${log.text}`;
+                logBox.appendChild(div);
+                logBox.scrollTop = logBox.scrollHeight;
+            }
+        }
+    });
+
+    socket.on('bot-inventory', ({ botId, inventory }) => {
+        if (botsMap.has(botId)) {
+            botsMap.get(botId).inventory = inventory;
+            renderInventoryGrid(botId, inventory);
+        }
+    });
+
+    socket.on('bot-map-update', ({ botId, pos, entities }) => {
+        if (botsMap.has(botId)) {
+            const bot = botsMap.get(botId);
+            bot.pos = pos;
+            bot.entities = entities;
+
+            const coordsEl = document.getElementById(`coords-${botId}`);
+            if (coordsEl) {
+                coordsEl.innerText = `📍 X: ${pos.x} | Y: ${pos.y} | Z: ${pos.z}`;
+            }
+            drawRadar(botId, pos, entities);
+        }
+    });
+
+    socket.on('bot-tablist', ({ botId, players }) => {
+        if (botsMap.has(botId)) {
+            const bot = botsMap.get(botId);
+            bot.tabList = players;
+            renderTabList(botId, players);
+        }
+    });
+
+    socket.on('bot-scoreboard', ({ botId, scoreboard }) => {
+        const titleEl = document.getElementById(`sb-title-${botId}`);
+        const linesEl = document.getElementById(`sb-lines-${botId}`);
+        if (!linesEl) return;
+
+        if (!scoreboard || !scoreboard.lines || scoreboard.lines.length === 0) {
+            if (titleEl) titleEl.innerText = '📊 Scoreboard';
+            linesEl.innerHTML = `<div style="color: #64748b; text-align: center; padding: 4px;">Sunucuda aktif Scoreboard yok</div>`;
+            return;
+        }
+
+        if (titleEl && scoreboard.title) {
+            titleEl.innerText = `📊 ${scoreboard.title}`;
+        }
+
+        linesEl.innerHTML = '';
+
+        scoreboard.lines.forEach(item => {
+            const row = document.createElement('div');
+            row.className = 'scoreboard-line';
+            row.innerHTML = `
+                <span class="scoreboard-text">${item.text}</span>
+                <span class="scoreboard-val">${item.score}</span>
+            `;
+            linesEl.appendChild(row);
+        });
+    });
+
+    function renderBotList() {
+        const container = document.getElementById('botListContainer');
+        const select = document.getElementById('targetBotSelect');
+        
+        container.innerHTML = '';
+        select.innerHTML = '<option value="all">Tüm Botlar</option>';
+
+        botsMap.forEach((bot) => {
+            const opt = document.createElement('option');
+            opt.value = bot.id;
+            opt.innerText = bot.username;
+            select.appendChild(opt);
+
+            const pos = bot.pos || { x: 0, y: 0, z: 0 };
+
+            const card = document.createElement('div');
+            card.className = 'bot-card';
+            card.innerHTML = `
+                <div class="bot-top">
+                    <div class="bot-title">
+                        <span class="bot-name">${bot.username}</span>
+                        <span id="badge-${bot.id}" class="badge badge-${bot.status}">${bot.status}</span>
+                        <span class="coords-badge" id="coords-${bot.id}">📍 X: ${pos.x} | Y: ${pos.y} | Z: ${pos.z}</span>
+                    </div>
+                    <div class="bot-actions" style="display:flex; gap:4px;">
+                        <button class="btn-success" onclick="socket.emit('start-bot', '${bot.id}')">Başlat</button>
+                        <button class="btn-warning" onclick="socket.emit('stop-bot', '${bot.id}')">Durdur</button>
+                        <button class="btn-secondary" onclick="openBotSettings('${bot.id}')">⚙</button>
+                        <button class="btn-danger" onclick="socket.emit('delete-bot', '${bot.id}')">X</button>
+                    </div>
+                </div>
+
+                <div class="log-box" id="logs-${bot.id}">
+                    ${(bot.logs || []).map(l => `<div class="log-line log-${l.type}">[${l.timestamp}]${l.text}</div>`).join('')}
+                </div>
+
+                <div class="form-group" style="margin-bottom: 8px;">
+                    <input type="text" id="cmd-${bot.id}" placeholder="Özel komut gönder..." style="flex: 1;">
+                    <button class="btn-primary" onclick="sendSingleCommand('${bot.id}')">Gönder</button>
+                </div>
+
+                <div class="inventory-wrapper">
+                    <div class="inventory-header">
+                        <div class="inventory-title">🎒 Envanter Görünümü</div>
+                    </div>
+                    <div class="armor-grid" id="armor-grid-${bot.id}"></div>
+                    <div class="inventory-grid" id="inv-grid-${bot.id}"></div>
+                    <div class="inv-info-bar" id="inv-info-${bot.id}">
+                        <span>Detaylarını görmek için eşyaya dokunun</span>
+                    </div>
+                </div>
+
+                <div class="bot-widgets-grid">
+                    <!-- 2D RADAR HARİTA -->
+                    <div class="radar-box">
+                        <div class="radar-title">
+                            <span>🗺️ 2D Radar</span>
+                            <span style="font-size:10px; color:#64748b;">(Yakın Varlıklar)</span>
+                        </div>
+                        <canvas id="map-canvas-${bot.id}" class="radar-canvas" width="220" height="220"></canvas>
+                    </div>
+
+                    <!-- TAB LİSTESİ -->
+                    <div class="tablist-box">
+                        <div class="tablist-title">
+                            <span>📋 Tab Oyuncu Listesi</span>
+                            <span style="font-size:10px; color:#38bdf8;" id="tab-count-${bot.id}">0 Oyuncu</span>
+                        </div>
+                        <div class="tablist-container">
+                            <table class="tablist-table">
+                                <thead>
+                                    <tr>
+                                        <th>Oyuncu</th>
+                                        <th style="text-align: right;">Ping</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="tab-body-${bot.id}">
+                                    <tr><td colspan="2" style="text-align:center; color:#64748b; padding:8px;">Veri bekleniyor...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- SCOREBOARD -->
+                    <div class="scoreboard-box">
+                        <div class="scoreboard-title" id="sb-title-${bot.id}">📊 Scoreboard</div>
+                        <div id="sb-lines-${bot.id}">
+                            <div style="color: #64748b; text-align: center;">Skor verisi bekleniyor...</div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            container.appendChild(card);
+
+            renderInventoryGrid(bot.id, bot.inventory || {});
+            drawRadar(bot.id, pos, bot.entities || []);
+            renderTabList(bot.id, bot.tabList || []);
+
+            const lb = document.getElementById(`logs-${bot.id}`);
+            if (lb) lb.scrollTop = lb.scrollHeight;
+        });
     }
 
-    bot.status = 'Connecting';
-    bot.time = { worldTime: 0, timeString: '00:00' };
-    bot.scoreboard = { title: 'Scoreboard', items: [] };
-    bot.tabList = [];
-    bot.radarEntities = [];
+    function drawRadar(botId, pos, entities) {
+        const canvas = document.getElementById(`map-canvas-${botId}`);
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        const w = canvas.width;
+        const h = canvas.height;
+        const cx = w / 2;
+        const cy = h / 2;
+        const scale = 3; // 1 Blok = 3 Piksel
 
-    addLog(bot, `${bot.username} sunucuya bağlanıyor (${bot.config.host}:${bot.config.port})...`, 'system');
-    io.emit('bot-updated', bot);
+        ctx.fillStyle = '#020617';
+        ctx.fillRect(0, 0, w, h);
 
-    try {
-        bot.client = mc.createClient({
-            host: bot.config.host,
-            port: Number(bot.config.port),
-            username: bot.username,
-            version: bot.config.version || false
+        // Izgara Çizgileri
+        ctx.strokeStyle = '#1e293b';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(cx, 0); ctx.lineTo(cx, h);
+        ctx.moveTo(0, cy); ctx.lineTo(w, cy);
+        ctx.stroke();
+
+        // Mesafe Halkaları (10, 20, 30 Blok)
+        [10, 20, 30].forEach(r => {
+            ctx.beginPath();
+            ctx.arc(cx, cy, r * scale, 0, Math.PI * 2);
+            ctx.strokeStyle = 'rgba(30, 41, 59, 0.4)';
+            ctx.stroke();
         });
 
-        bot.client.on('login', () => {
-            bot.status = 'Online';
-            addLog(bot, 'Sunucuya başarıyla giriş yapıldı!', 'system');
+        // Etraftaki Varlıklar (Kırmızı Noktalar)
+        if (Array.isArray(entities)) {
+            ctx.fillStyle = '#ef4444';
+            entities.forEach(ent => {
+                const dx = (ent.x - pos.x) * scale;
+                const dz = (ent.z - pos.z) * scale;
+                const rx = cx + dx;
+                const ry = cy + dz;
+
+                if (rx >= 0 && rx <= w && ry >= 0 && ry <= h) {
+                    ctx.beginPath();
+                    ctx.arc(rx, ry, 3.5, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            });
+        }
+
+        // Botun Kendisi (Yeşil Merkez Noktası)
+        ctx.fillStyle = '#10b981';
+        ctx.beginPath();
+        ctx.arc(cx, cy, 5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#34d399';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+    }
+
+    function renderTabList(botId, players) {
+        const tbody = document.getElementById(`tab-body-${botId}`);
+        const countEl = document.getElementById(`tab-count-${botId}`);
+        if (!tbody) return;
+
+        if (countEl) countEl.innerText = `${players ? players.length : 0} Oyuncu`;
+        tbody.innerHTML = '';
+
+        if (!players || players.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="2" style="text-align:center; color:#64748b; padding:8px;">Sunucuda oyuncu bulunamadı</td></tr>`;
+            return;
+        }
+
+        players.forEach(p => {
+            const tr = document.createElement('tr');
+            const name = p.displayName || p.name || 'Bilinmeyen';
+            const ping = p.ping !== undefined ? `${p.ping}ms` : '-';
             
-            if (bot.config.password) {
-                setTimeout(() => {
-                    bot.client.write('chat', { message: `/login ${bot.config.password}` });
-                    addLog(bot, `Giriş şifresi gönderildi.`, 'system');
-                }, 1000);
-            }
+            let pingColor = '#10b981';
+            if (p.ping > 150) pingColor = '#f59e0b';
+            if (p.ping > 300) pingColor = '#ef4444';
 
-            if (bot.config.autoSubServerCmd) {
-                setTimeout(() => {
-                    bot.client.write('chat', { message: bot.config.autoSubServerCmd });
-                    addLog(bot, `Yönlendirme komutu gönderildi: ${bot.config.autoSubServerCmd}`, 'system');
-                }, 2500);
-            }
-
-            io.emit('bot-updated', bot);
+            tr.innerHTML = `
+                <td><b>${name}</b></td>
+                <td style="text-align: right; color: ${pingColor}; font-family: 'Fira Code', monospace;">${ping}</td>
+            `;
+            tbody.appendChild(tr);
         });
-
-        bot.client.on('position', (packet) => {
-            bot.pos = {
-                x: packet.x.toFixed(1),
-                y: packet.y.toFixed(1),
-                z: packet.z.toFixed(1)
-            };
-            io.emit('bot-updated', bot);
-        });
-
-        bot.client.on('update_health', (packet) => {
-            bot.health = packet.health;
-            bot.food = packet.food;
-            io.emit('bot-updated', bot);
-        });
-
-        // Oyun Saati (Time Packet)
-        bot.client.on('time_update', (packet) => {
-            const worldAge = packet.age;
-            const timeOfDay = packet.time;
-            // Minecraft saati hesaplama (0-24000 arası)
-            let hours = Math.floor((timeOfDay / 1000) + 6) % 24;
-            let minutes = Math.floor(((timeOfDay % 1000) / 1000) * 60);
-            bot.time = {
-                timeString: `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`,
-                raw: timeOfDay
-            };
-            io.emit('bot-updated', bot);
-        });
-
-        // Chat Dinleme
-        bot.client.on('chat', (packet) => {
-            try {
-                const msg = JSON.parse(packet.message);
-                const text = msg.text || JSON.stringify(msg);
-                addLog(bot, `[Chat] ${text}`);
-            } catch (e) {
-                addLog(bot, `[Chat] ${packet.message}`);
-            }
-        });
-
-        // Yakınlardaki Varlıklar (Radar için)
-        bot.client.on('spawn_entity', (packet) => {
-            if (!bot.radarEntities) bot.radarEntities = [];
-            bot.radarEntities.push({ id: packet.entityId, type: packet.type, x: packet.x, z: packet.z });
-            if (bot.radarEntities.length > 20) bot.radarEntities.shift();
-        });
-
-        bot.client.on('end', (reason) => {
-            bot.status = 'Offline';
-            addLog(bot, `Bağlantı kapandı. Sebep: ${reason}`, 'error');
-            io.emit('bot-updated', bot);
-        });
-
-        bot.client.on('error', (err) => {
-            bot.status = 'Error';
-            addLog(bot, `Bağlantı Hatası: ${err.message}`, 'error');
-            io.emit('bot-updated', bot);
-        });
-
-    } catch (err) {
-        bot.status = 'Error';
-        addLog(bot, `İstemci oluşturulamadı: ${err.message}`, 'error');
-        io.emit('bot-updated', bot);
     }
-}
 
-io.on('connection', (socket) => {
-    socket.emit('init-data', { botList: bots, globalSettings });
+    function getItemImageUrl(itemName) {
+        if (!itemName || itemName === 'unknown') return null;
+        return `https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20.1/assets/minecraft/textures/item/${itemName}.png`;
+    }
 
-    socket.on('add-bot', (data) => {
-        const newBot = {
-            id: 'bot_' + Date.now(),
-            username: data.username,
-            status: 'Offline',
-            health: 20,
-            food: 20,
-            pos: { x: 0, y: 0, z: 0 },
-            time: { timeString: '00:00' },
-            scoreboard: { title: 'Skorbord', items: ['Sunucuya bağlı değil'] },
-            tabList: [data.username],
-            radarEntities: [],
-            config: { ...globalSettings },
-            logs: [],
-            client: null
+    function getBlockImageUrl(itemName) {
+        return `https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20.1/assets/minecraft/textures/block/${itemName}.png`;
+    }
+
+    function renderInventoryGrid(botId, inventory) {
+        const grid = document.getElementById(`inv-grid-${botId}`);
+        const armorGrid = document.getElementById(`armor-grid-${botId}`);
+        if (!grid || !armorGrid) return;
+
+        grid.innerHTML = '';
+        armorGrid.innerHTML = '';
+
+        const armorSlots = [
+            { slotId: 5, label: '🪖 Kask' },
+            { slotId: 6, label: '👕 Göğüslük' },
+            { slotId: 7, label: '👖 Pantolon' },
+            { slotId: 8, label: '🥾 Bot' },
+            { slotId: 45, label: '🛡️ Sol El' }
+        ];
+
+        armorSlots.forEach(arm => {
+            const item = inventory[arm.slotId];
+            const slotEl = createSlotElement(botId, arm.slotId, item, arm.label);
+            armorGrid.appendChild(slotEl);
+        });
+
+        for (let i = 9; i <= 44; i++) {
+            const item = inventory[i];
+            const slotEl = createSlotElement(botId, i, item);
+            grid.appendChild(slotEl);
+        }
+    }
+
+    function createSlotElement(botId, slotIndex, item, placeholderText = null) {
+        const slot = document.createElement('div');
+
+        if (item) {
+            slot.className = 'inv-slot has-item';
+            const itemImg = getItemImageUrl(item.name);
+            const blockImg = getBlockImageUrl(item.name);
+
+            slot.innerHTML = `
+                <img src="${itemImg}" 
+                     onerror="if(this.src!=='${blockImg}'){this.src='${blockImg}';}else{this.style.display='none';}"
+                     alt="${item.displayName}">
+                <span class="inv-slot-count">${item.count > 1 ? item.count : ''}</span>
+            `;
+
+            slot.onclick = () => selectItem(botId, item.displayName, item.count, slotIndex);
+            slot.onmouseenter = () => selectItem(botId, item.displayName, item.count, slotIndex);
+        } else {
+            slot.className = 'inv-slot';
+            slot.innerHTML = `<span class="inv-slot-id">${placeholderText ? placeholderText : slotIndex}</span>`;
+            slot.onclick = () => selectItem(botId, 'Boş Slot', 0, slotIndex);
+        }
+
+        return slot;
+    }
+
+    function selectItem(botId, name, count, slot) {
+        const infoBar = document.getElementById(`inv-info-${botId}`);
+        if (!infoBar) return;
+
+        if (count > 0) {
+            infoBar.innerHTML = `
+                <span class="inv-info-name">📦 ${name}</span>
+                <span class="inv-info-slot">Adet: <b>${count}</b> | Slot: ${slot}</span>
+            `;
+        } else {
+            infoBar.innerHTML = `<span style="color: #64748b;">Boş Slot (${slot})</span>`;
+        }
+    }
+
+    function openBotSettings(botId) {
+        const bot = botsMap.get(botId);
+        if (!bot) return;
+
+        document.getElementById('modalBotId').value = bot.id;
+        document.getElementById('modalBotName').innerText = bot.username;
+        document.getElementById('modalHost').value = bot.host || globalConfig.host || '';
+        document.getElementById('modalPort').value = bot.port || globalConfig.port || 25565;
+        document.getElementById('modalVersion').value = bot.version || globalConfig.version || '';
+        document.getElementById('modalPassword').value = bot.autoPassword !== undefined ? bot.autoPassword : (globalConfig.autoPassword || '');
+        document.getElementById('modalSubCmd').value = bot.autoSubServerCmd !== undefined ? bot.autoSubServerCmd : (globalConfig.autoSubServerCmd || '');
+
+        document.getElementById('botSettingsModal').style.display = 'flex';
+    }
+
+    function saveBotSettings() {
+        const botId = document.getElementById('modalBotId').value;
+        const config = {
+            host: document.getElementById('modalHost').value.trim(),
+            port: Number(document.getElementById('modalPort').value),
+            version: document.getElementById('modalVersion').value.trim(),
+            autoPassword: document.getElementById('modalPassword').value.trim(),
+            autoSubServerCmd: document.getElementById('modalSubCmd').value.trim()
         };
-        bots.push(newBot);
-        io.emit('bot-added', newBot);
-    });
 
-    socket.on('start-bot', (botId) => {
-        const bot = bots.find(b => b.id === botId);
-        if (bot) startBotInstance(bot);
-    });
+        socket.emit('update-bot-config', { botId, config });
+        closeModal('botSettingsModal');
+    }
 
-    socket.on('stop-bot', (botId) => {
-        const bot = bots.find(b => b.id === botId);
-        if (bot && bot.client) {
-            try { bot.client.end(); } catch (e) {}
-            bot.status = 'Offline';
-            addLog(bot, 'Bot manuel olarak durduruldu.', 'system');
-            io.emit('bot-updated', bot);
+    function openGlobalSettings() {
+        document.getElementById('gModalHost').value = globalConfig.host || '';
+        document.getElementById('gModalPort').value = globalConfig.port || 25565;
+        document.getElementById('gModalVersion').value = globalConfig.version || '';
+        document.getElementById('gModalPassword').value = globalConfig.autoPassword || '';
+        document.getElementById('gModalSubCmd').value = globalConfig.autoSubServerCmd || '';
+
+        document.getElementById('globalSettingsModal').style.display = 'flex';
+    }
+
+    function saveGlobalSettings() {
+        const newConfig = {
+            host: document.getElementById('gModalHost').value.trim(),
+            port: Number(document.getElementById('gModalPort').value),
+            version: document.getElementById('gModalVersion').value.trim(),
+            autoPassword: document.getElementById('gModalPassword').value.trim(),
+            autoSubServerCmd: document.getElementById('gModalSubCmd').value.trim()
+        };
+
+        socket.emit('update-config', newConfig);
+        closeModal('globalSettingsModal');
+    }
+
+    function closeModal(id) { document.getElementById(id).style.display = 'none'; }
+
+    function addBot() {
+        const input = document.getElementById('newBotUsername');
+        if (input.value.trim()) {
+            socket.emit('add-bot', { username: input.value.trim() });
+            input.value = '';
         }
-    });
+    }
 
-    socket.on('delete-bot', (botId) => {
-        const index = bots.findIndex(b => b.id === botId);
-        if (index !== -1) {
-            if (bots[index].client) {
-                try { bots[index].client.end(); } catch (e) {}
-            }
-            bots.splice(index, 1);
-            io.emit('init-data', { botList: bots, globalSettings });
+    function sendGlobalCommand() {
+        const target = document.getElementById('targetBotSelect').value;
+        const cmd = document.getElementById('globalCmdInput').value;
+        if (cmd.trim()) {
+            socket.emit('send-command', { targetBotId: target, command: cmd.trim() });
+            document.getElementById('globalCmdInput').value = '';
         }
-    });
+    }
 
-    socket.on('start-all', () => {
-        bots.forEach(bot => {
-            if (bot.status !== 'Online' && bot.status !== 'Connecting') {
-                startBotInstance(bot);
-            }
-        });
-    });
-
-    socket.on('stop-all', () => {
-        bots.forEach(bot => {
-            if (bot.client) {
-                try { bot.client.end(); } catch (e) {}
-                bot.status = 'Offline';
-                addLog(bot, 'Bot durduruldu.', 'system');
-                io.emit('bot-updated', bot);
-            }
-        });
-    });
-
-    // Tekil Bot Komut / Chat Gönderimi (Doğrudan Terminalden)
-    socket.on('bot-command', (data) => {
-        const { botId, command } = data;
-        const bot = bots.find(b => b.id === botId);
-        if (bot && bot.client && bot.status === 'Online') {
-            bot.client.write('chat', { message: command });
-            addLog(bot, `[Komut] ${command}`, 'system');
+    function sendSingleCommand(botId) {
+        const input = document.getElementById(`cmd-${botId}`);
+        if (input && input.value.trim()) {
+            socket.emit('send-command', { targetBotId: botId, command: input.value.trim() });
+            input.value = '';
         }
-    });
-
-    socket.on('global-command', (data) => {
-        const { target, command } = data;
-        bots.forEach(bot => {
-            if ((target === 'all' || bot.id === target) && bot.client && bot.status === 'Online') {
-                bot.client.write('chat', { message: command });
-                addLog(bot, `[Komut] ${command}`, 'system');
-            }
-        });
-    });
-
-    socket.on('update-global-settings', (newSettings) => {
-        globalSettings = newSettings;
-    });
-
-    socket.on('update-bot-config', (data) => {
-        const bot = bots.find(b => b.id === data.botId);
-        if (bot) {
-            bot.config = { ...bot.config, ...data.config };
-            addLog(bot, 'Botun özel ayarları güncellendi.', 'system');
-            io.emit('bot-updated', bot);
-        }
-    });
-});
-
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-    console.log(`Sunucu http://localhost:${PORT} adresinde çalışıyor.`);
-});
+    }
+</script>
+</body>
+</html>

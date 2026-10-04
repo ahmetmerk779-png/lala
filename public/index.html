@@ -156,6 +156,16 @@
             border: 1px solid rgba(56, 189, 248, 0.25);
         }
 
+        .uptime-badge {
+            font-family: 'Fira Code', monospace;
+            font-size: 11px;
+            color: #c084fc;
+            background: rgba(192, 132, 252, 0.1);
+            padding: 3px 8px;
+            border-radius: 6px;
+            border: 1px solid rgba(192, 132, 252, 0.25);
+        }
+
         .log-box {
             background: #020617;
             border: 1px solid #1e293b;
@@ -495,6 +505,36 @@
     let botsMap = new Map();
     let globalConfig = {};
 
+    // Uptime süresini HH:MM:SS formatına çeviren fonksiyon
+    function formatUptime(ms) {
+        if (!ms) return '00:00:00';
+        const totalSeconds = Math.floor((Date.now() - ms) / 1000);
+        if (totalSeconds < 0) return '00:00:00';
+        const hours = Math.floor(totalSeconds / 3600);
+        const minutes = Math.floor((totalSeconds % 3600) / 60);
+        const seconds = totalSeconds % 60;
+
+        return [
+            hours.toString().padStart(2, '0'),
+            minutes.toString().padStart(2, '0'),
+            seconds.toString().padStart(2, '0')
+        ].join(':');
+    }
+
+    // Her saniye ekrandaki tüm botların uptime sayaçlarını güncelle
+    setInterval(() => {
+        botsMap.forEach((bot, botId) => {
+            const uptimeEl = document.getElementById(`uptime-${botId}`);
+            if (uptimeEl) {
+                if (bot.status === 'Online' && bot.onlineSince) {
+                    uptimeEl.innerText = `⏱️ ${formatUptime(bot.onlineSince)}`;
+                } else {
+                    uptimeEl.innerText = `⏱️ 00:00:00`;
+                }
+            }
+        });
+    }, 1000);
+
     socket.on('init-data', (data) => {
         botsMap.clear();
         globalConfig = data.globalConfig || {};
@@ -521,9 +561,14 @@
 
     socket.on('config-updated', (cfg) => { globalConfig = cfg; });
 
-    socket.on('status-update', ({ botId, status }) => {
+    socket.on('status-update', ({ botId, status, onlineSince }) => {
         if (botsMap.has(botId)) {
-            botsMap.get(botId).status = status;
+            const bot = botsMap.get(botId);
+            bot.status = status;
+            if (onlineSince !== undefined) {
+                bot.onlineSince = onlineSince;
+            }
+            
             const badge = document.getElementById(`badge-${botId}`);
             if (badge) {
                 badge.innerText = status;
@@ -620,6 +665,7 @@
             select.appendChild(opt);
 
             const pos = bot.pos || { x: 0, y: 0, z: 0 };
+            const initialUptime = (bot.status === 'Online' && bot.onlineSince) ? formatUptime(bot.onlineSince) : '00:00:00';
 
             const card = document.createElement('div');
             card.className = 'bot-card';
@@ -628,6 +674,7 @@
                     <div class="bot-title">
                         <span class="bot-name">${bot.username}</span>
                         <span id="badge-${bot.id}" class="badge badge-${bot.status}">${bot.status}</span>
+                        <span class="uptime-badge" id="uptime-${bot.id}">⏱️ ${initialUptime}</span>
                         <span class="coords-badge" id="coords-${bot.id}">📍 X: ${pos.x} | Y: ${pos.y} | Z: ${pos.z}</span>
                     </div>
                     <div class="bot-actions" style="display:flex; gap:4px;">
@@ -817,7 +864,7 @@
             { slotId: 6, label: '👕 Göğüslük' },
             { slotId: 7, label: '👖 Pantolon' },
             { slotId: 8, label: '🥾 Bot' },
-            { slotId: 45, label: '🛡️ Sol El' }
+            { slotId: 45, label: '🛡️️ Sol El' }
         ];
 
         armorSlots.forEach(arm => {

@@ -96,6 +96,7 @@ function parseMcText(text) {
 
 function loadSavedData() {
     if (!fs.existsSync(DATA_FILE)) {
+        console.log('[Bilgi] bots.json bulunamadı, varsayılan botlar yükleniyor ve dosya oluşturuluyor...');
         defaultBotConfigs.forEach(cfg => {
             botPool.set(cfg.id, { 
                 ...cfg, status: 'Offline', onlineSince: null, client: null, logs: [], inventory: {}, 
@@ -117,9 +118,10 @@ function loadSavedData() {
                     scoreboard: null, isManualStop: false, pos: { x: 0, y: 0, z: 0 }, tabList: {}, entities: {} 
                 });
             });
+            console.log(`[Başarılı] bots.json dosyasından ${parsed.bots.length} bot yüklendi.`);
         }
     } catch (err) {
-        console.error('[Hafıza Okuma Hatası]', err.message);
+        console.error('[Hafıza Okuma Hatası - Detay]:', err);
     }
 }
 
@@ -130,9 +132,11 @@ function saveDataToFile() {
             version: b.version, autoPassword: b.autoPassword,
             autoSubServerCmd: b.autoSubServerCmd, autoSubServerDelay: b.autoSubServerDelay
         }));
-        fs.writeFileSync(DATA_FILE, JSON.stringify({ globalConfig, bots: botList }, null, 2));
+        const fileContent = JSON.stringify({ globalConfig, bots: botList }, null, 2);
+        fs.writeFileSync(DATA_FILE, fileContent, 'utf8');
+        console.log('[Kayıt Başarılı] Botlar başarıyla bots.json dosyasına yazıldı.');
     } catch (err) {
-        console.error('[Hafıza Kayıt Hatası]', err.message);
+        console.error('[Hafıza Kayıt Hatası - Detay]:', err);
     }
 }
 
@@ -852,14 +856,14 @@ io.on('connection', (socket) => {
             client: null, logs: [], inventory: {}, scoreboard: null, tabList: {}, entities: {}, isManualStop: false
         };
         botPool.set(id, newBot);
-        saveDataToFile();
+        saveDataToFile(); // Dosyaya kaydetme tetikleniyor
         io.emit('bot-added', newBot);
     });
 
     socket.on('delete-bot', (botId) => {
         stopBotInstance(botId);
         botPool.delete(botId);
-        saveDataToFile();
+        saveDataToFile(); // Silme işleminden sonra dosya güncelleniyor
         io.emit('bot-deleted', botId);
     });
 

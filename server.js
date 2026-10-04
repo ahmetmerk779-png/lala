@@ -29,11 +29,40 @@ function parseChat(chat) {
     return text.replace(/§[0-9a-fk-or]/ig, '').trim();
 }
 
+// 1.20+ Komut ve Sohbet Destekli Güvenli Gönderici
+function sendCommand(bot, commandText) {
+    if (!bot.client || bot.status !== 'Online') return;
+    const cmd = commandText.trim();
+    try {
+        if (cmd.startsWith('/')) {
+            const rawCmd = cmd.substring(1);
+            try {
+                bot.client.write('chat_command', {
+                    command: rawCmd,
+                    timestamp: BigInt(Date.now()),
+                    salt: BigInt(0),
+                    argumentSignatures: [],
+                    signedPreview: false,
+                    messageCount: 0,
+                    acknowledged: Buffer.alloc(3)
+                });
+            } catch (e) {
+                bot.client.write('chat', { message: cmd });
+            }
+        } else {
+            bot.client.write('chat', { message: cmd });
+        }
+    } catch (err) {
+        addLog(bot, `Komut Hatası: ${err.message}`, 'error');
+    }
+}
+
 function startBotInstance(bot) {
     if (bot.client) {
         try { bot.client.removeAllListeners(); bot.client.end(); } catch (e) {}
     }
     if (bot.updateInterval) clearInterval(bot.updateInterval);
+    if (bot.afkTimer) clearTimeout(bot.afkTimer);
 
     bot.status = 'Connecting';
     bot.pos = { x: 0, y: 0, z: 0 };
@@ -42,6 +71,7 @@ function startBotInstance(bot) {
     bot.tabList = [];
     bot.entities = {}; 
     bot.radarEntities = [];
+    bot.afkState = { tries: 0, inAfkGui: false };
 
     addLog(bot, `${bot.username} sunucuya bağlanıyor (${bot.config.host}:${bot.config.port} - Ver: ${bot.config.version || 'Auto'})`, 'system');
     io.emit('bot-updated', bot);
@@ -64,28 +94,48 @@ function startBotInstance(bot) {
             bot.status = 'Online';
             addLog(bot, 'Giriş başarılı! Sunucu paketleri işleniyor...', 'system');
             
+            // 1. Şifre Girişi
             if (bot.config.password) {
                 setTimeout(() => {
                     if (bot.client && bot.status === 'Online') {
-                        bot.client.write('chat', { message: `/login ${bot.config.password}` });
-                        addLog(bot, `Giriş şifresi gönderildi (/login).`, 'system');
+                        sendCommand(bot, `/login ${bot.config.password}`);
+                        addLog(bot, `Şifre gönderildi (/login).`, 'system');
                     }
-                }, 1500);
+                }, 2000);
             }
 
-            if (bot.config.autoSubServerCmd) {
-                setTimeout(() => {
-                    if (bot.client && bot.status === 'Online') {
-                        bot.client.write('chat', { message: bot.config.autoSubServerCmd });
-                        addLog(bot, `Yönlendirme komutu gönderildi: ${bot.config.autoSubServerCmd}`, 'system');
-                    }
-                }, 3000);
-            }
+            // 2. ASMP ve AFK Otomasyonunu Başlat
+            setTimeout(() => {
+                startAsmpAfkRoutine(bot);
+            }, 4500);
         });
 
-        bot.client.on('position', (packet) => {
-            bot.pos = { x: packet.x, y: packet.y, z: packet.z };
+        // AFK Menüsü (GUI Window) Açıldığında 12. Slota Tıkla
+        bot.client.on('open_window', (packet) => {
+            addLog(bot, `[GUI] AFK Menüsü Açıldı (ID: ${packet.windowId}). Ortadaki 12. slota tıklanıyor...`, 'system');
+            bot.afkState.inAfkGui = true;
+            bot.afkState.tries = 0; // Başarılı oldu
+
+            setTimeout(() => {
+                if (bot.client && bot.status === 'Online') {
+                    try {
+                        bot.client.write('window_click', {
+                            windowId: packet.windowId,
+                            slot: 12, // Ortadaki 12. Slot
+                            mouseButton: 0,
+                            actionNumber: 1,
+                            mode: 0,
+                            item: { blockId: -1 }
+                        });
+                        addLog(bot, `[GUI] 12. Slota tıklandı! AFK moduna geçildi.`, 'system');
+                    } catch (err) {
+                        addLog(bot, `[Tıklama Hatası] ${err.message}`, 'error');
+                    }
+                }
+            }, 800);
         });
+
+        bot.client.on('position', (packet) => { bot.pos = { x: packet.x, y: packet.y, z: packet.z }; });
 
         bot.client.on('player_info_update', (packet) => {
             if(packet.data) {
@@ -97,32 +147,15 @@ function startBotInstance(bot) {
                 bot.tabList = Object.values(bot.tabPlayers);
             }
         });
-        
-        bot.client.on('player_info_remove', (packet) => {
-            if(packet.UUIDs) {
-                packet.UUIDs.forEach(uuid => delete bot.tabPlayers[uuid]);
-                bot.tabList = Object.values(bot.tabPlayers);
-            }
-        });
 
         bot.client.on('scoreboard_objective', (packet) => {
-            if (packet.action === 0 || packet.action === 2) {
-                bot.scoreboard.title = parseChat(packet.displayText) || packet.name;
-            }
+            if (packet.action === 0 || packet.action === 2) bot.scoreboard.title = parseChat(packet.displayText) || packet.name;
         });
         
         bot.client.on('scoreboard_score', (packet) => {
             const cleanName = parseChat(packet.itemName).replace(/([>])/g, '');
             if (packet.action === 0) bot.scoreboard.items[cleanName] = packet.value;
             else if (packet.action === 1) delete bot.scoreboard.items[cleanName];
-        });
-
-        bot.client.on('spawn_entity', (packet) => { bot.entities[packet.entityId] = { x: packet.x, z: packet.z }; });
-        bot.client.on('entity_teleport', (packet) => {
-            if (bot.entities[packet.entityId]) { bot.entities[packet.entityId].x = packet.x; bot.entities[packet.entityId].z = packet.z; }
-        });
-        bot.client.on('entity_destroy', (packet) => {
-            if(packet.entityIds) packet.entityIds.forEach(id => delete bot.entities[id]);
         });
 
         bot.client.on('chat', (packet) => {
@@ -133,13 +166,23 @@ function startBotInstance(bot) {
         bot.client.on('end', (reason) => {
             bot.status = 'Offline';
             if (bot.updateInterval) clearInterval(bot.updateInterval);
-            addLog(bot, `Bağlantı kesildi: ${reason}`, 'error');
+            if (bot.afkTimer) clearTimeout(bot.afkTimer);
+            addLog(bot, `Bağlantı kesildi: ${reason}. 10 sn sonra oto-bağlanılacak...`, 'error');
             io.emit('bot-updated', bot);
+
+            // socketClosed durumunda Otomatik Yeniden Bağlanma
+            setTimeout(() => {
+                if (bot.status === 'Offline') {
+                    addLog(bot, 'Otomatik yeniden bağlanılıyor...', 'system');
+                    startBotInstance(bot);
+                }
+            }, 10000);
         });
 
         bot.client.on('error', (err) => {
             bot.status = 'Error';
             if (bot.updateInterval) clearInterval(bot.updateInterval);
+            if (bot.afkTimer) clearTimeout(bot.afkTimer);
             addLog(bot, `Hata: ${err.message}`, 'error');
             io.emit('bot-updated', bot);
         });
@@ -156,6 +199,50 @@ function startBotInstance(bot) {
         addLog(bot, `Başlatma Hatası: ${err.message}`, 'error');
         io.emit('bot-updated', bot);
     }
+}
+
+// ASMP & 3x /AFK Otomasyon Fonksiyonu
+function startAsmpAfkRoutine(bot) {
+    if (!bot.client || bot.status !== 'Online') return;
+
+    const subCmd = bot.config.autoSubServerCmd || '/gir asmp';
+    addLog(bot, `[Otomasyon] Sunucuya geçiliyor: ${subCmd}`, 'system');
+    sendCommand(bot, subCmd);
+
+    bot.afkState = { tries: 0, inAfkGui: false };
+
+    function runAfkLoop() {
+        if (!bot.client || bot.status !== 'Online') return;
+
+        if (bot.afkState.inAfkGui) {
+            addLog(bot, '[Otomasyon] AFK Menüsü zaten açık.', 'system');
+            return;
+        }
+
+        if (bot.afkState.tries < 3) {
+            bot.afkState.tries++;
+            addLog(bot, `[Otomasyon] /afk deneniyor (${bot.afkState.tries}/3)...`, 'system');
+            sendCommand(bot, '/afk');
+
+            bot.afkTimer = setTimeout(() => {
+                if (!bot.afkState.inAfkGui) {
+                    runAfkLoop();
+                }
+            }, 3500);
+        } else {
+            addLog(bot, '[Otomasyon] 3 kez /afk denendi fakat yanıt alınamadı. Tekrar ASMP sunucusuna aktarılıyor...', 'error');
+            bot.afkState.tries = 0;
+            sendCommand(bot, subCmd);
+
+            bot.afkTimer = setTimeout(() => {
+                runAfkLoop();
+            }, 5000);
+        }
+    }
+
+    bot.afkTimer = setTimeout(() => {
+        runAfkLoop();
+    }, 4000);
 }
 
 io.on('connection', (socket) => {
@@ -176,7 +263,7 @@ io.on('connection', (socket) => {
                 port: data.port || 25565,
                 version: data.version || 'auto',
                 password: data.password || '',
-                autoSubServerCmd: data.autoSubServerCmd || ''
+                autoSubServerCmd: data.autoSubServerCmd || '/gir asmp'
             },
             client: null
         };
@@ -199,7 +286,7 @@ io.on('connection', (socket) => {
         if (bot && bot.client) {
             try { bot.client.end(); } catch (e) {}
             bot.status = 'Offline';
-            addLog(bot, 'Bot manuel olarak durduruldu.', 'system');
+            addLog(bot, 'Bot durduruldu.', 'system');
             io.emit('bot-updated', bot);
         }
     });
@@ -209,6 +296,7 @@ io.on('connection', (socket) => {
         if (index !== -1) {
             if (bots[index].client) { try { bots[index].client.end(); } catch (e) {} }
             if (bots[index].updateInterval) clearInterval(bots[index].updateInterval);
+            if (bots[index].afkTimer) clearTimeout(bots[index].afkTimer);
             bots.splice(index, 1);
             io.emit('init-data', { botList: bots });
         }
@@ -218,7 +306,7 @@ io.on('connection', (socket) => {
         const { botId, command } = data;
         const bot = bots.find(b => b.id === botId);
         if (bot && bot.client && bot.status === 'Online') {
-            bot.client.write('chat', { message: command });
+            sendCommand(bot, command);
             addLog(bot, `> ${command}`, 'system');
         }
     });

@@ -2,344 +2,159 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const mc = require('minecraft-protocol');
-const fs = require('fs');
-const path = require('path');
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: '*' } });
+const io = new Server(server);
 
 app.use(express.static('public'));
-app.use(express.json());
 
 let bots = [];
-const BOTS_FILE = path.join(__dirname, 'bots.json');
-
-function loadBots() {
-    try {
-        if (fs.existsSync(BOTS_FILE)) {
-            const raw = fs.readFileSync(BOTS_FILE, 'utf8');
-            const parsed = JSON.parse(raw);
-            return Array.isArray(parsed) ? parsed : [];
-        }
-    } catch (err) {
-        console.log('Bot verisi yüklenemedi, yeni başlatılıyor.');
-    }
-    return [];
-}
-
-function saveBots() {
-    try {
-        const data = bots.map(bot => ({
-            id: bot.id,
-            username: bot.username,
-            config: bot.config,
-            afkMode: bot.afkMode
-        }));
-        fs.writeFileSync(BOTS_FILE, JSON.stringify(data, null, 2));
-    } catch (err) {
-        console.error('Bot dosyası kaydedilemedi:', err);
-    }
-}
-
-bots = loadBots().map(botData => ({
-    ...botData,
-    status: 'Offline',
-    onlineTimeSeconds: 0,
-    pos: { x: 0, y: 0, z: 0 },
-    scoreboard: { title: botData.config?.host || 'SUNUCU', items: {} },
-    tabPlayers: {},
-    tabList: [],
-    entities: {},
-    radarEntities: [],
-    logs: [],
-    client: null,
-    afkMode: {
-        enabled: Boolean(botData.afkMode?.enabled),
-        afkTime: 0,
-        rotationEnabled: Boolean(botData.afkMode?.rotationEnabled),
-        jumpEnabled: Boolean(botData.afkMode?.jumpEnabled),
-        messageInterval: Number(botData.afkMode?.messageInterval) || 0
-    }
-}));
+let globalSettings = {
+    host: 'oyna.aesirmc.com',
+    port: 25565,
+    version: '1.20.6',
+    password: 'eniyisiben',
+    autoSubServerCmd: '/gir asmp'
+};
 
 function addLog(bot, text, type = 'info') {
     const timestamp = new Date().toLocaleTimeString('tr-TR');
     if (!bot.logs) bot.logs = [];
     bot.logs.push({ timestamp, text, type });
-    if (bot.logs.length > 150) bot.logs.shift();
+    if (bot.logs.length > 100) bot.logs.shift();
     io.emit('bot-log', { botId: bot.id, timestamp, text, type });
-}
-
-function parseChat(chat) {
-    if (!chat) return '';
-    if (typeof chat === 'string') {
-        try { chat = JSON.parse(chat); } catch (e) { return chat; }
-    }
-    let text = chat.text || chat.translate || '';
-    if (chat.extra) {
-        chat.extra.forEach(ex => text += parseChat(ex));
-    }
-    if (chat.with) {
-        chat.with.forEach(w => text += ' ' + parseChat(w));
-    }
-    return text.replace(/§[0-9a-fk-or]/ig, '').trim();
-}
-
-function sendCommand(bot, commandText) {
-    if (!bot.client || bot.status !== 'Online') return;
-    const cmd = commandText.trim();
-    if (!cmd) return;
-
-    try {
-        if (cmd.startsWith('/')) {
-            const rawCmd = cmd.substring(1);
-            try {
-                bot.client.write('chat_command', {
-                    command: rawCmd,
-                    timestamp: BigInt(Date.now()),
-                    salt: BigInt(0),
-                    argumentSignatures: [],
-                    signedPreview: false,
-                    messageCount: 0,
-                    acknowledged: Buffer.alloc(3)
-                });
-            } catch (e) {
-                bot.client.write('chat', { message: cmd });
-            }
-        } else {
-            bot.client.write('chat', { message: cmd });
-        }
-    } catch (err) {
-        addLog(bot, `Komut Hatası: ${err.message}`, 'error');
-    }
-}
-
-function startAFKMode(bot) {
-    if (!bot.afkMode.enabled || bot.status !== 'Online') return;
-
-    bot.afkMode.afkTime += 1;
-
-    if (bot.afkMode.rotationEnabled && bot.client) {
-        try {
-            const yaw = (Math.random() - 0.5) * Math.PI * 2;
-            const pitch = (Math.random() - 0.5) * Math.PI * 0.7;
-            bot.client.write('look', { yaw, pitch, onGround: true });
-        } catch (e) {
-            // Rotation unsupported; ignore.
-        }
-    }
-
-    if (bot.afkMode.jumpEnabled && bot.client && Math.random() > 0.8) {
-        try {
-            bot.client.write('entity_action', {
-                entityId: bot.client.entityId || 0,
-                actionId: 'jump',
-                jumpBoost: 0
-            });
-        } catch (e) {
-            // Jump unsupported; ignore.
-        }
-    }
-
-    if (bot.afkMode.messageInterval > 0 && bot.afkMode.afkTime % bot.afkMode.messageInterval === 0) {
-        const messages = ['AFK', 'Buradayım', 'Bot aktif', '...', 'Oynuyorum', 'AFK mod aktif'];
-        const msg = messages[Math.floor(Math.random() * messages.length)];
-        sendCommand(bot, msg);
-    }
 }
 
 function startBotInstance(bot) {
     if (bot.client) {
-        try { bot.client.removeAllListeners(); bot.client.end(); } catch (e) {}
+        try { bot.client.end(); } catch (e) {}
     }
-    if (bot.updateInterval) clearInterval(bot.updateInterval);
-    if (bot.afkInterval) clearInterval(bot.afkInterval);
-    if (bot.loginTimeout) clearTimeout(bot.loginTimeout);
 
     bot.status = 'Connecting';
-    bot.onlineTimeSeconds = 0;
-    bot.pos = { x: 0, y: 0, z: 0 };
-    bot.scoreboard = { title: bot.config.host, items: {} };
-    bot.tabPlayers = {};
+    bot.time = { worldTime: 0, timeString: '00:00' };
+    bot.scoreboard = { title: 'Scoreboard', items: [] };
     bot.tabList = [];
-    bot.entities = {};
     bot.radarEntities = [];
-    bot.afkMode.afkTime = 0;
 
     addLog(bot, `${bot.username} sunucuya bağlanıyor (${bot.config.host}:${bot.config.port})...`, 'system');
     io.emit('bot-updated', bot);
 
     try {
-        const clientOptions = {
+        bot.client = mc.createClient({
             host: bot.config.host,
-            port: Number(bot.config.port) || 25565,
+            port: Number(bot.config.port),
             username: bot.username,
-            skipValidation: true,
-            checkTimeoutInterval: 60000
-        };
+            version: bot.config.version || false
+        });
 
-        if (bot.config.version && bot.config.version !== 'auto') {
-            clientOptions.version = bot.config.version;
-        }
-
-        bot.client = mc.createClient(clientOptions);
-
-        bot.client.once('login', () => {
+        bot.client.on('login', () => {
             bot.status = 'Online';
-            addLog(bot, 'Sunucuya giriş başarılı!', 'system');
-
+            addLog(bot, 'Sunucuya başarıyla giriş yapıldı!', 'system');
+            
             if (bot.config.password) {
-                bot.loginTimeout = setTimeout(() => {
-                    if (bot.client && bot.status === 'Online') {
-                        sendCommand(bot, `/login ${bot.config.password}`);
-                        addLog(bot, 'Şifre gönderildi (/login).', 'system');
-                    }
-                }, 2000);
+                setTimeout(() => {
+                    bot.client.write('chat', { message: `/login ${bot.config.password}` });
+                    addLog(bot, `Giriş şifresi gönderildi.`, 'system');
+                }, 1000);
             }
 
-            if (bot.afkMode.enabled) {
-                addLog(bot, 'AFK modu etkinleştirildi.', 'system');
-                bot.afkInterval = setInterval(() => startAFKMode(bot), 1000);
+            if (bot.config.autoSubServerCmd) {
+                setTimeout(() => {
+                    bot.client.write('chat', { message: bot.config.autoSubServerCmd });
+                    addLog(bot, `Yönlendirme komutu gönderildi: ${bot.config.autoSubServerCmd}`, 'system');
+                }, 2500);
             }
+
+            io.emit('bot-updated', bot);
         });
 
         bot.client.on('position', (packet) => {
-            bot.pos = { x: Math.round(packet.x), y: Math.round(packet.y), z: Math.round(packet.z) };
+            bot.pos = {
+                x: packet.x.toFixed(1),
+                y: packet.y.toFixed(1),
+                z: packet.z.toFixed(1)
+            };
+            io.emit('bot-updated', bot);
         });
 
-        bot.client.on('player_info_update', (packet) => {
-            if (packet.data) {
-                packet.data.forEach(p => {
-                    if (!bot.tabPlayers[p.UUID]) bot.tabPlayers[p.UUID] = { name: '', ping: 0 };
-                    if (p.player && p.player.name) bot.tabPlayers[p.UUID].name = p.player.name;
-                    if (p.latency !== undefined) bot.tabPlayers[p.UUID].ping = p.latency;
-                });
-                bot.tabList = Object.values(bot.tabPlayers).filter(x => x.name && x.name.length > 0);
-            }
+        bot.client.on('update_health', (packet) => {
+            bot.health = packet.health;
+            bot.food = packet.food;
+            io.emit('bot-updated', bot);
         });
 
-        bot.client.on('player_info', (packet) => {
-            if (packet.action === 0 && packet.data) {
-                packet.data.forEach(p => {
-                    bot.tabPlayers[p.UUID] = { name: p.name || '', ping: p.ping || 0 };
-                });
-            } else if (packet.action === 4 && packet.data) {
-                packet.data.forEach(p => { delete bot.tabPlayers[p.UUID]; });
-            }
-            bot.tabList = Object.values(bot.tabPlayers).filter(x => x.name && x.name.length > 0);
+        // Oyun Saati (Time Packet)
+        bot.client.on('time_update', (packet) => {
+            const worldAge = packet.age;
+            const timeOfDay = packet.time;
+            // Minecraft saati hesaplama (0-24000 arası)
+            let hours = Math.floor((timeOfDay / 1000) + 6) % 24;
+            let minutes = Math.floor(((timeOfDay % 1000) / 1000) * 60);
+            bot.time = {
+                timeString: `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`,
+                raw: timeOfDay
+            };
+            io.emit('bot-updated', bot);
         });
 
-        bot.client.on('scoreboard_objective', (packet) => {
-            if (packet.action === 0 || packet.action === 2) {
-                bot.scoreboard.title = parseChat(packet.displayText) || packet.name;
-            }
-        });
-
-        bot.client.on('scoreboard_score', (packet) => {
-            const cleanName = parseChat(packet.itemName || packet.scoreName || '');
-            if (!cleanName) return;
-            if (packet.action === 0) {
-                bot.scoreboard.items[cleanName] = packet.value;
-            } else if (packet.action === 1) {
-                delete bot.scoreboard.items[cleanName];
-            }
-        });
-
+        // Chat Dinleme
         bot.client.on('chat', (packet) => {
-            const text = parseChat(packet.message);
-            if (text) addLog(bot, text, 'chat');
+            try {
+                const msg = JSON.parse(packet.message);
+                const text = msg.text || JSON.stringify(msg);
+                addLog(bot, `[Chat] ${text}`);
+            } catch (e) {
+                addLog(bot, `[Chat] ${packet.message}`);
+            }
         });
 
-        bot.client.on('systemChat', (packet) => {
-            const text = parseChat(packet.content);
-            if (text) addLog(bot, text, 'system');
-        });
-
-        bot.client.on('playerChat', (packet) => {
-            const sender = packet.senderName ? parseChat(packet.senderName) : 'Oyuncu';
-            const msg = parseChat(packet.formattedMessage || packet.unsignedContent || packet.plainMessage);
-            addLog(bot, `<${sender}> ${msg}`, 'chat');
-        });
-
-        bot.client.on('named_entity_spawn', (packet) => {
-            bot.entities[packet.entityId] = { x: packet.x / 32, z: packet.z / 32, type: 'player' };
-        });
-
+        // Yakınlardaki Varlıklar (Radar için)
         bot.client.on('spawn_entity', (packet) => {
-            bot.entities[packet.entityId] = { x: packet.x, z: packet.z, type: 'mob' };
-        });
-
-        bot.client.on('entity_destroy', (packet) => {
-            if (packet.entityIds) packet.entityIds.forEach(id => delete bot.entities[id]);
+            if (!bot.radarEntities) bot.radarEntities = [];
+            bot.radarEntities.push({ id: packet.entityId, type: packet.type, x: packet.x, z: packet.z });
+            if (bot.radarEntities.length > 20) bot.radarEntities.shift();
         });
 
         bot.client.on('end', (reason) => {
             bot.status = 'Offline';
-            if (bot.updateInterval) clearInterval(bot.updateInterval);
-            if (bot.afkInterval) clearInterval(bot.afkInterval);
-            addLog(bot, `Bağlantı kesildi: ${reason}`, 'error');
+            addLog(bot, `Bağlantı kapandı. Sebep: ${reason}`, 'error');
             io.emit('bot-updated', bot);
         });
 
         bot.client.on('error', (err) => {
             bot.status = 'Error';
-            if (bot.updateInterval) clearInterval(bot.updateInterval);
-            if (bot.afkInterval) clearInterval(bot.afkInterval);
-            addLog(bot, `Hata: ${err.message}`, 'error');
+            addLog(bot, `Bağlantı Hatası: ${err.message}`, 'error');
             io.emit('bot-updated', bot);
         });
 
-        bot.updateInterval = setInterval(() => {
-            if (bot.status === 'Online') {
-                bot.onlineTimeSeconds += 1;
-                bot.radarEntities = Object.values(bot.entities).map(e => ({
-                    x: e.x - bot.pos.x,
-                    z: e.z - bot.pos.z,
-                    type: e.type
-                }));
-                io.emit('bot-updated', bot);
-            }
-        }, 1000);
     } catch (err) {
         bot.status = 'Error';
-        addLog(bot, `Başlatma Hatası: ${err.message}`, 'error');
+        addLog(bot, `İstemci oluşturulamadı: ${err.message}`, 'error');
         io.emit('bot-updated', bot);
     }
 }
 
 io.on('connection', (socket) => {
-    socket.emit('init-data', { botList: bots });
+    socket.emit('init-data', { botList: bots, globalSettings });
 
     socket.on('add-bot', (data) => {
         const newBot = {
             id: 'bot_' + Date.now(),
-            username: data.username || 'Bot',
+            username: data.username,
             status: 'Offline',
-            onlineTimeSeconds: 0,
+            health: 20,
+            food: 20,
             pos: { x: 0, y: 0, z: 0 },
-            scoreboard: { title: data.host || 'SUNUCU', items: {} },
-            tabList: [],
+            time: { timeString: '00:00' },
+            scoreboard: { title: 'Skorbord', items: ['Sunucuya bağlı değil'] },
+            tabList: [data.username],
             radarEntities: [],
+            config: { ...globalSettings },
             logs: [],
-            config: {
-                host: data.host || 'oyna.aesirmc.com',
-                port: Number(data.port) || 25565,
-                version: data.version || 'auto',
-                password: data.password || ''
-            },
-            client: null,
-            afkMode: {
-                enabled: Boolean(data.afkMode?.enabled),
-                afkTime: 0,
-                rotationEnabled: Boolean(data.afkMode?.rotationEnabled),
-                jumpEnabled: Boolean(data.afkMode?.jumpEnabled),
-                messageInterval: Number(data.afkMode?.messageInterval) || 0
-            }
+            client: null
         };
-
         bots.push(newBot);
-        saveBots();
         io.emit('bot-added', newBot);
     });
 
@@ -352,9 +167,8 @@ io.on('connection', (socket) => {
         const bot = bots.find(b => b.id === botId);
         if (bot && bot.client) {
             try { bot.client.end(); } catch (e) {}
-            if (bot.afkInterval) clearInterval(bot.afkInterval);
             bot.status = 'Offline';
-            addLog(bot, 'Bot durduruldu.', 'system');
+            addLog(bot, 'Bot manuel olarak durduruldu.', 'system');
             io.emit('bot-updated', bot);
         }
     });
@@ -365,49 +179,65 @@ io.on('connection', (socket) => {
             if (bots[index].client) {
                 try { bots[index].client.end(); } catch (e) {}
             }
-            if (bots[index].afkInterval) clearInterval(bots[index].afkInterval);
             bots.splice(index, 1);
-            saveBots();
-            io.emit('init-data', { botList: bots });
+            io.emit('init-data', { botList: bots, globalSettings });
         }
     });
 
+    socket.on('start-all', () => {
+        bots.forEach(bot => {
+            if (bot.status !== 'Online' && bot.status !== 'Connecting') {
+                startBotInstance(bot);
+            }
+        });
+    });
+
+    socket.on('stop-all', () => {
+        bots.forEach(bot => {
+            if (bot.client) {
+                try { bot.client.end(); } catch (e) {}
+                bot.status = 'Offline';
+                addLog(bot, 'Bot durduruldu.', 'system');
+                io.emit('bot-updated', bot);
+            }
+        });
+    });
+
+    // Tekil Bot Komut / Chat Gönderimi (Doğrudan Terminalden)
     socket.on('bot-command', (data) => {
         const { botId, command } = data;
         const bot = bots.find(b => b.id === botId);
         if (bot && bot.client && bot.status === 'Online') {
-            sendCommand(bot, command);
-            addLog(bot, `> ${command}`, 'system');
+            bot.client.write('chat', { message: command });
+            addLog(bot, `[Komut] ${command}`, 'system');
         }
     });
 
-    socket.on('set-afk-mode', (data) => {
-        const { botId, afkSettings } = data;
-        const bot = bots.find(b => b.id === botId);
-        if (!bot) return;
+    socket.on('global-command', (data) => {
+        const { target, command } = data;
+        bots.forEach(bot => {
+            if ((target === 'all' || bot.id === target) && bot.client && bot.status === 'Online') {
+                bot.client.write('chat', { message: command });
+                addLog(bot, `[Komut] ${command}`, 'system');
+            }
+        });
+    });
 
-        bot.afkMode = {
-            ...bot.afkMode,
-            ...afkSettings,
-            enabled: Boolean(afkSettings.enabled),
-            rotationEnabled: Boolean(afkSettings.rotationEnabled),
-            jumpEnabled: Boolean(afkSettings.jumpEnabled),
-            messageInterval: Number(afkSettings.messageInterval) || 0
-        };
+    socket.on('update-global-settings', (newSettings) => {
+        globalSettings = newSettings;
+    });
 
-        if (bot.afkMode.enabled && bot.status === 'Online') {
-            if (bot.afkInterval) clearInterval(bot.afkInterval);
-            bot.afkInterval = setInterval(() => startAFKMode(bot), 1000);
-        } else if (bot.afkInterval) {
-            clearInterval(bot.afkInterval);
-            bot.afkInterval = null;
+    socket.on('update-bot-config', (data) => {
+        const bot = bots.find(b => b.id === data.botId);
+        if (bot) {
+            bot.config = { ...bot.config, ...data.config };
+            addLog(bot, 'Botun özel ayarları güncellendi.', 'system');
+            io.emit('bot-updated', bot);
         }
-
-        addLog(bot, `AFK Modu: ${bot.afkMode.enabled ? 'Etkin' : 'Devre Dışı'}`, 'system');
-        io.emit('bot-updated', bot);
-        saveBots();
     });
 });
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log(`Sunucu aktif: http://localhost:${PORT}`));
+server.listen(PORT, () => {
+    console.log(`Sunucu http://localhost:${PORT} adresinde çalışıyor.`);
+});

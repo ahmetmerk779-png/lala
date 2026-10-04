@@ -328,7 +328,9 @@ function setupCustomPacketHandler(client, botId) {
             case 'update_health':
                 if (data.health <= 0) {
                     broadcastLog(botId, '☠️ Bot öldü! Otomatik Respawn gönderiliyor...', 'error');
-                    try { client.write('client_command', { actionId: 0 }); } catch (e) {}
+                    try { 
+                        client.write('client_command', { actionId: 0 }); 
+                    } catch (e) {}
                 }
                 break;
 
@@ -337,8 +339,19 @@ function setupCustomPacketHandler(client, botId) {
                 botData.waitingForAfkGui = false;
                 botData.entities = {};
                 afkFailCount = 0;
-                broadcastLog(botId, '🔄 Sunucu değişimi algılandı. AFK ve Harita verileri yenileniyor...', 'warn');
-                botData.afkTimer = setTimeout(() => triggerAfkWithRetry(), 4000);
+                broadcastLog(botId, '🔄 Bot yeniden doğdu/sunucu değişti. Alt sunucuya tekrar bağlanılıyor...', 'warn');
+                
+                setTimeout(() => {
+                    if (!botData.client || botData.status !== 'Online') return;
+                    
+                    const subCmd = botData.autoSubServerCmd !== undefined ? botData.autoSubServerCmd : globalConfig.autoSubServerCmd;
+                    if (subCmd && subCmd.trim() !== '') {
+                        sendChat(client, subCmd);
+                        broadcastLog(botId, `🚀 Alt sunucu komutu tekrar gönderildi: ${subCmd}`, 'success');
+                    }
+
+                    botData.afkTimer = setTimeout(() => triggerAfkWithRetry(), 5000);
+                }, 2000);
                 break;
 
             case 'window_items':

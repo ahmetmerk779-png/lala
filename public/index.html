@@ -1,231 +1,907 @@
 <!DOCTYPE html>
 <html lang="tr">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Minecraft Bot Panel</title>
-    <script src="/socket.io/socket.io.js"></script>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-    <style>
-        body { background-color: #0b0f19; color: #e2e8f0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-        .card-box { background-color: #121826; border: 1px solid #1e293b; border-radius: 16px; }
-        .radar-area { background-color: #070a12; background-image: radial-gradient(circle, rgba(239, 68, 68, 0.25) 1px, transparent 1px); background-size: 16px 16px; }
-    </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Minecraft Bot Panel</title>
+  <script src="/socket.io/socket.io.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    
+    html, body {
+      width: 100%;
+      height: 100%;
+      background: #040d1b;
+      color: #e2e8f0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      overflow: hidden;
+    }
+
+    .container {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      background: radial-gradient(circle at top, #0c1626, #040d1b 40%);
+    }
+
+    .content {
+      flex: 1;
+      overflow: auto;
+      padding: 12px 14px;
+      scroll-behavior: smooth;
+    }
+
+    /* Adres Çubuğu */
+    .address-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 50px;
+      padding: 0 12px;
+      border-radius: 24px;
+      background: rgba(20, 30, 45, 0.9);
+      border: 1px solid rgba(148, 163, 184, 0.15);
+      margin-bottom: 14px;
+    }
+
+    .address-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex: 1;
+      min-width: 0;
+    }
+
+    .home-icon {
+      font-size: 22px;
+      color: #cbd5e1;
+    }
+
+    .url {
+      font-size: 13px;
+      font-weight: 600;
+      color: #cbd5e1;
+      font-family: "SFMono-Regular", Consolas, monospace;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .address-right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-left: 8px;
+    }
+
+    .plus-btn {
+      width: 26px;
+      height: 26px;
+      border-radius: 6px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(148, 163, 184, 0.12);
+      color: #cbd5e1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      cursor: pointer;
+    }
+
+    .count-pill {
+      min-width: 24px;
+      height: 24px;
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(148, 163, 184, 0.15);
+      color: #e2e8f0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      font-weight: 700;
+      padding: 0 6px;
+    }
+
+    /* Buton */
+    .add-bot-btn {
+      width: 100%;
+      height: 52px;
+      border: none;
+      border-radius: 16px;
+      background: linear-gradient(135deg, #6366f1, #8b5cf6);
+      color: white;
+      font-weight: 900;
+      font-size: 16px;
+      letter-spacing: 0.02em;
+      cursor: pointer;
+      box-shadow: 0 8px 16px rgba(99, 102, 241, 0.25);
+      transition: all 0.2s;
+      margin-bottom: 16px;
+    }
+
+    .add-bot-btn:active {
+      transform: scale(0.98);
+    }
+
+    /* Panel Kartları */
+    .panel {
+      background: rgba(15, 22, 35, 0.92);
+      border: 1px solid rgba(148, 163, 184, 0.15);
+      border-radius: 18px;
+      padding: 20px;
+      text-align: center;
+      color: rgba(226, 232, 240, 0.7);
+      font-size: 15px;
+      min-height: 140px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 12px;
+    }
+
+    /* Bot Card */
+    .bot-card {
+      background: rgba(15, 22, 35, 0.92);
+      border: 1px solid rgba(148, 163, 184, 0.15);
+      border-radius: 18px;
+      overflow: hidden;
+      margin-bottom: 14px;
+    }
+
+    .bot-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 12px 8px;
+      border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+    }
+
+    .bot-info {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .bot-avatar {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      border: 1px solid rgba(148, 163, 184, 0.2);
+      object-fit: cover;
+      background: rgba(15, 23, 42, 0.7);
+    }
+
+    .bot-name {
+      font-size: 12px;
+      font-weight: 800;
+      color: #f8fafc;
+      display: block;
+    }
+
+    .bot-status {
+      font-size: 10px;
+      color: #94a3b8;
+      display: block;
+    }
+
+    .bot-actions {
+      display: flex;
+      gap: 6px;
+    }
+
+    .btn-sm {
+      width: 28px;
+      height: 28px;
+      border: 1px solid rgba(148, 163, 184, 0.15);
+      background: rgba(255, 255, 255, 0.04);
+      color: #cbd5e1;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .btn-sm:active {
+      transform: scale(0.92);
+    }
+
+    .btn-sm.play {
+      background: rgba(34, 197, 94, 0.12);
+      border-color: rgba(34, 197, 94, 0.3);
+      color: #86efac;
+    }
+
+    .btn-sm.stop {
+      background: rgba(239, 68, 68, 0.12);
+      border-color: rgba(239, 68, 68, 0.3);
+      color: #fca5a5;
+    }
+
+    .btn-sm.delete {
+      background: rgba(148, 163, 184, 0.08);
+      border-color: rgba(148, 163, 184, 0.15);
+      color: #cbd5e1;
+    }
+
+    /* Kontrol Paneli */
+    .control-panel {
+      padding: 12px;
+    }
+
+    .section {
+      margin-bottom: 12px;
+    }
+
+    .section-title {
+      font-size: 12px;
+      font-weight: 800;
+      color: #67e8f9;
+      margin-bottom: 8px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .section-title .count {
+      color: #94a3b8;
+      font-size: 10px;
+      font-weight: 600;
+    }
+
+    .info-box {
+      background: rgba(8, 15, 25, 0.8);
+      border: 1px solid rgba(148, 163, 184, 0.1);
+      border-radius: 12px;
+      padding: 10px;
+      font-size: 11px;
+      max-height: 120px;
+      overflow-y: auto;
+    }
+
+    .info-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 4px 2px;
+      border-bottom: 1px solid rgba(148, 163, 184, 0.08);
+      color: #dbe7f5;
+    }
+
+    .info-row:last-child {
+      border-bottom: none;
+    }
+
+    .info-row .label {
+      color: #34d399;
+      font-weight: 700;
+    }
+
+    .info-row .value {
+      color: #34d399;
+      font-weight: 700;
+      font-family: "SFMono-Regular", Consolas, monospace;
+    }
+
+    .radar-canvas {
+      width: 100%;
+      height: 160px;
+      background: radial-gradient(circle at center, rgba(34, 197, 94, 0.05) 0%, rgba(15, 23, 42, 0.9) 100%);
+      border-radius: 10px;
+      margin-bottom: 8px;
+      display: block;
+    }
+
+    .afk-section {
+      background: rgba(8, 15, 25, 0.8);
+      border: 1px solid rgba(148, 163, 184, 0.1);
+      border-radius: 12px;
+      padding: 10px;
+    }
+
+    .afk-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+
+    .afk-toggle {
+      width: 40px;
+      height: 22px;
+      border-radius: 999px;
+      background: rgba(100, 116, 139, 0.5);
+      border: 1px solid rgba(148, 163, 184, 0.2);
+      cursor: pointer;
+      position: relative;
+      transition: all 0.2s;
+    }
+
+    .afk-toggle.active {
+      background: linear-gradient(90deg, #34d399, #22c55e);
+      border-color: rgba(52, 211, 153, 0.4);
+    }
+
+    .afk-ball {
+      position: absolute;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: white;
+      top: 3px;
+      left: 3px;
+      transition: left 0.2s;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+    }
+
+    .afk-toggle.active .afk-ball {
+      left: 21px;
+    }
+
+    .afk-options {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+      margin-bottom: 8px;
+      font-size: 10px;
+    }
+
+    .afk-check {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: rgba(15, 23, 42, 0.6);
+      border: 1px solid rgba(148, 163, 184, 0.1);
+      border-radius: 8px;
+      padding: 6px 8px;
+      color: #cbd5e1;
+    }
+
+    .afk-check input[type="checkbox"] {
+      width: 14px;
+      height: 14px;
+      cursor: pointer;
+    }
+
+    .afk-interval {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .afk-interval label {
+      font-size: 10px;
+      color: #94a3b8;
+      margin-bottom: 4px;
+      font-weight: 700;
+    }
+
+    .afk-interval input {
+      height: 28px;
+      border-radius: 8px;
+      border: 1px solid rgba(148, 163, 184, 0.1);
+      background: rgba(15, 23, 42, 0.6);
+      color: #f8fafc;
+      padding: 0 8px;
+      font-size: 11px;
+      outline: none;
+    }
+
+    .terminal {
+      background: rgba(6, 10, 16, 0.85);
+      border: 1px solid rgba(148, 163, 184, 0.1);
+      border-radius: 10px;
+      padding: 8px;
+      height: 110px;
+      overflow-y: auto;
+      font-family: "SFMono-Regular", Consolas, monospace;
+      font-size: 9px;
+      color: #cbd5e1;
+      margin-bottom: 10px;
+    }
+
+    .terminal-line {
+      padding: 2px 0;
+    }
+
+    .terminal-time {
+      color: #64748b;
+      margin-right: 4px;
+    }
+
+    .cmd-input-group {
+      display: flex;
+      gap: 6px;
+    }
+
+    .cmd-input {
+      flex: 1;
+      height: 32px;
+      border-radius: 8px;
+      border: 1px solid rgba(148, 163, 184, 0.1);
+      background: rgba(15, 23, 42, 0.7);
+      color: #f8fafc;
+      padding: 0 10px;
+      font-size: 11px;
+      outline: none;
+    }
+
+    .cmd-btn {
+      height: 32px;
+      padding: 0 12px;
+      border: none;
+      border-radius: 8px;
+      background: #3b82f6;
+      color: white;
+      font-size: 11px;
+      font-weight: 800;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .cmd-btn:active {
+      transform: scale(0.95);
+    }
+
+    /* Modal */
+    .modal {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.75);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      z-index: 1000;
+    }
+
+    .modal.open {
+      display: flex;
+    }
+
+    .modal-content {
+      background: rgba(20, 28, 42, 0.98);
+      border: 1px solid rgba(148, 163, 184, 0.15);
+      border-radius: 16px;
+      padding: 18px;
+      width: 100%;
+      max-width: 360px;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+    }
+
+    .modal-title {
+      font-size: 16px;
+      font-weight: 900;
+      color: #f8fafc;
+      margin-bottom: 16px;
+    }
+
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+
+    .form-label {
+      font-size: 10px;
+      font-weight: 700;
+      color: #94a3b8;
+    }
+
+    .form-input {
+      height: 38px;
+      border-radius: 8px;
+      border: 1px solid rgba(148, 163, 184, 0.15);
+      background: rgba(15, 23, 42, 0.8);
+      color: #f8fafc;
+      padding: 0 10px;
+      font-size: 12px;
+      outline: none;
+    }
+
+    .form-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    .modal-buttons {
+      display: flex;
+      gap: 10px;
+      margin-top: 16px;
+    }
+
+    .modal-btn {
+      flex: 1;
+      height: 40px;
+      border: none;
+      border-radius: 8px;
+      font-weight: 800;
+      font-size: 12px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .modal-btn.cancel {
+      background: rgba(100, 116, 139, 0.3);
+      color: #cbd5e1;
+    }
+
+    .modal-btn.confirm {
+      background: linear-gradient(135deg, #22c55e, #34d399);
+      color: white;
+    }
+
+    .modal-btn:active {
+      transform: scale(0.95);
+    }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar {
+      width: 4px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: rgba(148, 163, 184, 0.2);
+      border-radius: 2px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(148, 163, 184, 0.3);
+    }
+
+    .bottom-nav {
+      position: fixed;
+      bottom: 12px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: calc(100% - 28px);
+      max-width: 402px;
+      display: flex;
+      justify-content: space-around;
+      align-items: center;
+      background: rgba(20, 30, 45, 0.6);
+      border: 1px solid rgba(148, 163, 184, 0.1);
+      border-radius: 16px;
+      padding: 8px 0;
+      backdrop-filter: blur(10px);
+    }
+
+    .nav-icon {
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #cbd5e1;
+      font-size: 18px;
+      cursor: pointer;
+    }
+
+    body.has-nav {
+      padding-bottom: 60px;
+    }
+  </style>
 </head>
-<body class="p-3 max-w-md mx-auto space-y-4">
-
-    <!-- ÜST BUTON -->
-    <div class="flex gap-2">
-        <button onclick="openAddModal()" class="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 px-4 rounded-xl text-sm shadow-lg flex items-center justify-center gap-2">
-            <i class="fa-solid fa-plus"><span>YENİ BOT EKLE</span></i>
-        </button>
-    </div>
-
-    <!-- BOT KARTLARI -->
-    <div id="botListContainer" class="space-y-4"></div>
-
-    <!-- BOT EKLEME MODALI (Tüm Detaylı Alanlar) -->
-    <div id="addModal" class="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 hidden">
-        <div class="card-box p-5 w-full max-w-sm space-y-3">
-            <h3 class="font-bold text-base text-white border-b border-slate-800 pb-2">Yeni Bot Ekle</h3>
-            
-            <div class="space-y-1">
-                <label class="text-[10px] text-slate-400 font-bold">Kullanıcı Adı</label>
-                <input type="text" id="inpUser" placeholder="Bot Kullanıcı Adı" value="banyedin" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-xs text-white">
-            </div>
-
-            <div class="space-y-1">
-                <label class="text-[10px] text-slate-400 font-bold">Sunucu IP</label>
-                <input type="text" id="inpHost" placeholder="oyna.aesirmc.com" value="oyna.aesirmc.com" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-xs text-white font-mono">
-            </div>
-
-            <div class="grid grid-cols-2 gap-2">
-                <div class="space-y-1">
-                    <label class="text-[10px] text-slate-400 font-bold">Port</label>
-                    <input type="text" id="inpPort" placeholder="25565" value="25565" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-xs text-white font-mono">
-                </div>
-                <div class="space-y-1">
-                    <label class="text-[10px] text-slate-400 font-bold">Sürüm</label>
-                    <input type="text" id="inpVersion" placeholder="auto" value="auto" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-xs text-white font-mono">
-                </div>
-            </div>
-
-            <div class="space-y-1">
-                <label class="text-[10px] text-slate-400 font-bold">Giriş Şifresi (/login varsa)</label>
-                <input type="text" id="inpPass" placeholder="Opsiyonel şifre" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-xs text-white">
-            </div>
-
-            <div class="flex gap-2 pt-2">
-                <button onclick="closeAddModal()" class="flex-1 bg-slate-800 py-2.5 rounded-lg text-xs font-bold text-slate-300">İptal</button>
-                <button onclick="addBotConfirm()" class="flex-1 bg-emerald-600 py-2.5 rounded-lg text-xs font-bold text-white">Oluştur</button>
-            </div>
+<body>
+  <div class="container">
+    <div class="content">
+      <!-- Adres Çubuğu -->
+      <div class="address-bar">
+        <div class="address-left">
+          <div class="home-icon"><i class="fa-solid fa-house"></i></div>
+          <div class="url">localhost:3000</div>
         </div>
+        <div class="address-right">
+          <div class="plus-btn">+</div>
+          <div class="count-pill" id="botCount">0</div>
+          <div class="plus-btn"><i class="fa-solid fa-ellipsis-vertical"></i></div>
+        </div>
+      </div>
+
+      <!-- Add Bot Button -->
+      <button class="add-bot-btn" onclick="openAddModal()">+ YENİ BOT EKLE</button>
+
+      <!-- Bot List -->
+      <div id="botListContainer"></div>
     </div>
 
-    <script>
-        const socket = io();
-        let bots = [];
+    <!-- Alt Menü -->
+    <div class="bottom-nav">
+      <div class="nav-icon"><i class="fa-solid fa-bars"></i></div>
+      <div class="nav-icon"><i class="fa-regular fa-square"></i></div>
+      <div class="nav-icon"><i class="fa-solid fa-angle-left"></i></div>
+    </div>
+  </div>
 
-        socket.on('init-data', (data) => { bots = data.botList || []; renderUI(); });
-        socket.on('bot-added', (bot) => { bots.push(bot); renderUI(); });
-        socket.on('bot-updated', (updated) => {
-            const idx = bots.findIndex(b => b.id === updated.id);
-            if (idx !== -1) { bots[idx] = updated; renderBotCard(updated); }
-            else renderUI();
-        });
+  <!-- Modal -->
+  <div id="addModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-title">Yeni Bot Ekle</div>
+      <div class="form-group">
+        <label class="form-label">Kullanıcı Adı</label>
+        <input type="text" id="inpUser" class="form-input" value="banyedin" placeholder="Bot kullanıcı adı" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Sunucu IP</label>
+        <input type="text" id="inpHost" class="form-input" value="oyna.aesirmc.com" placeholder="IP adresi" />
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Port</label>
+          <input type="text" id="inpPort" class="form-input" value="25565" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Sürüm</label>
+          <input type="text" id="inpVersion" class="form-input" value="auto" />
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Giriş Şifresi</label>
+        <input type="text" id="inpPass" class="form-input" placeholder="Opsiyonel" />
+      </div>
+      <div class="modal-buttons">
+        <button class="modal-btn cancel" onclick="closeAddModal()">İptal</button>
+        <button class="modal-btn confirm" onclick="addBotConfirm()">Oluştur</button>
+      </div>
+    </div>
+  </div>
 
-        socket.on('bot-log', (data) => {
-            const bot = bots.find(b => b.id === data.botId);
-            if (bot) {
-                if (!bot.logs) bot.logs = [];
-                bot.logs.push(data);
-                if (bot.logs.length > 150) bot.logs.shift();
-                const logBox = document.getElementById(`terminal_${data.botId}`);
-                if (logBox) {
-                    logBox.innerHTML += `<div class="text-slate-300"><span class="text-slate-500">[${data.timestamp}]</span> ${data.text}</div>`;
-                    logBox.scrollTop = logBox.scrollHeight;
-                }
-            }
-        });
+  <script>
+    const socket = io();
+    let bots = [];
 
-        function renderUI() {
-            const container = document.getElementById('botListContainer');
-            if (bots.length === 0) {
-                container.innerHTML = `<div class="card-box p-8 text-center text-slate-500 text-xs">Henüz bot eklenmedi.</div>`;
-                return;
-            }
-            container.innerHTML = bots.map(b => getBotHTML(b)).join('');
-            bots.forEach(b => drawRadar(b));
-        }
+    socket.on('init-data', (data) => {
+      bots = data.botList || [];
+      renderUI();
+    });
 
-        function renderBotCard(b) {
-            const el = document.getElementById(`card_${b.id}`);
-            if (el) { el.outerHTML = getBotHTML(b); drawRadar(b); }
-            else renderUI();
-        }
+    socket.on('bot-added', (bot) => {
+      bots.push(bot);
+      renderUI();
+    });
 
-        function getBotHTML(b) {
-            const tabRows = (b.tabList && b.tabList.length > 0) ? b.tabList.map(p => `
-                <div class="flex justify-between items-center py-1 border-b border-slate-800/40 text-[11px]">
-                    <span class="text-emerald-400 font-medium">${p.name}</span>
-                    <span class="text-emerald-500 font-mono">${p.ping}ms</span>
-                </div>`).join('') : '<div class="text-slate-500 text-[11px] italic py-2 text-center">Sunucuda oyuncu bulunamadı</div>';
+    socket.on('bot-updated', (updated) => {
+      const idx = bots.findIndex(b => b.id === updated.id);
+      if (idx !== -1) bots[idx] = updated;
+      renderUI();
+    });
 
-            const sbRows = Object.entries(b.scoreboard?.items || {}).map(([k, v]) => `
-                <div class="flex justify-between items-center py-0.5 text-[11px]">
-                    <span class="text-slate-300">${k}</span>
-                    <span class="text-rose-500 font-mono font-bold">${v}</span>
-                </div>`).join('') || '<div class="text-slate-500 text-[11px] italic text-center py-2">Skor Verisi Yok</div>';
+    socket.on('bot-log', (data) => {
+      const bot = bots.find(b => b.id === data.botId);
+      if (!bot) return;
+      if (!bot.logs) bot.logs = [];
+      bot.logs.push(data);
+      if (bot.logs.length > 150) bot.logs.shift();
 
-            const logsHtml = (b.logs || []).map(l => `<div class="text-slate-300"><span class="text-slate-500">[${l.timestamp}]</span> ${l.text}</div>`).join('');
+      const terminal = document.getElementById(`terminal_${data.botId}`);
+      if (terminal) {
+        terminal.innerHTML += `<div class="terminal-line"><span class="terminal-time">[${data.timestamp}]</span>${data.text}</div>`;
+        terminal.scrollTop = terminal.scrollHeight;
+      }
+    });
 
-            return `
-            <div id="card_${b.id}" class="card-box p-3 space-y-3">
-                <div class="flex justify-between items-center">
-                    <div class="flex items-center gap-2">
-                        <img src="https://minotar.net/helm/${b.username}/32.png" class="w-8 h-8 rounded bg-slate-800">
-                        <div>
-                            <span class="font-bold text-white text-xs block">${b.username}</span>
-                            <span class="text-[10px] text-slate-400">${b.status}</span>
-                        </div>
-                    </div>
-                    <div class="flex gap-1.5">
-                        ${b.status !== 'Online' ? 
-                            `<button onclick="socket.emit('start-bot', '${b.id}')" class="bg-emerald-600 hover:bg-emerald-500 w-8 h-8 rounded-lg text-white text-xs"><i class="fa-solid fa-play"></i></button>` : 
-                            `<button onclick="socket.emit('stop-bot', '${b.id}')" class="bg-rose-600 hover:bg-rose-500 w-8 h-8 rounded-lg text-white text-xs"><i class="fa-solid fa-square"></i></button>`
-                        }
-                        <button onclick="socket.emit('delete-bot', '${b.id}')" class="bg-slate-800 hover:bg-rose-900 w-8 h-8 rounded-lg text-slate-400 hover:text-white text-xs"><i class="fa-solid fa-trash"></i></button>
-                    </div>
+    function renderUI() {
+      const container = document.getElementById('botListContainer');
+      document.getElementById('botCount').textContent = bots.length;
+
+      if (!bots.length) {
+        container.innerHTML = `<div class="panel">Henüz bot eklenmedi.</div>`;
+        return;
+      }
+
+      container.innerHTML = bots.map(getBotHTML).join('');
+      bots.forEach(bot => drawRadar(bot));
+    }
+
+    function getBotHTML(bot) {
+      const tabRows = (bot.tabList && bot.tabList.length)
+        ? bot.tabList.map(p => `
+            <div class="info-row">
+              <span class="label">${p.name}</span>
+              <span class="value">${p.ping}ms</span>
+            </div>
+          `).join('')
+        : '<div class="info-row"><span style="color:#94a3b8;">Oyuncu yok</span></div>';
+
+      const scoreRows = Object.entries(bot.scoreboard?.items || {}).map(([k, v]) => `
+        <div class="info-row">
+          <span>${k}</span>
+          <span class="value" style="color:#f87171;">${v}</span>
+        </div>
+      `).join('') || '<div style="text-align:center;color:#94a3b8;padding:8px;">Skor verisi yok</div>';
+
+      const logsHtml = (bot.logs || []).map(l => `<div class="terminal-line"><span class="terminal-time">[${l.timestamp}]</span>${l.text}</div>`).join('') || '<div class="terminal-line">Terminal hazır...</div>';
+
+      return `
+      <div class="bot-card">
+        <div class="bot-header">
+          <div class="bot-info">
+            <img src="https://minotar.net/helm/${bot.username}/32.png" class="bot-avatar" alt="avatar" />
+            <div>
+              <span class="bot-name">${bot.username}</span>
+              <span class="bot-status">${bot.status}</span>
+            </div>
+          </div>
+          <div class="bot-actions">
+            ${bot.status === 'Online'
+              ? `<button class="btn-sm stop" onclick="socket.emit('stop-bot', '${bot.id}')"><i class="fa-solid fa-square"></i></button>`
+              : `<button class="btn-sm play" onclick="socket.emit('start-bot', '${bot.id}')"><i class="fa-solid fa-play"></i></button>`}
+            <button class="btn-sm delete" onclick="socket.emit('delete-bot', '${bot.id}')"><i class="fa-solid fa-trash"></i></button>
+          </div>
+        </div>
+
+        <div class="control-panel">
+          <div class="section">
+            <div class="section-title">
+              <span>🗺️ 2D Radar</span>
+              <span class="count">Yakın Varlıklar</span>
+            </div>
+            <canvas id="radar_${bot.id}" class="radar-canvas" width="420" height="160"></canvas>
+          </div>
+
+          <div class="section">
+            <div class="section-title">
+              <span>📋 Tab Oyuncu Listesi</span>
+              <span class="count">${bot.tabList?.length || 0} Oyuncu</span>
+            </div>
+            <div class="info-box">${tabRows}</div>
+          </div>
+
+          <div class="section">
+            <div class="section-title" style="justify-content: center;">
+              📊 ${bot.scoreboard?.title || 'SKOR TABLOSU'}
+            </div>
+            <div class="info-box">${scoreRows}</div>
+          </div>
+
+          <div class="section">
+            <div class="afk-section">
+              <div class="afk-header">
+                <span style="font-size:12px; font-weight:800; color:#67e8f9;">⚙️ AFK Modu</span>
+                <div class="afk-toggle ${bot.afkMode?.enabled ? 'active' : ''}" onclick="toggleAFK('${bot.id}')">
+                  <span class="afk-ball"></span>
                 </div>
+              </div>
+              <div class="afk-options">
+                <label class="afk-check">
+                  <span>Döndürme</span>
+                  <input type="checkbox" ${bot.afkMode?.rotationEnabled ? 'checked' : ''} onchange="updateAFK('${bot.id}', 'rotationEnabled', this.checked)" />
+                </label>
+                <label class="afk-check">
+                  <span>Zıplama</span>
+                  <input type="checkbox" ${bot.afkMode?.jumpEnabled ? 'checked' : ''} onchange="updateAFK('${bot.id}', 'jumpEnabled', this.checked)" />
+                </label>
+              </div>
+              <div class="afk-interval">
+                <label>Mesaj Aralığı (sn)</label>
+                <input type="number" min="0" value="${bot.afkMode?.messageInterval || 0}" onchange="updateAFK('${bot.id}', 'messageInterval', Number(this.value))" />
+              </div>
+            </div>
+          </div>
 
-                <!-- 1. 2D RADAR -->
-                <div class="card-box p-2.5 bg-[#080c14] space-y-2">
-                    <div class="flex justify-between items-center text-xs font-bold px-1">
-                        <span class="text-cyan-400">🗺️ 2D Radar</span>
-                        <span class="text-slate-400 text-[10px]">(Yakın Varlıklar)</span>
-                    </div>
-                    <div class="flex flex-col items-center">
-                        <canvas id="radar_${b.id}" width="240" height="130" class="radar-area rounded-lg w-full"></canvas>
-                    </div>
-                </div>
+          <div class="section">
+            <div class="terminal" id="terminal_${bot.id}">${logsHtml}</div>
+            <div class="cmd-input-group">
+              <input type="text" class="cmd-input" id="cmd_${bot.id}" placeholder="/komut yazın..." onkeydown="if(event.key==='Enter') sendCmd('${bot.id}')" />
+              <button class="cmd-btn" onclick="sendCmd('${bot.id}')">Gönder</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      `;
+    }
 
-                <!-- 2. TAB OYUNCU LİSTESİ -->
-                <div class="card-box p-3 bg-[#0c101c] space-y-1">
-                    <div class="flex justify-between items-center text-xs font-bold border-b border-slate-800 pb-1.5 mb-1">
-                        <span class="text-amber-400">📋 Tab Oyuncu Listesi</span>
-                        <span class="text-slate-400 font-mono">${b.tabList?.length || 0} Oyuncu</span>
-                    </div>
-                    <div class="flex justify-between text-[10px] text-slate-500 font-bold px-1">
-                        <span>Oyuncu</span><span>Ping</span>
-                    </div>
-                    <div class="max-h-36 overflow-y-auto space-y-0.5 pr-1">${tabRows}</div>
-                </div>
+    function drawRadar(bot) {
+      const canvas = document.getElementById(`radar_${bot.id}`);
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      const w = canvas.width;
+      const h = canvas.height;
 
-                <!-- 3. SKOR TABLOSU -->
-                <div class="card-box p-3 bg-[#0c101c] space-y-1">
-                    <div class="text-center font-bold text-xs text-amber-400 border-b border-slate-800 pb-1.5 mb-1">
-                        📊 ${b.scoreboard?.title || 'SKOR TABLOSU'}
-                    </div>
-                    <div class="space-y-0.5">${sbRows}</div>
-                    <div class="text-[10px] text-slate-400 pt-2 border-t border-slate-800/60 font-mono text-center">
-                        ${b.config?.host || 'OYNA.SUNUCU.COM'}
-                    </div>
-                </div>
+      ctx.clearRect(0, 0, w, h);
 
-                <!-- CANLI TERMINAL & KOMUT -->
-                <div class="card-box p-2 bg-black/60 space-y-1">
-                    <div id="terminal_${b.id}" class="h-28 overflow-y-auto font-mono text-[10px] space-y-0.5 p-1">
-                        ${logsHtml || '<div class="text-slate-600">Terminal hazır...</div>'}
-                    </div>
-                    <div class="flex gap-1 pt-1">
-                        <input type="text" id="cmd_${b.id}" placeholder="/komut yazın (örn: /gir asmp)..." onkeypress="if(event.key==='Enter') sendCmd('${b.id}')" class="flex-1 bg-slate-900 border border-slate-800 rounded px-2 py-1.5 text-[11px] text-white font-mono outline-none">
-                        <button onclick="sendCmd('${b.id}')" class="bg-blue-600 px-3 py-1.5 rounded text-[11px] font-bold text-white">Gönder</button>
-                    </div>
-                </div>
-            </div>`;
+      ctx.strokeStyle = 'rgba(103, 232, 249, 0.15)';
+      ctx.lineWidth = 1;
+      for (let i = 1; i <= 4; i++) {
+        ctx.beginPath();
+        ctx.arc(w / 2, h / 2, i * 25, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+
+      ctx.beginPath();
+      ctx.moveTo(w / 2, 0);
+      ctx.lineTo(w / 2, h);
+      ctx.moveTo(0, h / 2);
+      ctx.lineTo(w, h / 2);
+      ctx.stroke();
+
+      ctx.fillStyle = '#34d399';
+      ctx.beginPath();
+      ctx.arc(w / 2, h / 2, 5, 0, Math.PI * 2);
+      ctx.fill();
+
+      (bot.radarEntities || []).forEach(e => {
+        const x = w / 2 + e.x * 2.5;
+        const z = h / 2 + e.z * 2.5;
+        if (x > 0 && x < w && z > 0 && z < h) {
+          ctx.fillStyle = '#ef4444';
+          ctx.beginPath();
+          ctx.arc(x, z, 3, 0, Math.PI * 2);
+          ctx.fill();
         }
+      });
+    }
 
-        function drawRadar(bot) {
-            const canvas = document.getElementById(`radar_${bot.id}`);
-            if (!canvas) return;
-            const ctx = canvas.getContext('2d');
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-            ctx.fillStyle = '#10b981';
-            ctx.beginPath(); ctx.arc(canvas.width / 2, canvas.height / 2, 5, 0, Math.PI * 2); ctx.fill();
-
-            (bot.radarEntities || []).forEach(e => {
-                const rx = (canvas.width / 2) + (e.x * 1.5);
-                const rz = (canvas.height / 2) + (e.z * 1.5);
-                if (rx >= 0 && rx <= canvas.width && rz >= 0 && rz <= canvas.height) {
-                    ctx.fillStyle = '#ef4444';
-                    ctx.beginPath(); ctx.arc(rx, rz, 3, 0, Math.PI * 2); ctx.fill();
-                }
-            });
+    function toggleAFK(botId) {
+      const bot = bots.find(b => b.id === botId);
+      if (!bot) return;
+      socket.emit('set-afk-mode', {
+        botId,
+        afkSettings: {
+          enabled: !bot.afkMode?.enabled,
+          rotationEnabled: !!bot.afkMode?.rotationEnabled,
+          jumpEnabled: !!bot.afkMode?.jumpEnabled,
+          messageInterval: Number(bot.afkMode?.messageInterval) || 0
         }
+      });
+    }
 
-        function openAddModal() { document.getElementById('addModal').classList.remove('hidden'); }
-        function closeAddModal() { document.getElementById('addModal').classList.add('hidden'); }
-        
-        function addBotConfirm() {
-            const username = document.getElementById('inpUser').value.trim();
-            const host = document.getElementById('inpHost').value.trim();
-            const port = document.getElementById('inpPort').value.trim();
-            const version = document.getElementById('inpVersion').value.trim();
-            const password = document.getElementById('inpPass').value.trim();
-            
-            socket.emit('add-bot', { username, host, port, version, password });
-            closeAddModal();
+    function updateAFK(botId, key, value) {
+      const bot = bots.find(b => b.id === botId);
+      if (!bot) return;
+      socket.emit('set-afk-mode', {
+        botId,
+        afkSettings: {
+          enabled: !!bot.afkMode?.enabled,
+          rotationEnabled: !!bot.afkMode?.rotationEnabled,
+          jumpEnabled: !!bot.afkMode?.jumpEnabled,
+          messageInterval: Number(bot.afkMode?.messageInterval) || 0,
+          [key]: value
         }
+      });
+    }
 
-        function sendCmd(botId) {
-            const inp = document.getElementById(`cmd_${botId}`);
-            if (inp && inp.value.trim()) {
-                socket.emit('bot-command', { botId, command: inp.value.trim() });
-                inp.value = '';
-            }
-        }
-    </script>
+    function openAddModal() {
+      document.getElementById('addModal').classList.add('open');
+    }
+
+    function closeAddModal() {
+      document.getElementById('addModal').classList.remove('open');
+    }
+
+    function addBotConfirm() {
+      const username = document.getElementById('inpUser').value.trim();
+      const host = document.getElementById('inpHost').value.trim();
+      const port = document.getElementById('inpPort').value.trim();
+      const version = document.getElementById('inpVersion').value.trim();
+      const password = document.getElementById('inpPass').value.trim();
+
+      socket.emit('add-bot', {
+        username,
+        host,
+        port,
+        version,
+        password,
+        afkMode: { enabled: false, rotationEnabled: true, jumpEnabled: false, messageInterval: 0 }
+      });
+      closeAddModal();
+    }
+
+    function sendCmd(botId) {
+      const input = document.getElementById(`cmd_${botId}`);
+      if (!input?.value.trim()) return;
+      socket.emit('bot-command', { botId, command: input.value.trim() });
+      input.value = '';
+    }
+  </script>
 </body>
 </html>

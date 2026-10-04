@@ -8,10 +8,9 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
-const PORT = process.env.PORT || 10000;
-
 app.use(express.static(path.join(__dirname, 'public')));
 
+// GENEL SUNUCU VE BOT YAPILANDIRMASI
 let globalConfig = {
     host: 'play.donutsmp.net',
     port: 25565,
@@ -19,237 +18,207 @@ let globalConfig = {
     autoSubServerCmd: '/gir asmp'
 };
 
-let bots = [];
+let bots = {}; // { botId: { client, data, logs: [] } }
 
-function getSanitizedBotList() {
-    return bots.map(b => {
-        const { client, timeouts, afkInterval, ...cleanBot } = b;
-        return cleanBot;
-    });
-}
-
-function addLog(bot, text, type = 'chat') {
-    if (!text || typeof text !== 'string') return;
-    const timestamp = new Date().toLocaleTimeString('tr-TR');
-    const logEntry = { botId: bot.id, text, type, timestamp };
-    bot.logs.push(logEntry);
-    if (bot.logs.length > 150) bot.logs.shift();
-    io.emit('bot-log', logEntry);
-}
-
-function clearBotTimeouts(bot) {
-    if (bot.timeouts) {
-        bot.timeouts.forEach(t => clearTimeout(t));
-        bot.timeouts = [];
-    }
-    if (bot.afkInterval) {
-        clearInterval(bot.afkInterval);
-        bot.afkInterval = null;
-    }
-}
-
-function parseChatMessage(packetData) {
-    try {
-        if (!packetData) return '';
-        if (typeof packetData === 'string') return packetData;
-        
-        let parsed = packetData;
-        if (typeof packetData === 'object') {
-            if (packetData.jsonText) parsed = JSON.parse(packetData.jsonText);
-            else if (packetData.translate) return packetData.translate;
-        }
-
-        let fullText = '';
-        if (parsed.text) fullText += parsed.text;
-        if (parsed.extra && Array.isArray(parsed.extra)) {
-            parsed.extra.forEach(item => {
-                if (typeof item === 'string') fullText += item;
-                else if (item && item.text) fullText += item.text;
-            });
-        }
-        if (!fullText && parsed.translate) fullText = parsed.translate;
-        
-        return fullText.replace(/§[0-9a-fk-or]/gi, '').trim();
-    } catch (e) {
-        return String(packetData);
-    }
-}
-
-function startBot(bot) {
-    stopBot(bot);
-
-    bot.status = 'Connecting';
-    io.emit('status-update', { botId: bot.id, status: bot.status });
-    addLog(bot, 'Sunucuya bağlanılıyor...', 'system');
-
-    const targetHost = bot.host || globalConfig.host;
-    const targetPort = Number(bot.port || globalConfig.port || 25565);
-    const targetVersion = bot.version || globalConfig.version || '1.20.4';
-
-    try {
-        bot.client = mc.createClient({
-            host: targetHost,
-            port: targetPort,
-            username: bot.username,
-            version: targetVersion,
-            auth: 'offline',
-            checkTimeoutInterval: 30000,
-            hideErrors: true
-        });
-    } catch (err) {
-        bot.status = 'Offline';
-        io.emit('status-update', { botId: bot.id, status: bot.status });
-        addLog(bot, `Bağlantı Başarısız: ${err.message}`, 'error');
-        return;
-    }
-
-    const client = bot.client;
-
-    client.on('login', () => {
-        bot.status = 'Online';
-        io.emit('status-update', { botId: bot.id, status: bot.status });
-        addLog(bot, `Sunucuya katıldı! (Sürüm: ${targetVersion})`, 'system');
-
-        const subCmd = bot.autoSubServerCmd || globalConfig.autoSubServerCmd;
-        if (subCmd) {
-            const t1 = setTimeout(() => {
-                if (bot.status === 'Online' && client.state === mc.states.PLAY) {
-                    client.write('chat', { message: subCmd });
-                    addLog(bot, `Komut çalıştırıldı: ${subCmd}`, 'system');
-                }
-            }, 3500);
-            bot.timeouts.push(t1);
-        }
-
-        if (bot.antiAfk) {
-            bot.afkInterval = setInterval(() => {
-                if (bot.status === 'Online' && client.state === mc.states.PLAY) {
-                    try {
-                        client.write('arm_animation', { hand: 0 });
-                    } catch (e) {}
-                }
-            }, 15000);
-        }
-    });
-
-    client.on('update_health', (packet) => {
-        bot.health = Math.round(packet.health);
-        bot.food = Math.round(packet.food);
-        io.emit('status-update', { botId: bot.id, status: bot.status, health: bot.health, food: bot.food });
-    });
-
-    client.on('position', (packet) => {
-        bot.pos = { x: Math.round(packet.x), y: Math.round(packet.y), z: Math.round(packet.z) };
-        io.emit('bot-map-update', { botId: bot.id, pos: bot.pos, nearbyPlayers: [] });
-    });
-
-    client.on('chat', (packet) => {
-        const text = parseChatMessage(packet.message);
-        if (text) addLog(bot, text, 'chat');
-    });
-
-    client.on('systemChat', (packet) => {
-        const text = parseChatMessage(packet.content);
-        if (text) addLog(bot, text, 'chat');
-    });
-
-    client.on('player_info', (packet) => {
-        if (!packet.data) return;
-        if (!bot.tabPlayers) bot.tabPlayers = new Map();
-
-        if (packet.action === 0) { // ADD_PLAYER
-            packet.data.forEach(p => {
-                if (p.name) bot.tabPlayers.set(p.uuid, { name: p.name, ping: p.ping || 0 });
-            });
-        } else if (packet.action === 4) { // REMOVE_PLAYER
-            packet.data.forEach(p => bot.tabPlayers.delete(p.uuid));
-        }
-
-        const players = Array.from(bot.tabPlayers.values()).slice(0, 30);
-        io.emit('bot-tablist', { botId: bot.id, players });
-    });
-
-    client.on('end', (reason) => {
-        clearBotTimeouts(bot);
-        bot.status = 'Offline';
-        io.emit('status-update', { botId: bot.id, status: bot.status });
-        addLog(bot, `Bağlantı koptu (${reason || 'Sunucu Kapattı'})`, 'error');
-
-        if (bot.autoReconnect) {
-            addLog(bot, '5 saniye içinde otomatik tekrar bağlanılacak...', 'system');
-            setTimeout(() => {
-                if (bot.status === 'Offline') startBot(bot);
-            }, 5000);
-        }
-    });
-
-    client.on('error', (err) => {
-        clearBotTimeouts(bot);
-        addLog(bot, `Hata: ${err.message}`, 'error');
-    });
-}
-
-function stopBot(bot) {
-    clearBotTimeouts(bot);
-    if (bot.client) {
-        try { bot.client.end(); } catch (e) {}
-        bot.client = null;
-    }
-    bot.status = 'Offline';
-    io.emit('status-update', { botId: bot.id, status: bot.status });
-}
-
+// SOCKET.IO BAĞLANTILARI
 io.on('connection', (socket) => {
-    socket.emit('init-data', { globalConfig, botList: getSanitizedBotList() });
+    // İlk bağlantıda mevcut verileri gönder
+    const botList = Object.keys(bots).map(id => ({
+        id: id,
+        username: bots[id].data.username,
+        status: bots[id].data.status,
+        health: bots[id].data.health,
+        food: bots[id].data.food,
+        autoReconnect: bots[id].data.autoReconnect,
+        antiAfk: bots[id].data.antiAfk,
+        logs: bots[id].logs
+    }));
 
+    socket.emit('init-data', { globalConfig, botList });
+
+    // YENİ BOT EKLEME
     socket.on('add-bot', ({ username }) => {
-        const newBot = {
-            id: 'bot_' + Date.now(),
-            username: username || `Bot_${bots.length + 1}`,
-            status: 'Offline',
-            health: 20,
-            food: 20,
-            pos: { x: 0, y: 64, z: 0 },
-            autoReconnect: false,
-            antiAfk: false,
-            logs: [],
-            timeouts: [],
-            client: null
+        if (!username) return;
+        const id = 'bot_' + Date.now();
+        bots[id] = {
+            data: {
+                id,
+                username,
+                status: 'Offline',
+                health: 20,
+                food: 20,
+                autoReconnect: false,
+                antiAfk: false
+            },
+            client: null,
+            logs: []
         };
-        bots.push(newBot);
-        const { client, timeouts, ...cleanBot } = newBot;
-        io.emit('bot-added', cleanBot);
+
+        io.emit('bot-added', bots[id].data);
+        addLog(id, 'system', `${username} sisteme eklendi.`);
     });
 
-    socket.on('start-bot', (id) => { const b = bots.find(x => x.id === id); if (b) startBot(b); });
-    socket.on('stop-bot', (id) => { const b = bots.find(x => x.id === id); if (b) stopBot(b); });
-    socket.on('start-all', () => bots.forEach(b => startBot(b)));
-    socket.on('stop-all', () => bots.forEach(b => stopBot(b)));
+    // BOT BAŞLATMA
+    socket.on('start-bot', (botId) => {
+        startBot(botId);
+    });
 
-    socket.on('update-bot-config', ({ botId, config }) => {
-        const bot = bots.find(b => b.id === botId);
-        if (bot) {
-            Object.assign(bot, config);
-            const { client, timeouts, ...cleanBot } = bot;
-            io.emit('bot-updated', { botId, config: cleanBot });
+    // BOT DURDURMA
+    socket.on('stop-bot', (botId) => {
+        stopBot(botId);
+    });
+
+    // TÜM BOTLARI BAŞLATMA
+    socket.on('start-all', () => {
+        Object.keys(bots).forEach(id => startBot(id));
+    });
+
+    // TÜM BOTLARI DURDURMA
+    socket.on('stop-all', () => {
+        Object.keys(bots).forEach(id => stopBot(id));
+    });
+
+    // KOMUT GÖNDERME (Sadece Seçili Bota)
+    socket.on('send-command', ({ targetBotId, command }) => {
+        if (targetBotId && bots[targetBotId] && bots[targetBotId].client) {
+            bots[targetBotId].client.write('chat', { message: command });
+            addLog(targetBotId, 'chat', `> ${command}`);
         }
     });
 
-    socket.on('update-config', (config) => {
-        globalConfig = { ...globalConfig, ...config };
-        io.emit('config-updated', globalConfig);
+    // BOT ÖZEL AYAR GÜNCELLEME (Oto Rejoin / Anti-AFK)
+    socket.on('update-bot-config', ({ botId, config }) => {
+        if (bots[botId]) {
+            Object.assign(bots[botId].data, config);
+            addLog(botId, 'system', `Ayarlar güncellendi: ${JSON.stringify(config)}`);
+        }
     });
 
-    socket.on('send-command', ({ targetBotId, command }) => {
-        if (!command) return;
-        const targetBots = targetBotId === 'all' ? bots : bots.filter(b => b.id === targetBotId);
-        targetBots.forEach(bot => {
-            if (bot.client && bot.status === 'Online') {
-                try { bot.client.write('chat', { message: command }); } catch (e) {}
-                addLog(bot, `> ${command}`, 'system');
-            }
-        });
+    // GENEL SUNUCU AYARLARINI GÜNCELLEME
+    socket.on('update-config', (newConfig) => {
+        globalConfig = { ...globalConfig, ...newConfig };
+        io.emit('init-data', { globalConfig, botList: Object.values(bots).map(b => b.data) });
     });
 });
 
-server.listen(PORT, () => console.log(`[MC-Panel] Sunucu http://localhost:${PORT} üzerinde aktif!`));
+// BOT OLUŞTURMA VE BAĞLANMA MANTIĞI
+function startBot(botId) {
+    const bot = bots[botId];
+    if (!bot || bot.data.status === 'Online' || bot.data.status === 'Connecting') return;
+
+    updateBotStatus(botId, 'Connecting');
+    addLog(botId, 'system', `${globalConfig.host} adresine bağlanılıyor...`);
+
+    try {
+        const client = mc.createClient({
+            host: globalConfig.host,
+            port: globalConfig.port,
+            username: bot.data.username,
+            version: globalConfig.version,
+            auth: 'offline'
+        });
+
+        bot.client = client;
+
+        client.on('success', () => {
+            updateBotStatus(botId, 'Online');
+            addLog(botId, 'system', `Sunucuya başarıyla giriş yapıldı!`);
+
+            // Oto-Lobi / Aktarma komutu varsa çalıştır
+            if (globalConfig.autoSubServerCmd) {
+                setTimeout(() => {
+                    if (bot.client) {
+                        bot.client.write('chat', { message: globalConfig.autoSubServerCmd });
+                        addLog(botId, 'system', `Aktarma komutu gönderildi: ${globalConfig.autoSubServerCmd}`);
+                    }
+                }, 3000);
+            }
+        });
+
+        // Sohbet / Mesaj Takibi
+        client.on('chat', (packet) => {
+            try {
+                const msg = JSON.parse(packet.message);
+                const text = msg.text || (msg.extra ? msg.extra.map(e => e.text).join('') : '');
+                if (text.trim()) addLog(botId, 'chat', text);
+            } catch (e) {
+                if (packet.message) addLog(botId, 'chat', packet.message);
+            }
+        });
+
+        // Can ve Açlık Takibi
+        client.on('update_health', (packet) => {
+            bot.data.health = Math.round(packet.health);
+            bot.data.food = Math.round(packet.food);
+            io.emit('status-update', {
+                botId,
+                status: bot.data.status,
+                health: bot.data.health,
+                food: bot.data.food
+            });
+        });
+
+        // Konum Takibi (Radar İçin)
+        client.on('position', (packet) => {
+            io.emit('bot-map-update', {
+                botId,
+                pos: { x: Math.round(packet.x), y: Math.round(packet.y), z: Math.round(packet.z) }
+            });
+        });
+
+        // Bağlantı Kopma Durumu
+        client.on('end', (reason) => {
+            updateBotStatus(botId, 'Offline');
+            addLog(botId, 'error', `Bağlantı kesildi: ${reason}`);
+            bot.client = null;
+
+            if (bot.data.autoReconnect) {
+                addLog(botId, 'system', '5 saniye sonra tekrar bağlanılıyor...');
+                setTimeout(() => startBot(botId), 5000);
+            }
+        });
+
+        client.on('error', (err) => {
+            addLog(botId, 'error', `Hata: ${err.message}`);
+        });
+
+    } catch (err) {
+        updateBotStatus(botId, 'Offline');
+        addLog(botId, 'error', `Başlatma hatası: ${err.message}`);
+    }
+}
+
+function stopBot(botId) {
+    const bot = bots[botId];
+    if (bot && bot.client) {
+        bot.client.end('Kullanıcı tarafından durduruldu');
+        bot.client = null;
+        updateBotStatus(botId, 'Offline');
+        addLog(botId, 'system', 'Bot durduruldu.');
+    }
+}
+
+function updateBotStatus(botId, status) {
+    if (bots[botId]) {
+        bots[botId].data.status = status;
+        io.emit('status-update', { botId, status });
+    }
+}
+
+function addLog(botId, type, text) {
+    if (!bots[botId]) return;
+    const log = {
+        botId,
+        type,
+        text,
+        timestamp: new Date().toLocaleTimeString('tr-TR', { hour12: false })
+    };
+    bots[botId].logs.push(log);
+    if (bots[botId].logs.length > 100) bots[botId].logs.shift(); // Son 100 logu tut
+    io.emit('bot-log', log);
+}
+
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => {
+    console.log(`[MC-PRO-DASHBOARD] Sunucu ${PORT} portunda aktif!`);
+});

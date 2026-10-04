@@ -8,9 +8,9 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 10000;
 
-// STATİK DOSYA SUNUCUSU
+// STATİK DOSYALAR
 app.use(express.static(path.join(__dirname, 'public')));
 
 // GENEL YAPILANDIRMA
@@ -37,13 +37,11 @@ let bots = [
         pos: { x: 0, y: 64, z: 0 },
         logs: [],
         tabList: [],
-        nearbyPlayers: [],
         scoreboard: { title: '', lines: [] },
         client: null
     }
 ];
 
-// CLIENT NESNESİNİ SOCKET YAYINLARINDAN TEMİZLEME
 function getSanitizedBotList() {
     return bots.map(b => {
         const { client, ...cleanBot } = b;
@@ -51,7 +49,6 @@ function getSanitizedBotList() {
     });
 }
 
-// LOG EKLEME VE ÖN YÜZE BİLDİRME
 function addLog(bot, text, type = 'info') {
     if (!text || typeof text !== 'string') return;
     const timestamp = new Date().toLocaleTimeString('tr-TR');
@@ -61,11 +58,9 @@ function addLog(bot, text, type = 'info') {
     io.emit('bot-log', logEntry);
 }
 
-// GÜVENLİ SOHBET / KOMUT GÖNDERME
 function sendChat(client, message) {
     if (!client || client.state !== mc.states.PLAY) return;
     try {
-        // node-minecraft-protocol'un dahili chat fonksiyonu (tüm sürümlerle uyumlu)
         if (typeof client.chat === 'function') {
             client.chat(message);
         } else {
@@ -76,7 +71,6 @@ function sendChat(client, message) {
     }
 }
 
-// CHAT PAKETLERİNİ METNE DÖNÜŞTÜRME
 function parseChatMessage(packetData) {
     try {
         if (!packetData) return '';
@@ -97,14 +91,12 @@ function parseChatMessage(packetData) {
         }
         if (!fullText && parsed.translate) fullText = parsed.translate;
         
-        // Renk kodlarını temizle (§a, §c vb.)
         return fullText.replace(/§[0-9a-fk-or]/gi, '').trim();
     } catch (e) {
         return '';
     }
 }
 
-// BOT BAŞLATMA
 function startBot(bot) {
     if (bot.client) {
         try { bot.client.end(); } catch (e) {}
@@ -127,7 +119,8 @@ function startBot(bot) {
             username: bot.username,
             version: targetVersion || undefined,
             auth: 'offline',
-            checkTimeoutInterval: 30000
+            checkTimeoutInterval: 30000,
+            hideErrors: true
         });
     } catch (err) {
         bot.status = 'Offline';
@@ -140,14 +133,12 @@ function startBot(bot) {
     let playersMap = new Map();
     let sbData = { title: 'Scoreboard', linesMap: new Map() };
 
-    // SUNUCUYA KATILIM BAŞARILI
     client.on('login', () => {
         bot.status = 'Online';
         bot.onlineSince = Date.now();
         io.emit('status-update', { botId: bot.id, status: bot.status, onlineSince: bot.onlineSince });
         addLog(bot, 'Sunucuya başarıyla katıldı!', 'success');
 
-        // Otomatik Şifre Girişi
         const password = bot.autoPassword !== undefined && bot.autoPassword !== '' ? bot.autoPassword : globalConfig.autoPassword;
         if (password) {
             setTimeout(() => {
@@ -157,7 +148,6 @@ function startBot(bot) {
             }, 2000);
         }
 
-        // Otomatik Alt Sunucu Girişi (/gir)
         const subCmd = bot.autoSubServerCmd !== undefined && bot.autoSubServerCmd !== '' ? bot.autoSubServerCmd : globalConfig.autoSubServerCmd;
         if (subCmd) {
             setTimeout(() => {
@@ -167,7 +157,6 @@ function startBot(bot) {
         }
     });
 
-    // POZİSYON GÜNCELLEMESİ VE RADAR
     client.on('position', (packet) => {
         bot.pos = { x: Math.round(packet.x), y: Math.round(packet.y), z: Math.round(packet.z) };
         io.emit('bot-map-update', {
@@ -177,7 +166,6 @@ function startBot(bot) {
         });
     });
 
-    // CHAT VE SISTEM MESAJLARI (TÜM SÜRÜMLERLE UYUMLU)
     client.on('chat', (packet) => {
         const text = parseChatMessage(packet.message);
         if (text) addLog(bot, text, 'info');
@@ -193,7 +181,6 @@ function startBot(bot) {
         if (text) addLog(bot, text, 'info');
     });
 
-    // TABLIST (1.19 ve 1.20+ UYUMLU)
     const handlePlayerInfo = (uuid, name, ping) => {
         if (!name) return;
         playersMap.set(uuid, {
@@ -208,9 +195,9 @@ function startBot(bot) {
 
     client.on('player_info', (packet) => {
         try {
-            if (packet.action === 0) { // Add
+            if (packet.action === 0) {
                 packet.data.forEach(p => handlePlayerInfo(p.uuid, p.name, p.ping));
-            } else if (packet.action === 4) { // Remove
+            } else if (packet.action === 4) {
                 packet.data.forEach(p => playersMap.delete(p.uuid));
             }
         } catch (e) {}
@@ -228,7 +215,6 @@ function startBot(bot) {
         } catch (e) {}
     });
 
-    // SCOREBOARD YÖNETİMİ
     client.on('scoreboard_objective', (packet) => {
         try {
             if (packet.action === 0 || packet.action === 2) {
@@ -253,7 +239,6 @@ function startBot(bot) {
         } catch (e) {}
     });
 
-    // KOPMA VE HATA YÖNETİMİ
     client.on('kick_disconnect', (packet) => {
         const reason = parseChatMessage(packet.reason);
         addLog(bot, `Sunucudan atıldı: ${reason}`, 'error');
@@ -277,7 +262,6 @@ function startBot(bot) {
     });
 }
 
-// BOT DURDURMA
 function stopBot(bot) {
     if (bot.client) {
         try { bot.client.end(); } catch (e) {}
@@ -289,7 +273,6 @@ function stopBot(bot) {
     addLog(bot, 'Bot durduruldu.', 'warn');
 }
 
-// SOCKET.IO EVENT LİSTENER'LARI
 io.on('connection', (socket) => {
     socket.emit('init-data', {
         globalConfig,
@@ -310,7 +293,6 @@ io.on('connection', (socket) => {
             pos: { x: 0, y: 64, z: 0 },
             logs: [],
             tabList: [],
-            nearbyPlayers: [],
             scoreboard: { title: '', lines: [] },
             client: null
         };
@@ -366,7 +348,7 @@ io.on('connection', (socket) => {
             bots.forEach(bot => {
                 if (bot.client && bot.status === 'Online') {
                     sendChat(bot.client, command);
-                    addLog(bot, `[Komut]: ${command}`, 'info');
+                    addLog(bot, `[Toplu]: ${command}`, 'info');
                 }
             });
         } else {
@@ -380,5 +362,5 @@ io.on('connection', (socket) => {
 });
 
 server.listen(PORT, () => {
-    console.log(`[MC-Panel] Sunucu http://localhost:${PORT} adresinde başlatıldı!`);
+    console.log(`[MC-Panel] Sunucu http://localhost:${PORT} adresinde aktif!`);
 });

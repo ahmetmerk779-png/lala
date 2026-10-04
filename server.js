@@ -17,6 +17,8 @@ process.on('uncaughtException', (err) => console.error('[Hata Engellendi]:', err
 process.on('unhandledRejection', (reason) => console.error('[Söz Rejeksiyonu Engellendi]:', reason));
 
 const DATA_FILE = path.join(__dirname, 'bots.json');
+console.log('📁 Kayıt dosyasının tam yolu:', DATA_FILE);
+
 const botPool = new Map();
 
 let globalConfig = {
@@ -94,22 +96,34 @@ function parseMcText(text) {
     return str.replace(/§[0-9a-fk-or]/gi, '').replace(/&[0-9a-fk-or]/gi, '').trim();
 }
 
+function initDefaultBots() {
+    botPool.clear();
+    defaultBotConfigs.forEach(cfg => {
+        botPool.set(cfg.id, { 
+            ...cfg, status: 'Offline', onlineSince: null, client: null, logs: [], inventory: {}, 
+            scoreboard: null, isManualStop: false, pos: { x: 0, y: 0, z: 0 }, tabList: {}, entities: {} 
+        });
+    });
+    saveDataToFile();
+}
+
 function loadSavedData() {
     if (!fs.existsSync(DATA_FILE)) {
-        console.log('[Bilgi] bots.json bulunamadı, varsayılan botlar yükleniyor ve dosya oluşturuluyor...');
-        defaultBotConfigs.forEach(cfg => {
-            botPool.set(cfg.id, { 
-                ...cfg, status: 'Offline', onlineSince: null, client: null, logs: [], inventory: {}, 
-                scoreboard: null, isManualStop: false, pos: { x: 0, y: 0, z: 0 }, tabList: {}, entities: {} 
-            });
-        });
-        saveDataToFile();
+        console.log('[Bilgi] bots.json bulunamadı, varsayılan botlar yükleniyor...');
+        initDefaultBots();
         return;
     }
     try {
-        const rawData = fs.readFileSync(DATA_FILE, 'utf8');
+        const rawData = fs.readFileSync(DATA_FILE, 'utf8').trim();
+        if (!rawData) {
+            console.log('[Bilgi] bots.json dosyası boş, varsayılan botlar yükleniyor...');
+            initDefaultBots();
+            return;
+        }
+
         const parsed = JSON.parse(rawData);
         if (parsed.globalConfig) globalConfig = { ...globalConfig, ...parsed.globalConfig };
+        
         if (Array.isArray(parsed.bots) && parsed.bots.length > 0) {
             botPool.clear();
             parsed.bots.forEach(b => {
@@ -119,9 +133,12 @@ function loadSavedData() {
                 });
             });
             console.log(`[Başarılı] bots.json dosyasından ${parsed.bots.length} bot yüklendi.`);
+        } else {
+            console.log('[Bilgi] bots.json içinde kayıtlı bot bulunamadı.');
         }
     } catch (err) {
-        console.error('[Hafıza Okuma Hatası - Detay]:', err);
+        console.error('[Hafıza Okuma Hatası - Dosya bozuk/geçersiz, sıfırlanıyor]:', err.message);
+        initDefaultBots();
     }
 }
 
@@ -134,9 +151,9 @@ function saveDataToFile() {
         }));
         const fileContent = JSON.stringify({ globalConfig, bots: botList }, null, 2);
         fs.writeFileSync(DATA_FILE, fileContent, 'utf8');
-        console.log('[Kayıt Başarılı] Botlar başarıyla bots.json dosyasına yazıldı.');
+        console.log('[Kayıt Başarılı] bots.json güncellendi. Toplam bot sayısı:', botList.length);
     } catch (err) {
-        console.error('[Hafıza Kayıt Hatası - Detay]:', err);
+        console.error('[KRİTİK DOSYA YAZMA HATASI]:', err);
     }
 }
 
@@ -411,7 +428,7 @@ function setupCustomPacketHandler(client, botId) {
             case 'set_slot':
                 if (data.windowId === 0) {
                     const item = data.item;
-                    if (!item || item.present === false || item.itemId !== undefined || item.itemId !== -1) {
+                    if (!item || item.present === false || item.itemId === undefined || item.itemId === -1) {
                         delete botData.inventory[data.slot];
                     } else {
                         const details = getItemDetails(botData.version || globalConfig.version, item.itemId);
@@ -843,6 +860,8 @@ io.on('connection', (socket) => {
     socket.on('add-bot', (data) => {
         const username = typeof data === 'string' ? data : data.username;
         if (!username) return;
+        
+        console.log('[Socket] Bot ekleme isteği alındı:', username);
         const id = 'bot_' + Date.now();
         const newBot = {
             id, username,
@@ -856,14 +875,14 @@ io.on('connection', (socket) => {
             client: null, logs: [], inventory: {}, scoreboard: null, tabList: {}, entities: {}, isManualStop: false
         };
         botPool.set(id, newBot);
-        saveDataToFile(); // Dosyaya kaydetme tetikleniyor
+        saveDataToFile();
         io.emit('bot-added', newBot);
     });
 
     socket.on('delete-bot', (botId) => {
         stopBotInstance(botId);
         botPool.delete(botId);
-        saveDataToFile(); // Silme işleminden sonra dosya güncelleniyor
+        saveDataToFile();
         io.emit('bot-deleted', botId);
     });
 

@@ -82,14 +82,13 @@
         </div>
     </section>
 
-    <!-- GENEL AYARLAR MODALI (Şablon) -->
+    <!-- GENEL AYARLAR MODALI -->
     <div id="settingsModal" class="fixed inset-0 bg-darkbg/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
         <div class="bg-cardbg border border-cardborder rounded-2xl p-4 w-full max-w-sm space-y-3 shadow-2xl">
             <div class="flex items-center justify-between pb-2 border-b border-slate-800">
                 <h3 class="font-bold text-white text-xs flex items-center gap-2"><i class="fa-solid fa-sliders text-indigo-400"></i> Genel Şablon Ayarları</h3>
                 <button onclick="closeGlobalSettings()" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark"></i></button>
             </div>
-            <p class="text-[10px] text-slate-400">Bu ayarlar sadece **yeni eklenecek botlar** için varsayılan şablonu belirler.</p>
             <div class="space-y-2.5">
                 <div>
                     <label class="text-slate-400 block mb-1 text-[11px]">Sunucu IP / Host</label>
@@ -150,7 +149,21 @@
                     <input type="text" id="botSubCmd" class="w-full bg-slate-900 border border-slate-800 rounded-xl p-2 text-white font-mono text-xs">
                 </div>
             </div>
-            <button onclick="saveBotSettings()" class="w-full py-2.5 bg-amber-600 hover:bg-amber-500 text-white font-bold rounded-xl shadow transition">Bot Ayarlarını Kaydet</button>
+            <button onclick="saveBotSettings()" class="w-full py-2.5 bg-amber-600 hover:bg-amber-500 text-white font-bold rounded-xl shadow transition">Kaydet</button>
+        </div>
+    </div>
+
+    <!-- BOT TERMINAL / KONSOL MODALI -->
+    <div id="botTerminalModal" class="fixed inset-0 bg-darkbg/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+        <div class="bg-cardbg border border-cardborder rounded-2xl p-4 w-full max-w-lg space-y-3 shadow-2xl flex flex-col h-[450px]">
+            <div class="flex items-center justify-between pb-2 border-b border-slate-800">
+                <h3 class="font-bold text-white text-xs flex items-center gap-2"><i class="fa-solid fa-terminal text-cyan-400"></i> Terminal: <span id="terminalBotName" class="text-cyan-400 font-mono"></span></h3>
+                <button onclick="closeTerminal()" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <!-- Log Akış Ekranı -->
+            <div id="terminalLogs" class="flex-1 bg-slate-950 border border-slate-800/80 rounded-xl p-3 font-mono text-[11px] overflow-y-auto space-y-1.5 select-text">
+                <div class="text-slate-500 italic">Konsol verileri bekleniyor...</div>
+            </div>
         </div>
     </div>
 
@@ -158,11 +171,13 @@
         const socket = io();
         let bots = [];
         let globalSettings = {};
+        let activeTerminalBotId = null;
 
         socket.on('init-data', (data) => {
             bots = data.botList || [];
             globalSettings = data.globalSettings || {};
             updateUI();
+            if (activeTerminalBotId) refreshTerminalLogs();
         });
 
         socket.on('bot-added', (bot) => {
@@ -174,6 +189,17 @@
             const idx = bots.findIndex(b => b.id === updatedBot.id);
             if (idx !== -1) bots[idx] = updatedBot;
             updateUI();
+            if (activeTerminalBotId === updatedBot.id) refreshTerminalLogs();
+        });
+
+        socket.on('bot-log', (data) => {
+            const bot = bots.find(b => b.id === data.botId);
+            if (bot) {
+                if (!bot.logs) bot.logs = [];
+                bot.logs.push({ timestamp: data.timestamp, text: data.text, type: data.type });
+                if (bot.logs.length > 100) bot.logs.shift();
+                if (activeTerminalBotId === data.botId) refreshTerminalLogs();
+            }
         });
 
         function updateUI() {
@@ -195,7 +221,7 @@
                         <div>
                             <div class="font-bold text-white text-xs flex items-center gap-2">
                                 ${b.username}
-                                <span class="text-[9px] px-2 py-0.5 rounded font-bold ${b.status === 'Online' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : b.status === 'Connecting' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' : 'bg-slate-800 text-slate-400'}">${b.status}</span>
+                                <span class="text-[9px] px-2 py-0.5 rounded font-bold ${b.status === 'Online' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : b.status === 'Connecting' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' : b.status === 'Error' ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30' : 'bg-slate-800 text-slate-400'}">${b.status}</span>
                             </div>
                             <div class="text-[10px] text-slate-400 mt-0.5 font-mono">
                                 X:${b.pos?.x || 0} Y:${b.pos?.y || 0} Z:${b.pos?.z || 0}
@@ -203,7 +229,8 @@
                         </div>
                     </div>
                     <div class="flex gap-1.5">
-                        <button onclick="openBotSettings('${b.id}')" class="w-7 h-7 bg-amber-500/10 text-amber-400 border border-amber-500/30 rounded-lg flex items-center justify-center hover:bg-amber-500/20 transition" title="Bot Ayarları"><i class="fa-solid fa-gear text-[10px]"></i></button>
+                        <button onclick="openTerminal('${b.id}')" class="w-7 h-7 bg-cyan-500/10 text-cyan-400 border border-cyan-500/30 rounded-lg flex items-center justify-center hover:bg-cyan-500/20 transition" title="Terminal"><i class="fa-solid fa-terminal text-[10px]"></i></button>
+                        <button onclick="openBotSettings('${b.id}')" class="w-7 h-7 bg-amber-500/10 text-amber-400 border border-amber-500/30 rounded-lg flex items-center justify-center hover:bg-amber-500/20 transition" title="Ayarlar"><i class="fa-solid fa-gear text-[10px]"></i></button>
                         <button onclick="startBot('${b.id}')" class="w-7 h-7 bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 rounded-lg flex items-center justify-center hover:bg-emerald-500/20 transition" title="Başlat"><i class="fa-solid fa-play text-[10px]"></i></button>
                         <button onclick="stopBot('${b.id}')" class="w-7 h-7 bg-rose-500/10 text-rose-400 border border-rose-500/30 rounded-lg flex items-center justify-center hover:bg-rose-500/20 transition" title="Durdur"><i class="fa-solid fa-square text-[10px]"></i></button>
                         <button onclick="deleteBot('${b.id}')" class="w-7 h-7 bg-slate-800 text-slate-400 rounded-lg flex items-center justify-center hover:bg-rose-600 hover:text-white transition" title="Sil"><i class="fa-solid fa-trash text-[10px]"></i></button>
@@ -243,11 +270,7 @@
             document.getElementById('defSubCmd').value = globalSettings.autoSubServerCmd || '';
             document.getElementById('settingsModal').classList.remove('hidden');
         }
-
-        function closeGlobalSettings() {
-            document.getElementById('settingsModal').classList.add('hidden');
-        }
-
+        function closeGlobalSettings() { document.getElementById('settingsModal').classList.add('hidden'); }
         function saveGlobalSettings() {
             const newSettings = {
                 host: document.getElementById('defHost').value.trim(),
@@ -264,7 +287,6 @@
         function openBotSettings(id) {
             const bot = bots.find(b => b.id === id);
             if (!bot) return;
-
             document.getElementById('editBotId').value = bot.id;
             document.getElementById('modalBotName').innerText = bot.username;
             document.getElementById('botHost').value = bot.config?.host || '';
@@ -272,14 +294,9 @@
             document.getElementById('botVersion').value = bot.config?.version || '';
             document.getElementById('botPassword').value = bot.config?.password || '';
             document.getElementById('botSubCmd').value = bot.config?.autoSubServerCmd || '';
-
             document.getElementById('botSettingsModal').classList.remove('hidden');
         }
-
-        function closeBotSettings() {
-            document.getElementById('botSettingsModal').classList.add('hidden');
-        }
-
+        function closeBotSettings() { document.getElementById('botSettingsModal').classList.add('hidden'); }
         function saveBotSettings() {
             const botId = document.getElementById('editBotId').value;
             const config = {
@@ -289,10 +306,37 @@
                 password: document.getElementById('botPassword').value.trim(),
                 autoSubServerCmd: document.getElementById('botSubCmd').value.trim()
             };
-
             socket.emit('update-bot-config', { botId, config });
             closeBotSettings();
-            alert('Bot ayarları başarıyla güncellendi!');
+            alert('Bot ayarları güncellendi!');
+        }
+
+        function openTerminal(id) {
+            const bot = bots.find(b => b.id === id);
+            if (!bot) return;
+            activeTerminalBotId = id;
+            document.getElementById('terminalBotName').innerText = bot.username;
+            refreshTerminalLogs();
+            document.getElementById('botTerminalModal').classList.remove('hidden');
+        }
+        function closeTerminal() {
+            activeTerminalBotId = null;
+            document.getElementById('botTerminalModal').classList.add('hidden');
+        }
+        function refreshTerminalLogs() {
+            const bot = bots.find(b => b.id === activeTerminalBotId);
+            const container = document.getElementById('terminalLogs');
+            if (!bot || !bot.logs || bot.logs.length === 0) {
+                container.innerHTML = `<div class="text-slate-500 italic">Henüz log kaydı yok...</div>`;
+                return;
+            }
+            container.innerHTML = bot.logs.map(l => {
+                let colorClass = 'text-slate-300';
+                if (l.type === 'error') colorClass = 'text-rose-400 font-bold';
+                else if (l.type === 'system') colorClass = 'text-amber-400';
+                return `<div class="${colorClass}"><span class="text-slate-500">[${l.timestamp}]</span> ${l.text}</div>`;
+            }).join('');
+            container.scrollTop = container.scrollHeight;
         }
     </script>
 </body>

@@ -375,12 +375,12 @@ function setupCustomPacketHandler(client, botId) {
                                         windowId: botData.currentWindowId,
                                         stateId: botData.currentStateId,
                                         slot: 12,
-                                        mouseButton: 1,
+                                        mouseButton: 1, // 1 = Sağ tık
                                         mode: 0,
                                         changedSlots: [],
                                         cursorItem: { present: false }
                                     });
-                                    broadcastLog(botId, `🎯 AFK Menüsü Başarıyla Tıklandı! (Slot: 12)`, 'success');
+                                    broadcastLog(botId, `🎯 AFK Menüsü Başarıyla Sağ Tıklandı! (Slot: 12)`, 'success');
                                 } catch (e) {
                                     broadcastLog(botId, `Menü tıklama hatası: ${e.message}`, 'error');
                                     setTimeout(() => triggerAfkWithRetry(), 3000);

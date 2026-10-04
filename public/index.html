@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>MC Bot Kontrol</title>
+    <title>MC Multi-Bot Pro</title>
     <script src="/socket.io/socket.io.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
@@ -14,293 +14,351 @@
         }
     </script>
     <style>
-        ::-webkit-scrollbar { width: 3px; }
+        ::-webkit-scrollbar { width: 3px; height: 3px; }
         ::-webkit-scrollbar-thumb { background: #374151; border-radius: 4px; }
         .log-font { font-family: monospace; font-size: 11px; }
-        .tab-content { display: none; }
-        .tab-content.active { display: flex; flex-direction: column; }
+        .panel-tab { display: none; }
+        .panel-tab.active { display: flex; flex-direction: column; flex: 1; }
     </style>
 </head>
-<body class="bg-darkbg text-slate-200 min-h-screen p-3 text-xs flex flex-col justify-start">
+<body class="bg-darkbg text-slate-200 min-h-screen p-3 text-xs flex flex-col">
 
-    <!-- ÜST BİLGİ VE MENÜ -->
+    <!-- ANA ÜST BAR -->
     <header class="bg-cardbg border border-cardborder rounded-xl p-3 mb-3 flex items-center justify-between shadow-lg">
         <div>
             <h1 class="font-bold text-white text-sm flex items-center gap-2">
-                <i class="fa-solid fa-robot text-indigo-400"></i> PRO Dashboard
+                <i class="fa-solid fa-server text-indigo-400"></i> Bot Yönetim Merkezi
             </h1>
             <div class="text-[10px] text-slate-400 mt-0.5">
-                <span id="serverInfo">play.donutsmp.net</span> • <span id="botCountBadge" class="text-emerald-400 font-bold">0 Bot</span>
+                Toplam Bot: <span id="totalBotCount" class="text-emerald-400 font-bold">0</span>
             </div>
         </div>
-        <div class="flex gap-2">
-            <button onclick="openConfigModal()" class="w-8 h-8 rounded-lg bg-slate-800 text-slate-300 flex items-center justify-center border border-slate-700">
-                <i class="fa-solid fa-gear"></i>
-            </button>
-            <button onclick="addBot()" class="px-3 py-1.5 bg-indigo-600 text-white font-bold rounded-lg flex items-center gap-1">
-                <i class="fa-solid fa-plus"></i> Bot
-            </button>
-        </div>
+        <button onclick="addBotModal()" class="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-lg flex items-center gap-1.5 shadow-md">
+            <i class="fa-solid fa-plus text-xs">⁠</i> Yeni Bot Ekle
+        </button>
     </header>
 
-    <!-- BOT SEÇİMİ VE DURUMU -->
-    <div class="bg-cardbg border border-cardborder rounded-xl p-3 mb-3">
-        <select id="botSelect" onchange="onBotSelectChange(this.value)" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white font-bold text-xs mb-3">
-            <option value="">-- Bot Ekleyin / Seçin --</option>
-        </select>
+    <!-- BOT KARTLARI LİSTESİ -->
+    <main class="space-y-2.5 flex-1" id="botCardList">
+        <div class="text-center text-slate-500 py-10 italic">Henüz bot eklenmedi. Yukarıdan bot ekleyin.</div>
+    </main>
 
-        <div class="flex items-center justify-between bg-slate-900 p-2.5 rounded-lg border border-slate-800">
+    <!-- BOT ÖZEL YÖNETİM PANELİ (MODAL / FULLVIEW) -->
+    <div id="botControlPanel" class="fixed inset-0 bg-darkbg z-50 flex flex-col hidden p-3">
+        <!-- Panel Üst Barı -->
+        <div class="bg-cardbg border border-cardborder rounded-xl p-3 mb-2 flex items-center justify-between">
             <div class="flex items-center gap-2.5">
-                <img id="botAvatar" src="https://minotar.net/helm/Steve/32.png" class="w-8 h-8 rounded border border-slate-700">
+                <img id="panelAvatar" src="https://minotar.net/helm/Steve/32.png" class="w-8 h-8 rounded border border-slate-700">
                 <div>
-                    <div class="font-bold text-white text-xs flex items-center gap-1.5">
-                        <span id="selectedBotName">Bot Yok</span>
-                        <span id="botStatusBadge" class="text-[9px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">OFFLINE</span>
-                    </div>
-                    <div class="text-[10px] text-slate-400 flex gap-3 mt-1">
-                        <span>❤️ <b id="hpText" class="text-rose-400">20</b></span>
-                        <span>🍖 <b id="foodText" class="text-amber-400">20</b></span>
+                    <h2 id="panelBotName" class="font-bold text-white text-sm">Bot Adı</h2>
+                    <div class="text-[10px] text-slate-400 flex gap-2">
+                        <span>❤️ <b id="panelHp">20</b></span>
+                        <span>🍖 <b id="panelFood">20</b></span>
+                        <span id="panelStatus" class="px-1.5 rounded bg-slate-800 text-slate-400">OFFLINE</span>
                     </div>
                 </div>
             </div>
             <div class="flex gap-1.5">
-                <button onclick="startSelectedBot()" class="w-8 h-8 bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 rounded-lg"><i class="fa-solid fa-play"></i></button>
-                <button onclick="stopSelectedBot()" class="w-8 h-8 bg-rose-500/10 text-rose-400 border border-rose-500/30 rounded-lg"><i class="fa-solid fa-square"></i></button>
+                <button onclick="startActiveBot()" class="w-8 h-8 bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 rounded-lg"><i class="fa-solid fa-play"></i></button>
+                <button onclick="stopActiveBot()" class="w-8 h-8 bg-rose-500/10 text-rose-400 border border-rose-500/30 rounded-lg"><i class="fa-solid fa-square"></i></button>
+                <button onclick="closeBotPanel()" class="w-8 h-8 bg-slate-800 text-slate-300 rounded-lg ml-2 border border-slate-700"><i class="fa-solid fa-xmark"></i></button>
             </div>
         </div>
-    </div>
 
-    <!-- SEKMELER (TABS) -->
-    <div class="flex gap-1 mb-2 bg-cardbg p-1 rounded-lg border border-cardborder">
-        <button onclick="switchTab('konsol')" id="tab-btn-konsol" class="flex-1 py-1.5 rounded-md bg-indigo-600 text-white font-bold transition">Konsol</button>
-        <button onclick="switchTab('radar')" id="tab-btn-radar" class="flex-1 py-1.5 rounded-md text-slate-400 hover:text-white transition">Radar</button>
-        <button onclick="switchTab('ozellikler')" id="tab-btn-ozellikler" class="flex-1 py-1.5 rounded-md text-slate-400 hover:text-white transition">Özellikler</button>
-    </div>
-
-    <!-- 1. KONSOL SEKMESİ -->
-    <div id="tab-konsol" class="tab-content active flex-1 bg-cardbg border border-cardborder rounded-xl p-3 min-h-[250px]">
-        <div id="logBox" class="log-font flex-1 bg-slate-950 border border-slate-900 rounded-lg p-2.5 overflow-y-auto space-y-1.5 max-h-[300px]"></div>
-        <div class="mt-2 flex gap-1.5">
-            <input type="text" id="cmdInput" placeholder="Mesaj veya komut..." onkeypress="if(event.key==='Enter') sendCommand()" class="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-white font-mono focus:outline-none focus:border-indigo-500">
-            <button onclick="sendCommand()" class="px-4 bg-indigo-600 text-white rounded-lg"><i class="fa-solid fa-paper-plane"></i></button>
+        <!-- Panel İçi Sekmeler -->
+        <div class="grid grid-cols-6 gap-1 mb-2 bg-cardbg p-1 rounded-lg border border-cardborder text-center text-[10px]">
+            <button onclick="switchPanelTab('konsol')" id="btn-tab-konsol" class="py-2 rounded bg-indigo-600 text-white font-bold">Konsol</button>
+            <button onclick="switchPanelTab('radar')" id="btn-tab-radar" class="py-2 rounded text-slate-400">Radar</button>
+            <button onclick="switchPanelTab('envanter')" id="btn-tab-envanter" class="py-2 rounded text-slate-400">Envanter</button>
+            <button onclick="switchPanelTab('scoreboard')" id="btn-tab-scoreboard" class="py-2 rounded text-slate-400">Skor</button>
+            <button onclick="switchPanelTab('tablist')" id="btn-tab-tablist" class="py-2 rounded text-slate-400">Tab</button>
+            <button onclick="switchPanelTab('ayar')" id="btn-tab-ayar" class="py-2 rounded text-slate-400">Ayarlar</button>
         </div>
-    </div>
 
-    <!-- 2. RADAR SEKMESİ -->
-    <div id="tab-radar" class="tab-content flex-1 bg-cardbg border border-cardborder rounded-xl p-3 min-h-[250px] items-center justify-center relative">
-        <div class="absolute top-3 left-3 flex gap-4 text-xs font-mono font-bold bg-slate-900 p-2 rounded-lg border border-slate-800">
-            <div class="text-rose-400">X: <span id="posX">0</span></div>
-            <div class="text-emerald-400">Y: <span id="posY">0</span></div>
-            <div class="text-blue-400">Z: <span id="posZ">0</span></div>
+        <!-- 1. KONSOL SEKMESİ -->
+        <div id="panel-tab-konsol" class="panel-tab active bg-cardbg border border-cardborder rounded-xl p-3 flex-1 flex flex-col">
+            <div id="panelLogBox" class="log-font flex-1 bg-slate-950 border border-slate-900 rounded-lg p-2.5 overflow-y-auto space-y-1 max-h-[350px]"></div>
+            <div class="mt-2 flex gap-1.5">
+                <input type="text" id="panelCmdInput" placeholder="Komut veya mesaj yazın..." onkeypress="if(event.key==='Enter') sendPanelCommand()" class="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-white font-mono focus:outline-none">
+                <button onclick="sendPanelCommand()" class="px-4 bg-indigo-600 text-white rounded-lg"><i class="fa-solid fa-paper-plane"></i></button>
+            </div>
         </div>
-        
-        <!-- Basit Radar Görseli -->
-        <div class="w-48 h-48 rounded-full border-2 border-emerald-500/30 bg-emerald-950/20 relative mt-8 flex items-center justify-center overflow-hidden">
-            <div class="absolute w-full h-[1px] bg-emerald-500/20"></div>
-            <div class="absolute h-full w-[1px] bg-emerald-500/20"></div>
-            <!-- Botun Merkezdeki Konumu -->
-            <div class="w-3 h-3 bg-emerald-400 rounded-full shadow-[0_0_10px_#34d399] z-10"></div>
-            <!-- Radar Tarama Animasyonu -->
-            <div class="absolute w-24 h-24 border-r-2 border-emerald-500/50 rounded-tl-full origin-bottom-right animate-[spin_2s_linear_infinite] opacity-50 bg-gradient-to-br from-transparent to-emerald-500/20" style="bottom: 50%; right: 50%;"></div>
-        </div>
-        <div class="text-center mt-4 text-[10px] text-slate-500">Radar botun anlık koordinatlarını gösterir.</div>
-    </div>
 
-    <!-- 3. ÖZELLİKLER SEKMESİ -->
-    <div id="tab-ozellikler" class="tab-content flex-1 bg-cardbg border border-cardborder rounded-xl p-3 min-h-[250px]">
-        <h3 class="text-slate-400 font-bold mb-3 border-b border-slate-800 pb-2">Bot Otomasyonları</h3>
-        
-        <div class="space-y-3">
-            <label class="flex items-center justify-between p-3 bg-slate-900 rounded-lg border border-slate-800">
+        <!-- 2. RADAR SEKMESİ -->
+        <div id="panel-tab-radar" class="panel-tab bg-cardbg border border-cardborder rounded-xl p-3 items-center justify-center relative">
+            <div class="absolute top-3 left-3 flex gap-4 text-xs font-mono font-bold bg-slate-900 p-2 rounded-lg border border-slate-800">
+                <div class="text-rose-400">X: <span id="rX">0</span></div>
+                <div class="text-emerald-400">Y: <span id="rY">0</span></div>
+                <div class="text-blue-400">Z: <span id="rZ">0</span></div>
+            </div>
+            <div class="w-48 h-48 rounded-full border-2 border-emerald-500/30 bg-emerald-950/20 relative mt-8 flex items-center justify-center overflow-hidden">
+                <div class="absolute w-full h-[1px] bg-emerald-500/20"></div>
+                <div class="absolute h-full w-[1px] bg-emerald-500/20"></div>
+                <div class="w-3 h-3 bg-emerald-400 rounded-full shadow-[0_0_10px_#34d399] z-10"></div>
+            </div>
+            <div class="text-center mt-4 text-[10px] text-slate-500">Bu botun anlık 3B koordinat radar konumu.</div>
+        </div>
+
+        <!-- 3. ENVANTER SEKMESİ -->
+        <div id="panel-tab-envanter" class="panel-tab bg-cardbg border border-cardborder rounded-xl p-3 overflow-y-auto">
+            <h3 class="font-bold text-white mb-2 pb-1 border-b border-slate-800">Bot Envanteri</h3>
+            <div id="inventoryGrid" class="grid grid-cols-9 gap-1.5">
+                <div class="text-slate-500 text-[10px] col-span-9 text-center py-6">Envanter verisi bekleniyor...</div>
+            </div>
+        </div>
+
+        <!-- 4. SCOREBOARD SEKMESİ -->
+        <div id="panel-tab-scoreboard" class="panel-tab bg-cardbg border border-cardborder rounded-xl p-3 overflow-y-auto">
+            <h3 id="sbTitle" class="font-bold text-indigo-400 mb-2 pb-1 border-b border-slate-800 text-center">Scoreboard</h3>
+            <div id="sbItems" class="space-y-1 font-mono text-[11px]">
+                <div class="text-slate-500 text-center py-6">Skor tablosu yok.</div>
+            </div>
+        </div>
+
+        <!-- 5. TAB LİSTESİ SEKMESİ -->
+        <div id="panel-tab-tablist" class="panel-tab bg-cardbg border border-cardborder rounded-xl p-3 overflow-y-auto">
+            <h3 class="font-bold text-white mb-2 pb-1 border-b border-slate-800">Çevrimiçi Oyuncular (<span id="tabPlayerCount">0</span>)</h3>
+            <div id="tabPlayerList" class="space-y-1 max-h-[320px] overflow-y-auto">
+                <div class="text-slate-500 text-center py-6">Oyuncu listesi yükleniyor...</div>
+            </div>
+        </div>
+
+        <!-- 6. ÖZEL AYARLAR SEKMESİ (BU BOTA ÖZEL) -->
+        <div id="panel-tab-ayar" class="panel-tab bg-cardbg border border-cardborder rounded-xl p-3 overflow-y-auto space-y-3">
+            <h3 class="font-bold text-white mb-2 pb-1 border-b border-slate-800">Bot Yapılandırması</h3>
+            <div>
+                <label class="text-slate-400 block mb-1">Sunucu IP / Host</label>
+                <input type="text" id="cfgHost" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-white font-mono text-xs">
+            </div>
+            <div class="grid grid-cols-2 gap-2">
                 <div>
-                    <div class="text-white font-bold">Oto-Yeniden Bağlanma</div>
-                    <div class="text-[10px] text-slate-400">Bot düşerse 5 saniye sonra tekrar girer.</div>
+                    <label class="text-slate-400 block mb-1">Port</label>
+                    <input type="number" id="cfgPort" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-white font-mono text-xs">
                 </div>
-                <input type="checkbox" id="toggleReconnect" onchange="updateBotSettings()" class="w-5 h-5 accent-indigo-500 rounded">
-            </label>
-
-            <label class="flex items-center justify-between p-3 bg-slate-900 rounded-lg border border-slate-800">
                 <div>
-                    <div class="text-white font-bold">Anti-AFK</div>
-                    <div class="text-[10px] text-slate-400">Bot atılmamak için düzenli hareket eder.</div>
+                    <label class="text-slate-400 block mb-1">Sürüm</label>
+                    <input type="text" id="cfgVersion" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-white font-mono text-xs">
                 </div>
-                <input type="checkbox" id="toggleAntiAfk" onchange="updateBotSettings()" class="w-5 h-5 accent-indigo-500 rounded">
-            </label>
-        </div>
-    </div>
-
-    <!-- AYARLAR MODAL (Aynı Kaldı) -->
-    <div id="configModal" class="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 hidden">
-        <div class="bg-cardbg rounded-xl max-w-sm w-full p-4 border border-slate-700">
-            <h3 class="font-bold text-white mb-3">Sunucu Ayarları</h3>
-            <div class="space-y-2 text-xs">
-                <input type="text" id="globalHost" placeholder="Sunucu IP" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-white font-mono">
-                <div class="flex gap-2">
-                    <input type="number" id="globalPort" placeholder="Port" class="w-1/2 bg-slate-950 border border-slate-800 rounded-lg p-2 text-white font-mono">
-                    <input type="text" id="globalVersion" placeholder="Sürüm (1.20.4)" class="w-1/2 bg-slate-950 border border-slate-800 rounded-lg p-2 text-white font-mono">
-                </div>
-                <input type="text" id="globalSubCmd" placeholder="Oto komut (örn: /gir asmp)" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-white font-mono">
             </div>
-            <div class="flex justify-end gap-2 mt-3">
-                <button onclick="closeConfigModal()" class="px-3 py-1.5 bg-slate-800 text-slate-300 rounded-lg">İptal</button>
-                <button onclick="saveConfig()" class="px-4 py-1.5 bg-indigo-600 text-white rounded-lg">Kaydet</button>
+            <div>
+                <label class="text-slate-400 block mb-1">Oto Giriş / Lobi Komutu</label>
+                <input type="text" id="cfgSubCmd" placeholder="/gir asmp" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-white font-mono text-xs">
             </div>
+            <div class="space-y-2 pt-2 border-t border-slate-800">
+                <label class="flex items-center justify-between p-2.5 bg-slate-900 rounded-lg border border-slate-800">
+                    <span class="text-white">Oto-Yeniden Bağlanma</span>
+                    <input type="checkbox" id="cfgReconnect" class="w-4 h-4 accent-indigo-500">
+                </label>
+                <label class="flex items-center justify-between p-2.5 bg-slate-900 rounded-lg border border-slate-800">
+                    <span class="text-white">Anti-AFK Modu</span>
+                    <input type="checkbox" id="cfgAntiAfk" class="w-4 h-4 accent-indigo-500">
+                </label>
+            </div>
+            <button onclick="saveActiveBotConfig()" class="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-lg mt-3">Ayarları Kaydet</button>
         </div>
     </div>
 
     <script>
         const socket = io();
         let bots = [];
-        let selectedBotId = null;
-
-        // Sekme Değiştirme Mantığı
-        function switchTab(tabId) {
-            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
-            document.getElementById('tab-' + tabId).classList.add('active');
-            
-            document.querySelectorAll('[id^="tab-btn-"]').forEach(btn => {
-                btn.classList.remove('bg-indigo-600', 'text-white');
-                btn.classList.add('text-slate-400');
-            });
-            const activeBtn = document.getElementById('tab-btn-' + tabId);
-            activeBtn.classList.remove('text-slate-400');
-            activeBtn.classList.add('bg-indigo-600', 'text-white');
-        }
+        let activeBotId = null;
 
         socket.on('init-data', (data) => {
             bots = data.botList || [];
-            document.getElementById('globalHost').value = data.globalConfig.host;
-            document.getElementById('globalPort').value = data.globalConfig.port;
-            document.getElementById('globalVersion').value = data.globalConfig.version;
-            document.getElementById('globalSubCmd').value = data.globalConfig.autoSubServerCmd;
-            document.getElementById('serverInfo').innerText = data.globalConfig.host;
-
-            if (bots.length > 0 && !selectedBotId) selectedBotId = bots[0].id;
-            updateUI();
+            document.getElementById('totalBotCount').innerText = bots.length;
+            renderBotList();
+            if (activeBotId) updateActivePanelData();
         });
 
         socket.on('bot-added', (bot) => {
             bots.push(bot);
-            if (!selectedBotId) selectedBotId = bot.id;
-            updateUI();
+            document.getElementById('totalBotCount').innerText = bots.length;
+            renderBotList();
         });
 
-        socket.on('status-update', (data) => {
-            const bot = bots.find(b => b.id === data.botId);
-            if (bot) {
-                Object.assign(bot, data);
-                if (selectedBotId === data.botId) updateSelectedBotCard();
-                updateDropdown();
-            }
-        });
-
-        socket.on('bot-map-update', ({ botId, pos }) => {
-            const bot = bots.find(b => b.id === botId);
-            if (bot) bot.pos = pos;
-            if (selectedBotId === botId) {
-                document.getElementById('posX').innerText = pos.x;
-                document.getElementById('posY').innerText = pos.y;
-                document.getElementById('posZ').innerText = pos.z;
-            }
+        socket.on('bot-updated', (updatedBot) => {
+            const index = bots.findIndex(b => b.id === updatedBot.id);
+            if (index !== -1) bots[index] = updatedBot;
+            renderBotList();
+            if (activeBotId === updatedBot.id) updateActivePanelData();
         });
 
         socket.on('bot-log', (log) => {
-            if (selectedBotId === log.botId) appendLog(log);
+            if (activeBotId === log.botId) appendPanelLog(log);
         });
 
-        function updateUI() {
-            updateDropdown();
-            updateSelectedBotCard();
-        }
-
-        function updateDropdown() {
-            const select = document.getElementById('botSelect');
-            document.getElementById('botCountBadge').innerText = `${bots.length} Bot`;
-            if (bots.length === 0) { select.innerHTML = `<option value="">-- Bot Ekleyin --</option>`; return; }
-            select.innerHTML = bots.map(b => `<option value="${b.id}" ${b.id === selectedBotId ? 'selected' : ''}>${b.username} (${b.status})</option>`).join('');
-        }
-
-        function onBotSelectChange(id) {
-            selectedBotId = id;
-            document.getElementById('logBox').innerHTML = '';
-            const bot = bots.find(b => b.id === id);
-            if (bot && bot.logs) bot.logs.forEach(appendLog);
-            updateSelectedBotCard();
-        }
-
-        function updateSelectedBotCard() {
-            const bot = bots.find(b => b.id === selectedBotId);
-            if (!bot) return;
-
-            document.getElementById('selectedBotName').innerText = bot.username;
-            document.getElementById('botAvatar').src = `https://minotar.net/helm/${bot.username}/32.png`;
-            document.getElementById('hpText').innerText = bot.health ?? 20;
-            document.getElementById('foodText').innerText = bot.food ?? 20;
-            
-            // Koordinatları güncelle
-            if (bot.pos) {
-                document.getElementById('posX').innerText = bot.pos.x;
-                document.getElementById('posY').innerText = bot.pos.y;
-                document.getElementById('posZ').innerText = bot.pos.z;
-            } else {
-                document.getElementById('posX').innerText = 0; document.getElementById('posY').innerText = 0; document.getElementById('posZ').innerText = 0;
+        function renderBotList() {
+            const list = document.getElementById('botCardList');
+            if (bots.length === 0) {
+                list.innerHTML = `<div class="text-center text-slate-500 py-10 italic">Henüz bot eklenmedi. Yukarıdan bot ekleyin.</div>`;
+                return;
             }
 
-            // Ayarlar sekmesindeki tikleri güncelle
-            document.getElementById('toggleReconnect').checked = bot.autoReconnect;
-            document.getElementById('toggleAntiAfk').checked = bot.antiAfk;
-
-            const badge = document.getElementById('botStatusBadge');
-            badge.innerText = bot.status.toUpperCase();
-            if (bot.status === 'Online') badge.className = 'text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400';
-            else if (bot.status === 'Connecting') badge.className = 'text-[9px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400';
-            else badge.className = 'text-[9px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400';
+            list.innerHTML = bots.map(b => `
+                <div onclick="openBotPanel('${b.id}')" class="bg-cardbg border border-cardborder rounded-xl p-3 flex items-center justify-between active:scale-[0.99] transition cursor-pointer">
+                    <div class="flex items-center gap-3">
+                        <img src="https://minotar.net/helm/${b.username}/36.png" class="w-9 h-9 rounded border border-slate-700">
+                        <div>
+                            <div class="font-bold text-white text-sm flex items-center gap-2">
+                                ${b.username}
+                                <span class="text-[9px] px-1.5 py-0.5 rounded ${b.status === 'Online' ? 'bg-emerald-500/20 text-emerald-400' : b.status === 'Connecting' ? 'bg-amber-500/20 text-amber-400' : 'bg-slate-800 text-slate-400'}">${b.status}</span>
+                            </div>
+                            <div class="text-[10px] text-slate-400 mt-0.5">
+                                IP: ${b.config.host} • ❤️ ${b.health ?? 20} • 🍖 ${b.food ?? 20}
+                            </div>
+                        </div>
+                    </div>
+                    <div class="flex gap-1" onclick="event.stopPropagation()">
+                        <button onclick="startBot('${b.id}')" class="w-8 h-8 bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 rounded-lg"><i class="fa-solid fa-play text-xs"></i></button>
+                        <button onclick="stopBot('${b.id}')" class="w-8 h-8 bg-rose-500/10 text-rose-400 border border-rose-500/30 rounded-lg"><i class="fa-solid fa-square text-xs"></i></button>
+                    </div>
+                </div>
+            `).join('');
         }
 
-        function appendLog(log) {
-            const box = document.getElementById('logBox');
+        function openBotPanel(id) {
+            activeBotId = id;
+            document.getElementById('botControlPanel').classList.remove('hidden');
+            updateActivePanelData();
+            switchPanelTab('konsol');
+        }
+
+        function closeBotPanel() {
+            document.getElementById('botControlPanel').classList.add('hidden');
+            activeBotId = null;
+        }
+
+        function updateActivePanelData() {
+            const bot = bots.find(b => b.id === activeBotId);
+            if (!bot) return;
+
+            document.getElementById('panelBotName').innerText = bot.username;
+            document.getElementById('panelAvatar').src = `https://minotar.net/helm/${bot.username}/32.png`;
+            document.getElementById('panelHp').innerText = bot.health ?? 20;
+            document.getElementById('panelFood').innerText = bot.food ?? 20;
+            
+            const st = document.getElementById('panelStatus');
+            st.innerText = bot.status;
+            st.className = `px-1.5 rounded text-[9px] ${bot.status === 'Online' ? 'bg-emerald-500/20 text-emerald-400' : bot.status === 'Connecting' ? 'bg-amber-500/20 text-amber-400' : 'bg-slate-800 text-slate-400'}`;
+
+            // Konum
+            if(bot.pos) {
+                document.getElementById('rX').innerText = bot.pos.x;
+                document.getElementById('rY').innerText = bot.pos.y;
+                document.getElementById('rZ').innerText = bot.pos.z;
+            }
+
+            // Ayarlar formunu doldur
+            document.getElementById('cfgHost').value = bot.config.host;
+            document.getElementById('cfgPort').value = bot.config.port;
+            document.getElementById('cfgVersion').value = bot.config.version;
+            document.getElementById('cfgSubCmd').value = bot.config.autoSubServerCmd;
+            document.getElementById('cfgReconnect').checked = bot.config.autoReconnect;
+            document.getElementById('cfgAntiAfk').checked = bot.config.autoAntiAfk;
+
+            // Logları yükle
+            const logBox = document.getElementById('panelLogBox');
+            logBox.innerHTML = '';
+            if (bot.logs) bot.logs.forEach(appendPanelLog);
+
+            // Envanter
+            renderInventory(bot.inventory || []);
+            // Scoreboard
+            renderScoreboard(bot.scoreboard);
+            // Tab list
+            renderTabList(bot.tabList || []);
+        }
+
+        function switchPanelTab(tab) {
+            document.querySelectorAll('.panel-tab').forEach(el => el.classList.remove('active'));
+            document.getElementById('panel-tab-' + tab).classList.add('active');
+
+            ['konsol', 'radar', 'envanter', 'scoreboard', 'tablist', 'ayar'].forEach(t => {
+                const btn = document.getElementById('btn-tab-' + t);
+                if (t === tab) {
+                    btn.className = 'py-2 rounded bg-indigo-600 text-white font-bold';
+                } else {
+                    btn.className = 'py-2 rounded text-slate-400';
+                }
+            });
+        }
+
+        function appendPanelLog(log) {
+            const box = document.getElementById('panelLogBox');
             let color = 'text-slate-300';
-            if(log.type === 'error') color = 'text-rose-400';
-            if(log.type === 'system') color = 'text-amber-400';
+            if (log.type === 'error') color = 'text-rose-400';
+            if (log.type === 'system') color = 'text-amber-400';
             box.innerHTML += `<div class="${color} border-b border-slate-900/50 pb-0.5"><span class="text-slate-600">[${log.timestamp}]</span> ${log.text}</div>`;
             box.scrollTop = box.scrollHeight;
         }
 
-        function updateBotSettings() {
-            if (!selectedBotId) return;
-            const config = {
-                autoReconnect: document.getElementById('toggleReconnect').checked,
-                antiAfk: document.getElementById('toggleAntiAfk').checked
-            };
-            socket.emit('update-bot-config', { botId: selectedBotId, config });
-            
-            // Yerel veriyi güncelle
-            const bot = bots.find(b => b.id === selectedBotId);
-            if(bot) Object.assign(bot, config);
+        function renderInventory(items) {
+            const grid = document.getElementById('inventoryGrid');
+            if (!items || items.length === 0) {
+                grid.innerHTML = `<div class="text-slate-500 text-[10px] col-span-9 text-center py-6">Envanter boş veya yüklenmedi.</div>`;
+                return;
+            }
+            grid.innerHTML = items.map((item, idx) => `
+                <div class="bg-slate-900 border border-slate-800 rounded p-1 flex flex-col items-center justify-center min-h-[38px]" title="${item ? item.name : 'Boş'}">
+                    <span class="text-[9px] text-slate-500">${idx}</span>
+                    <span class="text-[10px] text-white font-bold truncate max-w-[full]">${item ? (item.name || 'Eşya') : ''}</span>
+                    <span class="text-[9px] text-amber-400">${item && item.count > 1 ? item.count : ''}</span>
+                </div>
+            `).join('');
         }
 
-        function addBot() { const name = prompt('Kullanıcı Adı:'); if (name) socket.emit('add-bot', { username: name.trim() }); }
-        function startSelectedBot() { if (selectedBotId) socket.emit('start-bot', selectedBotId); }
-        function stopSelectedBot() { if (selectedBotId) socket.emit('stop-bot', selectedBotId); }
-        
-        function sendCommand() {
-            const input = document.getElementById('cmdInput');
-            if (input.value.trim() && selectedBotId) {
-                socket.emit('send-command', { targetBotId: selectedBotId, command: input.value.trim() });
+        function renderScoreboard(sb) {
+            const titleEl = document.getElementById('sbTitle');
+            const itemsEl = document.getElementById('sbItems');
+            if (!sb || !sb.items || sb.items.length === 0) {
+                titleEl.innerText = 'Scoreboard';
+                itemsEl.innerHTML = `<div class="text-slate-500 text-center py-6">Aktif skor tablosu yok.</div>`;
+                return;
+            }
+            titleEl.innerText = sb.title || 'Skor Tablosu';
+            itemsEl.innerHTML = sb.items.map(i => `<div class="flex justify-between border-b border-slate-900 py-0.5"><span>${i.name}</span><span class="text-indigo-400">${i.value}</span></div>`).join('');
+        }
+
+        function renderTabList(players) {
+            document.getElementById('tabPlayerCount').innerText = players.length;
+            const list = document.getElementById('tabPlayerList');
+            if (players.length === 0) {
+                list.innerHTML = `<div class="text-slate-500 text-center py-6">Oyuncu bulunamadı.</div>`;
+                return;
+            }
+            list.innerHTML = players.map(p => `<div class="bg-slate-900/60 p-1.5 rounded border border-slate-800/60 text-white">${p}</div>`).join('');
+        }
+
+        function addBotModal() {
+            const name = prompt('Bot Kullanıcı Adı:');
+            if (name) socket.emit('add-bot', { username: name.trim() });
+        }
+
+        function startBot(id) { socket.emit('start-bot', id); }
+        function stopBot(id) { socket.emit('stop-bot', id); }
+        function startActiveBot() { if (activeBotId) startBot(activeBotId); }
+        function stopActiveBot() { if (activeBotId) stopBot(activeBotId); }
+
+        function sendPanelCommand() {
+            const input = document.getElementById('panelCmdInput');
+            if (input.value.trim() && activeBotId) {
+                socket.emit('send-command', { targetBotId: activeBotId, command: input.value.trim() });
                 input.value = '';
             }
         }
 
-        function openConfigModal() { document.getElementById('configModal').classList.remove('hidden'); }
-        function closeConfigModal() { document.getElementById('configModal').classList.add('hidden'); }
-        function saveConfig() {
-            socket.emit('update-config', {
-                host: document.getElementById('globalHost').value,
-                port: Number(document.getElementById('globalPort').value),
-                version: document.getElementById('globalVersion').value,
-                autoSubServerCmd: document.getElementById('globalSubCmd').value
-            });
-            closeConfigModal();
+        function saveActiveBotConfig() {
+            if (!activeBotId) return;
+            const newConfig = {
+                host: document.getElementById('cfgHost').value.trim(),
+                port: Number(document.getElementById('cfgPort').value),
+                version: document.getElementById('cfgVersion').value.trim(),
+                autoSubServerCmd: document.getElementById('cfgSubCmd').value.trim(),
+                autoReconnect: document.getElementById('cfgReconnect').checked,
+                autoAntiAfk: document.getElementById('cfgAntiAfk').checked
+            };
+            socket.emit('update-bot-config', { botId: activeBotId, config: newConfig });
+            alert('Ayarlar kaydedildi!');
         }
     </script>
 </body>

@@ -10,32 +10,40 @@ const io = new Server(server);
 
 app.use(express.static(path.join(__dirname, 'public')));
 
-let globalConfig = {
-    host: 'play.donutsmp.net',
-    port: 25565,
-    version: '1.20.4',
-    autoSubServerCmd: '/gir asmp'
-};
-
-let bots = {}; 
+let bots = {}; // { botId: { data: {...}, client: ... } }
 
 io.on('connection', (socket) => {
     const botList = Object.keys(bots).map(id => bots[id].data);
-    socket.emit('init-data', { globalConfig, botList });
+    socket.emit('init-data', { botList });
 
     socket.on('add-bot', ({ username }) => {
         if (!username) return;
         const id = 'bot_' + Date.now();
         bots[id] = {
             data: {
-                id, username, status: 'Offline',
-                health: 20, food: 20, pos: {x:0, y:0, z:0},
-                autoReconnect: true, antiAfk: false, logs: []
+                id,
+                username,
+                status: 'Offline',
+                health: 20,
+                food: 20,
+                pos: { x: 0, y: 0, z: 0 },
+                config: {
+                    host: 'play.donutsmp.net',
+                    port: 25565,
+                    version: '1.20.4',
+                    autoSubServerCmd: '/gir asmp',
+                    autoReconnect: true,
+                    autoAntiAfk: false
+                },
+                inventory: [],
+                scoreboard: { title: '', items: [] },
+                tabList: [],
+                logs: []
             },
             client: null
         };
         io.emit('bot-added', bots[id].data);
-        addLog(id, 'system', `${username} eklendi.`);
+        addLog(id, 'system', `${username} sisteme eklendi.`);
     });
 
     socket.on('start-bot', (botId) => startBot(botId));
@@ -50,14 +58,10 @@ io.on('connection', (socket) => {
 
     socket.on('update-bot-config', ({ botId, config }) => {
         if (bots[botId]) {
-            Object.assign(bots[botId].data, config);
-            addLog(botId, 'system', `Ayarlar kaydedildi.`);
+            bots[botId].data.config = { ...bots[botId].data.config, ...config };
+            addLog(botId, 'system', 'Bot yapılandırması güncellendi.');
+            io.emit('bot-updated', bots[botId].data);
         }
-    });
-
-    socket.on('update-config', (newConfig) => {
-        globalConfig = { ...globalConfig, ...newConfig };
-        io.emit('init-data', { globalConfig, botList: Object.values(bots).map(b => b.data) });
     });
 });
 
@@ -66,14 +70,14 @@ function startBot(botId) {
     if (!bot || bot.data.status === 'Online' || bot.data.status === 'Connecting') return;
 
     updateBotStatus(botId, 'Connecting');
-    addLog(botId, 'system', `${globalConfig.host} bağlanılıyor...`);
+    addLog(botId, 'system', `${bot.data.config.host} adresine bağlanılıyor...`);
 
     try {
         const client = mc.createClient({
-            host: globalConfig.host,
-            port: globalConfig.port,
+            host: bot.data.config.host,
+            port: bot.data.config.port,
             username: bot.data.username,
-            version: globalConfig.version,
+            version: bot.data.config.version,
             auth: 'offline'
         });
 
@@ -81,10 +85,13 @@ function startBot(botId) {
 
         client.on('success', () => {
             updateBotStatus(botId, 'Online');
-            addLog(botId, 'system', `Sunucuya girildi.`);
-            if (globalConfig.autoSubServerCmd) {
+            addLog(botId, 'system', `Sunucuya başarıyla giriş yapıldı!`);
+            if (bot.data.config.autoSubServerCmd) {
                 setTimeout(() => {
-                    if (bot.client) bot.client.write('chat', { message: globalConfig.autoSubServerCmd });
+                    if (bot.client) {
+                        bot.client.write('chat', { message: bot.data.config.autoSubServerCmd });
+                        addLog(botId, 'system', `Oto komut gönderildi: ${bot.data.config.autoSubServerCmd}`);
+                    }
                 }, 3000);
             }
         });
@@ -102,47 +109,67 @@ function startBot(botId) {
         client.on('update_health', (packet) => {
             bot.data.health = Math.round(packet.health);
             bot.data.food = Math.round(packet.food);
-            io.emit('status-update', { botId, status: bot.data.status, health: bot.data.health, food: bot.data.food });
+            io.emit('bot-updated', bot.data);
         });
 
-        // RADAR İÇİN KONUM TAKİBİ
         client.on('position', (packet) => {
-            const pos = { x: Math.floor(packet.x), y: Math.floor(packet.y), z: Math.floor(packet.z) };
-            bot.data.pos = pos;
-            io.emit('bot-map-update', { botId, pos });
+            bot.data.pos = { x: Math.floor(packet.x), y: Math.floor(packet.y), z: Math.floor(packet.z) };
+            io.emit('bot-updated', bot.data);
+        });
+
+        // Envanter takibi
+        client.on('window_items', (packet) => {
+            if (packet.items) {
+                bot.data.inventory = packet.items.map(item => item && item.itemCount > 0 ? { name: item.nbtData?.name || 'Eşya', count: item.itemCount } : null);
+                io.emit('bot-updated', bot.data);
+            }
+        });
+
+        // Tab list / Oyuncular
+        client.on('player_info', (packet) => {
+            try {
+                if (packet.data) {
+                    bot.data.tabList = packet.data.map(p => p.name || p.username).filter(Boolean);
+                    io.emit('bot-updated', bot.data);
+                }
+            } catch(e){}
         });
 
         client.on('end', (reason) => {
             updateBotStatus(botId, 'Offline');
             bot.client = null;
-            addLog(botId, 'error', `Bağlantı koptu.`);
-            
-            // OTO YENİDEN BAĞLANMA ÖZELLİĞİ
-            if (bot.data.autoReconnect) {
-                addLog(botId, 'system', '5 saniye içinde tekrar deneniyor...');
+            addLog(botId, 'error', `Bağlantı koptu: ${reason}`);
+
+            if (bot.data.config.autoReconnect) {
+                addLog(botId, 'system', '5 saniye sonra yeniden bağlanılıyor...');
                 setTimeout(() => startBot(botId), 5000);
             }
         });
 
-        client.on('error', (err) => addLog(botId, 'error', `Hata: ${err.message}`));
+        client.on('error', (err) => {
+            addLog(botId, 'error', `Hata: ${err.message}`);
+        });
+
     } catch (err) {
         updateBotStatus(botId, 'Offline');
+        addLog(botId, 'error', `Başlatma hatası: ${err.message}`);
     }
 }
 
 function stopBot(botId) {
     const bot = bots[botId];
     if (bot && bot.client) {
-        bot.client.end('Durduruldu');
+        bot.client.end('Kullanıcı durdurdu');
         bot.client = null;
         updateBotStatus(botId, 'Offline');
+        addLog(botId, 'system', 'Bot durduruldu.');
     }
 }
 
 function updateBotStatus(botId, status) {
     if (bots[botId]) {
         bots[botId].data.status = status;
-        io.emit('status-update', { botId, status });
+        io.emit('bot-updated', bots[botId].data);
     }
 }
 
@@ -154,15 +181,15 @@ function addLog(botId, type, text) {
     io.emit('bot-log', { botId, ...log });
 }
 
-// ANTİ-AFK SİSTEMİ (Her 30 saniyede bir tetiklenir)
+// BOTA ÖZEL ANTİ-AFK KONTROLÜ
 setInterval(() => {
     Object.values(bots).forEach(bot => {
-        if (bot.client && bot.data.status === 'Online' && bot.data.antiAfk) {
-            bot.client.write('arm_animation', { hand: 0 }); // Kol salla
-            bot.client.write('look', { yaw: Math.random() * 360, pitch: 0, onGround: true }); 
+        if (bot.client && bot.data.status === 'Online' && bot.data.config.autoAntiAfk) {
+            bot.client.write('arm_animation', { hand: 0 });
+            bot.client.write('look', { yaw: Math.random() * 360, pitch: 0, onGround: true });
         }
     });
 }, 30000);
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log(`Sunucu ${PORT} portunda aktif.`));
+server.listen(PORT, () => console.log(`[PRO-DASHBOARD] ${PORT} portunda aktif!`));

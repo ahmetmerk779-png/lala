@@ -28,7 +28,10 @@ function addLog(bot, text, type = 'info') {
 
 function startBotInstance(bot) {
     if (bot.client) {
-        try { bot.client.end(); } catch (e) {}
+        try { 
+            bot.client.removeAllListeners();
+            bot.client.end(); 
+        } catch (e) {}
     }
 
     bot.status = 'Connecting';
@@ -45,25 +48,30 @@ function startBotInstance(bot) {
             host: bot.config.host,
             port: Number(bot.config.port),
             username: bot.username,
-            version: bot.config.version || false
+            version: bot.config.version || false,
+            skipValidation: true
         });
 
-        bot.client.on('login', () => {
+        bot.client.once('login', () => {
             bot.status = 'Online';
             addLog(bot, 'Sunucuya başarıyla giriş yapıldı!', 'system');
             
             if (bot.config.password) {
                 setTimeout(() => {
-                    bot.client.write('chat', { message: `/login ${bot.config.password}` });
-                    addLog(bot, `Giriş şifresi gönderildi.`, 'system');
-                }, 1000);
+                    if (bot.client && bot.status === 'Online') {
+                        bot.client.write('chat', { message: `/login ${bot.config.password}` });
+                        addLog(bot, `Giriş şifresi gönderildi.`, 'system');
+                    }
+                }, 1500);
             }
 
             if (bot.config.autoSubServerCmd) {
                 setTimeout(() => {
-                    bot.client.write('chat', { message: bot.config.autoSubServerCmd });
-                    addLog(bot, `Yönlendirme komutu gönderildi: ${bot.config.autoSubServerCmd}`, 'system');
-                }, 2500);
+                    if (bot.client && bot.status === 'Online') {
+                        bot.client.write('chat', { message: bot.config.autoSubServerCmd });
+                        addLog(bot, `Yönlendirme komutu gönderildi: ${bot.config.autoSubServerCmd}`, 'system');
+                    }
+                }, 3500);
             }
 
             io.emit('bot-updated', bot);
@@ -96,11 +104,14 @@ function startBotInstance(bot) {
 
         bot.client.on('chat', (packet) => {
             try {
-                const msg = JSON.parse(packet.message);
-                const text = msg.text || JSON.stringify(msg);
+                let text = packet.message;
+                try {
+                    const parsed = JSON.parse(packet.message);
+                    text = parsed.text || parsed.translate || JSON.stringify(parsed);
+                } catch (err) {}
                 addLog(bot, `[Chat] ${text}`);
             } catch (e) {
-                addLog(bot, `[Chat] ${packet.message}`);
+                addLog(bot, `[Chat] Mesaj okunamadı`);
             }
         });
 

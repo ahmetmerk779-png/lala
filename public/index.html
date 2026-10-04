@@ -16,7 +16,6 @@
     <style>
         ::-webkit-scrollbar { width: 3px; height: 3px; }
         ::-webkit-scrollbar-thumb { background: #374151; border-radius: 4px; }
-        .log-font { font-family: monospace; font-size: 11px; }
     </style>
 </head>
 <body class="bg-darkbg text-slate-200 min-h-screen p-3 text-xs flex flex-col font-sans">
@@ -53,14 +52,10 @@
         <div class="font-bold text-slate-300 text-[11px] flex items-center gap-1.5">
             <i class="fa-solid fa-users-gear text-emerald-400"></i> BOT YÖNETİMİ
         </div>
-        
-        <!-- Ekleme Alanı -->
         <div class="flex gap-2">
             <input type="text" id="newBotUsernameInput" placeholder="Yeni Bot Kullanıcı Adı" onkeypress="if(event.key==='Enter') addNewBot()" class="flex-1 bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-white placeholder:text-slate-500 focus:outline-none focus:border-emerald-500 text-xs font-mono">
             <button onclick="addNewBot()" class="px-4 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl shadow transition">Ekle</button>
         </div>
-
-        <!-- Toplu Başlat / Durdur Butonları -->
         <div class="grid grid-cols-2 gap-2 pt-1">
             <button onclick="startAllBots()" class="py-2.5 bg-emerald-600/10 hover:bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 rounded-xl font-bold flex items-center justify-center gap-2 transition">
                 <i class="fa-solid fa-bolt text-xs"></i> Tümünü Başlat
@@ -82,19 +77,19 @@
             </div>
         </div>
 
-        <!-- Botların Listelendiği Alan -->
         <div id="botCardList" class="space-y-2 overflow-y-auto flex-1 max-h-[350px]">
             <div class="text-center text-slate-500 py-12 italic text-xs">Henüz bot bulunmuyor...</div>
         </div>
     </section>
 
-    <!-- GENEL AYARLAR MODALI -->
+    <!-- GENEL AYARLAR MODALI (Şablon) -->
     <div id="settingsModal" class="fixed inset-0 bg-darkbg/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
         <div class="bg-cardbg border border-cardborder rounded-2xl p-4 w-full max-w-sm space-y-3 shadow-2xl">
             <div class="flex items-center justify-between pb-2 border-b border-slate-800">
-                <h3 class="font-bold text-white text-xs flex items-center gap-2"><i class="fa-solid fa-sliders text-indigo-400"></i> Varsayılan Bot Ayarları</h3>
+                <h3 class="font-bold text-white text-xs flex items-center gap-2"><i class="fa-solid fa-sliders text-indigo-400"></i> Genel Şablon Ayarları</h3>
                 <button onclick="closeGlobalSettings()" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark"></i></button>
             </div>
+            <p class="text-[10px] text-slate-400">Bu ayarlar sadece **yeni eklenecek botlar** için varsayılan şablonu belirler.</p>
             <div class="space-y-2.5">
                 <div>
                     <label class="text-slate-400 block mb-1 text-[11px]">Sunucu IP / Host</label>
@@ -123,6 +118,42 @@
         </div>
     </div>
 
+    <!-- TEKİL BOT ÖZEL AYARLARI MODALI -->
+    <div id="botSettingsModal" class="fixed inset-0 bg-darkbg/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+        <div class="bg-cardbg border border-cardborder rounded-2xl p-4 w-full max-w-sm space-y-3 shadow-2xl">
+            <div class="flex items-center justify-between pb-2 border-b border-slate-800">
+                <h3 class="font-bold text-white text-xs flex items-center gap-2"><i class="fa-solid fa-gear text-amber-400"></i> Bot Ayarları: <span id="modalBotName" class="text-amber-400 font-mono"></span></h3>
+                <button onclick="closeBotSettings()" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <input type="hidden" id="editBotId">
+            <div class="space-y-2.5">
+                <div>
+                    <label class="text-slate-400 block mb-1 text-[11px]">Sunucu IP / Host</label>
+                    <input type="text" id="botHost" class="w-full bg-slate-900 border border-slate-800 rounded-xl p-2 text-white font-mono text-xs">
+                </div>
+                <div class="grid grid-cols-2 gap-2">
+                    <div>
+                        <label class="text-slate-400 block mb-1 text-[11px]">Port</label>
+                        <input type="number" id="botPort" class="w-full bg-slate-900 border border-slate-800 rounded-xl p-2 text-white font-mono text-xs">
+                    </div>
+                    <div>
+                        <label class="text-slate-400 block mb-1 text-[11px]">Sürüm</label>
+                        <input type="text" id="botVersion" class="w-full bg-slate-900 border border-slate-800 rounded-xl p-2 text-white font-mono text-xs">
+                    </div>
+                </div>
+                <div>
+                    <label class="text-slate-400 block mb-1 text-[11px]">Giriş Şifresi (/login)</label>
+                    <input type="text" id="botPassword" class="w-full bg-slate-900 border border-slate-800 rounded-xl p-2 text-white font-mono text-xs">
+                </div>
+                <div>
+                    <label class="text-slate-400 block mb-1 text-[11px]">Lobi / Sunucu Komutu</label>
+                    <input type="text" id="botSubCmd" class="w-full bg-slate-900 border border-slate-800 rounded-xl p-2 text-white font-mono text-xs">
+                </div>
+            </div>
+            <button onclick="saveBotSettings()" class="w-full py-2.5 bg-amber-600 hover:bg-amber-500 text-white font-bold rounded-xl shadow transition">Bot Ayarlarını Kaydet</button>
+        </div>
+    </div>
+
     <script>
         const socket = io();
         let bots = [];
@@ -148,11 +179,9 @@
         function updateUI() {
             document.getElementById('totalBotCount').innerText = bots.length;
             
-            // Select kutusunu güncelle
             const select = document.getElementById('globalTargetSelect');
             select.innerHTML = `<option value="all">Tüm Botlar</option>` + bots.map(b => `<option value="${b.id}">${b.username}</option>`).join('');
 
-            // Bot listesi kartlarını güncelle
             const list = document.getElementById('botCardList');
             if (bots.length === 0) {
                 list.innerHTML = `<div class="text-center text-slate-500 py-12 italic text-xs">Henüz bot bulunmuyor...</div>`;
@@ -174,9 +203,10 @@
                         </div>
                     </div>
                     <div class="flex gap-1.5">
-                        <button onclick="startBot('${b.id}')" class="w-7 h-7 bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 rounded-lg flex items-center justify-center hover:bg-emerald-500/20 transition"><i class="fa-solid fa-play text-[10px]"></i></button>
-                        <button onclick="stopBot('${b.id}')" class="w-7 h-7 bg-rose-500/10 text-rose-400 border border-rose-500/30 rounded-lg flex items-center justify-center hover:bg-rose-500/20 transition"><i class="fa-solid fa-square text-[10px]"></i></button>
-                        <button onclick="deleteBot('${b.id}')" class="w-7 h-7 bg-slate-800 text-slate-400 rounded-lg flex items-center justify-center hover:bg-rose-600 hover:text-white transition"><i class="fa-solid fa-trash text-[10px]"></i></button>
+                        <button onclick="openBotSettings('${b.id}')" class="w-7 h-7 bg-amber-500/10 text-amber-400 border border-amber-500/30 rounded-lg flex items-center justify-center hover:bg-amber-500/20 transition" title="Bot Ayarları"><i class="fa-solid fa-gear text-[10px]"></i></button>
+                        <button onclick="startBot('${b.id}')" class="w-7 h-7 bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 rounded-lg flex items-center justify-center hover:bg-emerald-500/20 transition" title="Başlat"><i class="fa-solid fa-play text-[10px]"></i></button>
+                        <button onclick="stopBot('${b.id}')" class="w-7 h-7 bg-rose-500/10 text-rose-400 border border-rose-500/30 rounded-lg flex items-center justify-center hover:bg-rose-500/20 transition" title="Durdur"><i class="fa-solid fa-square text-[10px]"></i></button>
+                        <button onclick="deleteBot('${b.id}')" class="w-7 h-7 bg-slate-800 text-slate-400 rounded-lg flex items-center justify-center hover:bg-rose-600 hover:text-white transition" title="Sil"><i class="fa-solid fa-trash text-[10px]"></i></button>
                     </div>
                 </div>
             `).join('');
@@ -228,7 +258,41 @@
             };
             socket.emit('update-global-settings', newSettings);
             closeGlobalSettings();
-            alert('Ayarlar kaydedildi!');
+            alert('Genel şablon ayarları kaydedildi!');
+        }
+
+        function openBotSettings(id) {
+            const bot = bots.find(b => b.id === id);
+            if (!bot) return;
+
+            document.getElementById('editBotId').value = bot.id;
+            document.getElementById('modalBotName').innerText = bot.username;
+            document.getElementById('botHost').value = bot.config?.host || '';
+            document.getElementById('botPort').value = bot.config?.port || 25565;
+            document.getElementById('botVersion').value = bot.config?.version || '';
+            document.getElementById('botPassword').value = bot.config?.password || '';
+            document.getElementById('botSubCmd').value = bot.config?.autoSubServerCmd || '';
+
+            document.getElementById('botSettingsModal').classList.remove('hidden');
+        }
+
+        function closeBotSettings() {
+            document.getElementById('botSettingsModal').classList.add('hidden');
+        }
+
+        function saveBotSettings() {
+            const botId = document.getElementById('editBotId').value;
+            const config = {
+                host: document.getElementById('botHost').value.trim(),
+                port: Number(document.getElementById('botPort').value),
+                version: document.getElementById('botVersion').value.trim(),
+                password: document.getElementById('botPassword').value.trim(),
+                autoSubServerCmd: document.getElementById('botSubCmd').value.trim()
+            };
+
+            socket.emit('update-bot-config', { botId, config });
+            closeBotSettings();
+            alert('Bot ayarları başarıyla güncellendi!');
         }
     </script>
 </body>

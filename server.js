@@ -198,7 +198,7 @@ function setupCustomPacketHandler(client, botId) {
             botData.inventory = {};
             botData.scoreboardData = { sidebarObjective: null, objectives: {}, scores: {}, teams: {} };
             botData.lastScoreboard = null;
-            broadcastLog(botId, `🔄 [Dinamik Temizlik] ${reason}`, 'info');
+            broadcastLog(botId, `🔄 [Sıfırlama] ${reason}`, 'info');
             io.emit('bot-scoreboard', { botId, scoreboard: null });
             io.emit('bot-tablist', { botId, players: [] });
         } catch (e) {}
@@ -217,7 +217,7 @@ function setupCustomPacketHandler(client, botId) {
         botData.sbUpdateTimer = setTimeout(() => {
             botData.sbUpdateTimer = null;
             try { broadcastDynamicScoreboard(); } catch (e) {}
-        }, 300);
+        }, 200);
     }
 
     function queueTabListUpdate() {
@@ -244,38 +244,12 @@ function setupCustomPacketHandler(client, botId) {
 
     function broadcastDynamicScoreboard() {
         const sb = botData.scoreboardData;
-        let activeObjName = null;
+        const activeObjName = sb.sidebarObjective;
 
-        for (const [objName, objVal] of Object.entries(sb.objectives)) {
-            if (objVal.position === 1) {
-                activeObjName = objName;
-                break;
-            }
-        }
-        
-        if (!activeObjName) {
-            for (const [objName, scoresObj] of Object.entries(sb.scores)) {
-                const count = Object.keys(scoresObj).length;
-                if (count > 0 && count <= 25) {
-                    activeObjName = objName;
-                    break;
-                }
-            }
-        }
-
-        if (!activeObjName) {
-            const keys = Object.keys(sb.objectives);
-            if (keys.length > 0) {
-                activeObjName = keys[keys.length - 1];
-            }
-        }
-
+        // SADECE aktif sidebar (position 1) varsa çizim yap.
         if (!activeObjName || !sb.objectives[activeObjName]) {
-            if (botData.lastScoreboard) {
-                io.emit('bot-scoreboard', { botId, scoreboard: botData.lastScoreboard });
-            } else {
-                io.emit('bot-scoreboard', { botId, scoreboard: null });
-            }
+            botData.lastScoreboard = null;
+            io.emit('bot-scoreboard', { botId, scoreboard: null });
             return;
         }
 
@@ -286,19 +260,37 @@ function setupCustomPacketHandler(client, botId) {
 
         Object.keys(rawScores).forEach(entryKey => {
             const scoreItem = rawScores[entryKey];
-            let cleanEntry = scoreItem.customName || parseMcText(scoreItem.realName || entryKey);
-            if (!cleanEntry) cleanEntry = parseMcText(entryKey);
-            
-            if (!cleanEntry) return;
+            let prefix = '';
+            let suffix = '';
 
-            lines.push({ text: cleanEntry, score: scoreItem.val });
+            // Entry bir takımla eşleşiyor mu?
+            for (const team of Object.values(sb.teams)) {
+                if (team.players && team.players.includes(entryKey)) {
+                    prefix = team.prefix || '';
+                    suffix = team.suffix || '';
+                    break;
+                }
+            }
+
+            let baseName = parseMcText(entryKey);
+            let fullText = (prefix + baseName + suffix).trim();
+
+            if (!fullText) fullText = parseMcText(scoreItem.realName || entryKey);
+
+            if (fullText.length === 0 && entryKey.length > 0) {
+                fullText = " "; 
+            }
+
+            if (!fullText && fullText !== " ") return;
+
+            lines.push({ text: fullText, score: scoreItem.val });
         });
 
         lines.sort((a, b) => b.score - a.score);
-        
+
         const cleanLines = lines.slice(0, 25);
         const scoreboardObj = { title, lines: cleanLines };
-        
+
         botData.lastScoreboard = scoreboardObj;
         io.emit('bot-scoreboard', { botId, scoreboard: scoreboardObj });
     }
@@ -318,7 +310,7 @@ function setupCustomPacketHandler(client, botId) {
                 case 'login':
                 case 'join_game':
                     clearBotTimers();
-                    resetBotSession('Sunucu aktarımı/yeniden doğuma bağlı scoreboard ve oturum sıfırlandı.');
+                    resetBotSession('Sunucu aktarımı veya yeniden doğma nedeniyle veriler sıfırlandı.');
                     break;
 
                 case 'open_window':
@@ -327,7 +319,6 @@ function setupCustomPacketHandler(client, botId) {
                     queueInventoryUpdate();
                     broadcastLog(botId, '📦 Sunucu penceresi/menüsü açıldı.', 'info');
                     
-                    // StateID'nin window_items'dan alınabilmesi için kısa bir gecikme
                     setTimeout(() => {
                         if (botData.client && botData.status === 'Online') {
                             const emptySlot = { present: false }; 
@@ -336,12 +327,12 @@ function setupCustomPacketHandler(client, botId) {
                                 windowId: botData.currentWindowId,
                                 stateId: botData.currentStateId,
                                 slot: 12,
-                                mouseButton: 1, // 0 Sol tık, 1 Sağ tık! (Sağ tık olarak güncellendi)
+                                mouseButton: 1, 
                                 mode: 0,
                                 changedSlots: [],
-                                item: emptySlot,          // Eski sürümler için
-                                clickedItem: emptySlot,   // 1.20 için zorunlu olan alan
-                                cursorItem: emptySlot     // Bazı modifiye paketler için
+                                item: emptySlot,          
+                                clickedItem: emptySlot,   
+                                cursorItem: emptySlot     
                             });
                             broadcastLog(botId, '🖱️ AFK menüsü 12. slota SAĞ tıklandı.', 'info');
                         }
@@ -349,16 +340,11 @@ function setupCustomPacketHandler(client, botId) {
                     break;
 
                 case 'close_window':
-                    if (data.windowId === botData.currentWindowId) {
-                        botData.currentWindowId = 0;
-                    }
+                    if (data.windowId === botData.currentWindowId) botData.currentWindowId = 0;
                     break;
 
                 case 'window_items':
-                    // Sunucunun beklediği geçerli click durumu ID'sini yakala
-                    if (data.stateId !== undefined) {
-                        botData.currentStateId = data.stateId;
-                    }
+                    if (data.stateId !== undefined) botData.currentStateId = data.stateId;
 
                     if (data.windowId === botData.currentWindowId || data.windowId === 0) {
                         const items = data.items || [];
@@ -367,9 +353,7 @@ function setupCustomPacketHandler(client, botId) {
                             if (item && item.itemCount > 0 && item.itemId !== undefined && item.itemId !== -1) {
                                 const details = getItemDetails(client.version, item.itemId);
                                 invMap[index] = {
-                                    slot: index,
-                                    count: item.itemCount,
-                                    itemId: item.itemId,
+                                    slot: index, count: item.itemCount, itemId: item.itemId,
                                     name: details ? details.name : 'unknown',
                                     displayName: details ? details.displayName : `ID: ${item.itemId}`
                                 };
@@ -381,9 +365,7 @@ function setupCustomPacketHandler(client, botId) {
                     break;
 
                 case 'set_slot':
-                    if (data.stateId !== undefined) {
-                        botData.currentStateId = data.stateId;
-                    }
+                    if (data.stateId !== undefined) botData.currentStateId = data.stateId;
 
                     if (data.windowId === botData.currentWindowId || data.windowId === 0) {
                         const item = data.item;
@@ -391,9 +373,7 @@ function setupCustomPacketHandler(client, botId) {
                         if (item && item.itemCount > 0 && item.itemId !== undefined && item.itemId !== -1) {
                             const details = getItemDetails(client.version, item.itemId);
                             botData.inventory[slot] = {
-                                slot: slot,
-                                count: item.itemCount,
-                                itemId: item.itemId,
+                                slot: slot, count: item.itemCount, itemId: item.itemId,
                                 name: details ? details.name : 'unknown',
                                 displayName: details ? details.displayName : `ID: ${item.itemId}`
                             };
@@ -418,17 +398,13 @@ function setupCustomPacketHandler(client, botId) {
                             return;
                         }
 
-                        if (!botData.tabList[uuid]) {
-                            botData.tabList[uuid] = { uuid, name: 'Bilinmeyen', displayName: '', ping: 0 };
-                        }
+                        if (!botData.tabList[uuid]) botData.tabList[uuid] = { uuid, name: 'Bilinmeyen', displayName: '', ping: 0 };
 
                         if (p.name) botData.tabList[uuid].name = p.name;
                         if (p.player && p.player.name) botData.tabList[uuid].name = p.player.name;
                         
                         const disp = p.displayName || (p.player && p.player.displayName);
-                        if (disp) {
-                            botData.tabList[uuid].displayName = parseMcText(disp);
-                        }
+                        if (disp) botData.tabList[uuid].displayName = parseMcText(disp);
 
                         const lat = p.latency !== undefined ? p.latency : p.ping;
                         if (lat !== undefined) botData.tabList[uuid].ping = lat;
@@ -446,9 +422,7 @@ function setupCustomPacketHandler(client, botId) {
                                 const uidStr = String(uid);
                                 delete botData.tabList[uidStr];
                                 Object.keys(botData.tabList).forEach(k => {
-                                    if (k.includes(uidStr) || uidStr.includes(k)) {
-                                        delete botData.tabList[k];
-                                    }
+                                    if (k.includes(uidStr) || uidStr.includes(k)) delete botData.tabList[k];
                                 });
                             }
                         });
@@ -463,11 +437,7 @@ function setupCustomPacketHandler(client, botId) {
                     }
                     safeClientWrite(client, 'position', { x: data.x, y: data.y, z: data.z, onGround: true });
 
-                    botData.pos = {
-                        x: Math.round(data.x * 10) / 10,
-                        y: Math.round(data.y * 10) / 10,
-                        z: Math.round(data.z * 10) / 10
-                    };
+                    botData.pos = { x: Math.round(data.x * 10) / 10, y: Math.round(data.y * 10) / 10, z: Math.round(data.z * 10) / 10 };
                     queueMapUpdate();
 
                     if (!isSequenceStarted) {
@@ -475,7 +445,6 @@ function setupCustomPacketHandler(client, botId) {
                         const pwd = botData.autoPassword !== undefined ? botData.autoPassword : globalConfig.autoPassword;
                         const subCmd = botData.autoSubServerCmd !== undefined ? botData.autoSubServerCmd : globalConfig.autoSubServerCmd;
 
-                        // 1. Adım: Giriş yap
                         setTimeout(() => {
                             if (!botData.client) return;
                             if (pwd && pwd.trim() !== '') {
@@ -483,7 +452,6 @@ function setupCustomPacketHandler(client, botId) {
                                 broadcastLog(botId, `🔑 /login gönderildi.`, 'info');
                             }
                             
-                            // 2. Adım: Alt sunucuya geç (/gir asmp)
                             if (subCmd && subCmd.trim() !== '') {
                                 setTimeout(() => {
                                     if (botData.client) {
@@ -491,7 +459,6 @@ function setupCustomPacketHandler(client, botId) {
                                         sendChat(client, subCmd);
                                         broadcastLog(botId, `🔀 ${subCmd} komutu ile sunucuya geçiliyor...`, 'info');
                                         
-                                        // 3. Adım: Alt sunucuya girdikten sonra /afk komutunu gönder
                                         setTimeout(() => {
                                             if (botData.client) {
                                                 sendChat(client, '/afk');
@@ -531,6 +498,41 @@ function setupCustomPacketHandler(client, botId) {
                     safeClientWrite(client, 'keep_alive', { keepAliveId: data.keepAliveId });
                     break;
 
+                case 'teams': {
+                    const teamName = data.team;
+                    const mode = data.mode;
+                    
+                    if (!botData.scoreboardData.teams[teamName]) {
+                        botData.scoreboardData.teams[teamName] = { prefix: '', suffix: '', players: [] };
+                    }
+                    
+                    const t = botData.scoreboardData.teams[teamName];
+                    
+                    if (mode === 0 || mode === 2) { 
+                        if (data.prefix !== undefined) t.prefix = parseMcText(data.prefix);
+                        if (data.suffix !== undefined) t.suffix = parseMcText(data.suffix);
+                    }
+                    
+                    if (mode === 0 || mode === 3) {
+                        const players = data.players || [];
+                        players.forEach(p => {
+                            if (!t.players.includes(p)) t.players.push(p);
+                        });
+                    }
+                    
+                    if (mode === 4) {
+                        const players = data.players || [];
+                        t.players = t.players.filter(p => !players.includes(p));
+                    }
+                    
+                    if (mode === 1) {
+                        delete botData.scoreboardData.teams[teamName];
+                    }
+                    
+                    queueScoreboardUpdate();
+                    break;
+                }
+
                 case 'scoreboard_objective': {
                     const name = data.name || data.objectiveName;
                     const action = data.action !== undefined ? data.action : (data.mode !== undefined ? data.mode : 0);
@@ -542,10 +544,12 @@ function setupCustomPacketHandler(client, botId) {
                             type: data.type || 0,
                             position: data.position
                         };
-                        botData.scoreboardData.sidebarObjective = name;
                     } else if (action === 1) {
                         delete botData.scoreboardData.objectives[name];
                         delete botData.scoreboardData.scores[name];
+                        if (botData.scoreboardData.sidebarObjective === name) {
+                            botData.scoreboardData.sidebarObjective = null;
+                        }
                     }
                     queueScoreboardUpdate();
                     break;
@@ -555,8 +559,12 @@ function setupCustomPacketHandler(client, botId) {
                 case 'scoreboard_display_objective': {
                     const position = data.position !== undefined ? data.position : data.slot;
                     const name = data.name || data.objectiveName;
-                    if (position === 1 || position === undefined) {
-                        if (name) botData.scoreboardData.sidebarObjective = name;
+                    
+                    // Position 1: Sidebar (Sağ Menü)
+                    if (position === 1) {
+                        botData.scoreboardData.sidebarObjective = name;
+                    } else if (botData.scoreboardData.sidebarObjective === name) {
+                        botData.scoreboardData.sidebarObjective = null;
                     }
                     queueScoreboardUpdate();
                     break;
@@ -564,7 +572,7 @@ function setupCustomPacketHandler(client, botId) {
 
                 case 'scoreboard_score':
                 case 'set_score': {
-                    const objName = data.scoreName || data.objectiveName || data.name || Object.keys(botData.scoreboardData.objectives)[0];
+                    const objName = data.scoreName || data.objectiveName || data.name;
                     const scoreItemName = data.itemName || data.scoreName || data.name;
                     const action = data.action !== undefined ? data.action : (data.remove ? 1 : 0);
                     
@@ -585,10 +593,6 @@ function setupCustomPacketHandler(client, botId) {
                         if (scoreItemName && botData.scoreboardData.scores[objName][scoreItemName]) {
                             delete botData.scoreboardData.scores[objName][scoreItemName];
                         }
-                    }
-                    
-                    if (!botData.scoreboardData.sidebarObjective && objName) {
-                        botData.scoreboardData.sidebarObjective = objName;
                     }
 
                     queueScoreboardUpdate();
@@ -801,7 +805,7 @@ io.on('connection', (socket) => {
                     botData.tabList = {};
                     botData.scoreboardData = { sidebarObjective: null, objectives: {}, scores: {}, teams: {} };
                     botData.lastScoreboard = null;
-                    io.emit('bot-scoreboard', { botId: botData.id, scoreboard: null });
+                    io.emit('bot-scoreboard', { botId: targetBotId, scoreboard: null });
                 }
                 sendChat(botData.client, command);
                 broadcastLog(targetBotId, `> ${command}`, 'command');
@@ -823,9 +827,9 @@ io.on('connection', (socket) => {
                 mouseButton: button !== undefined ? button : 0,
                 mode: mode !== undefined ? mode : 0,
                 changedSlots: [],
-                item: slotItem,          // Temel alan
-                clickedItem: slotItem,   // Yeni paket formatı zorunluluğu
-                cursorItem: slotItem     // Alternatif paket varyasyonları
+                item: slotItem,          
+                clickedItem: slotItem,   
+                cursorItem: slotItem     
             });
         } catch (e) {}
     });

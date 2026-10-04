@@ -1,7 +1,7 @@
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
-mc = require('minecraft-protocol');
+const mc = require('minecraft-protocol');
 
 const app = express();
 const server = http.createServer(app);
@@ -9,20 +9,24 @@ const io = new Server(server);
 
 app.use(express.static('public'));
 
-// Aktif Bot Listesi
+// Aktif Bot Listesi ve Varsayılan Ayarlar
 let bots = [];
+let globalSettings = {
+    host: 'oyna.aesirmc.com',
+    port: 25565,
+    version: '1.20.6',
+    password: 'eniyisiben',
+    autoSubServerCmd: '/gir asmp'
+};
 
-// Yardımcı Log Ekleme Fonksiyonu
 function addLog(bot, text, type = 'info') {
     const timestamp = new Date().toLocaleTimeString('tr-TR');
     if (!bot.logs) bot.logs = [];
     bot.logs.push({ timestamp, text, type });
     if (bot.logs.length > 100) bot.logs.shift();
-    
     io.emit('bot-log', { botId: bot.id, timestamp, text, type });
 }
 
-// Bot Başlatma Fonksiyonu (node-minecraft-protocol ile)
 function startBotInstance(bot) {
     if (bot.client) {
         try { bot.client.end(); } catch (e) {}
@@ -44,7 +48,6 @@ function startBotInstance(bot) {
             bot.status = 'Online';
             addLog(bot, 'Sunucuya başarıyla giriş yapıldı!', 'system');
             
-            // Şifre varsa gönder
             if (bot.config.password) {
                 setTimeout(() => {
                     bot.client.write('chat', { message: `/login ${bot.config.password}` });
@@ -52,7 +55,6 @@ function startBotInstance(bot) {
                 }, 1000);
             }
 
-            // Sub-server / Lobi Komutu (/gir)
             if (bot.config.autoSubServerCmd) {
                 setTimeout(() => {
                     bot.client.write('chat', { message: bot.config.autoSubServerCmd });
@@ -63,7 +65,6 @@ function startBotInstance(bot) {
             io.emit('bot-updated', bot);
         });
 
-        // Konum Güncellemeleri
         bot.client.on('position', (packet) => {
             bot.pos = {
                 x: packet.x.toFixed(1),
@@ -73,14 +74,12 @@ function startBotInstance(bot) {
             io.emit('bot-updated', bot);
         });
 
-        // Sağlık ve Açlık (Eğer paket gelirse)
         bot.client.on('update_health', (packet) => {
             bot.health = packet.health;
             bot.food = packet.food;
             io.emit('bot-updated', bot);
         });
 
-        // Chat ve Loglar
         bot.client.on('chat', (packet) => {
             try {
                 const msg = JSON.parse(packet.message);
@@ -95,14 +94,6 @@ function startBotInstance(bot) {
             bot.status = 'Offline';
             addLog(bot, `Bağlantı kapandı. Sebep: ${reason}`, 'error');
             io.emit('bot-updated', bot);
-
-            // Oto-Yeniden Bağlanma
-            if (bot.config.autoReconnect) {
-                addLog(bot, '5 saniye sonra yeniden bağlanılacak...', 'system');
-                setTimeout(() => {
-                    if (bot.status === 'Offline') startBotInstance(bot);
-                }, 5000);
-            }
         });
 
         bot.client.on('error', (err) => {
@@ -118,9 +109,8 @@ function startBotInstance(bot) {
     }
 }
 
-// Socket.io Bağlantı Yönetimi
 io.on('connection', (socket) => {
-    socket.emit('init-data', { botList: bots });
+    socket.emit('init-data', { botList: bots, globalSettings });
 
     socket.on('add-bot', (data) => {
         const newBot = {
@@ -129,18 +119,9 @@ io.on('connection', (socket) => {
             status: 'Offline',
             health: 20,
             food: 20,
-            pos: { x: 0, y: 64, z: 0 },
-            config: {
-                host: 'oyna.aesirmc.com',
-                port: 25565,
-                version: '1.20.6',
-                password: 'eniyisiben',
-                autoSubServerCmd: '/gir asmp',
-                autoReconnect: true,
-                autoAntiAfk: true
-            },
+            pos: { x: 0, y: 0, z: 0 },
+            config: { ...globalSettings },
             logs: [],
-            inventory: [],
             client: null
         };
         bots.push(newBot);
@@ -169,25 +150,48 @@ io.on('connection', (socket) => {
                 try { bots[index].client.end(); } catch (e) {}
             }
             bots.splice(index, 1);
-            io.emit('init-data', { botList: bots });
+            io.emit('init-data', { botList: bots, globalSettings });
         }
     });
 
-    socket.on('send-command', (data) => {
-        const bot = bots.find(b => b.id === data.targetBotId);
-        if (bot && bot.client && bot.status === 'Online') {
-            bot.client.write('chat', { message: data.command });
-            addLog(bot, `[Komut] ${data.command}`, 'system');
-        }
+    // Tümünü Başlat
+    socket.on('start-all', () => {
+        bots.forEach(bot => {
+            if (bot.status !== 'Online' && bot.status !== 'Connecting') {
+                startBotInstance(bot);
+            }
+        });
     });
 
-    socket.on('update-bot-config', (data) => {
-        const bot = bots.find(b => b.id === data.botId);
-        if (bot) {
-            bot.config = { ...bot.config, ...data.config };
-            addLog(bot, 'Bot yapılandırma ayarları güncellendi.', 'system');
-            io.emit('bot-updated', bot);
-        }
+    // Tümünü Durdur
+    socket.on('stop-all', () => {
+        bots.forEach(bot => {
+            if (bot.client) {
+                try { bot.client.end(); } catch (e) {}
+                bot.status = 'Offline';
+                addLog(bot, 'Bot durduruldu.', 'system');
+                io.emit('bot-updated', bot);
+            }
+        });
+    });
+
+    // Global / Konsol Komut Gönderimi
+    socket.on('global-command', (data) => {
+        const { target, command } = data;
+        bots.forEach(bot => {
+            if ((target === 'all' || bot.id === target) && bot.client && bot.status === 'Online') {
+                bot.client.write('chat', { message: command });
+                addLog(bot, `[Komut] ${command}`, 'system');
+            }
+        });
+    });
+
+    // Genel Ayarları Güncelle
+    socket.on('update-global-settings', (newSettings) => {
+        globalSettings = newSettings;
+        bots.forEach(bot => {
+            bot.config = { ...bot.config, ...globalSettings };
+        });
     });
 });
 

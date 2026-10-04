@@ -32,6 +32,11 @@ function startBotInstance(bot) {
     }
 
     bot.status = 'Connecting';
+    bot.time = { worldTime: 0, timeString: '00:00' };
+    bot.scoreboard = { title: 'Scoreboard', items: [] };
+    bot.tabList = [];
+    bot.radarEntities = [];
+
     addLog(bot, `${bot.username} sunucuya bağlanıyor (${bot.config.host}:${bot.config.port})...`, 'system');
     io.emit('bot-updated', bot);
 
@@ -79,6 +84,21 @@ function startBotInstance(bot) {
             io.emit('bot-updated', bot);
         });
 
+        // Oyun Saati (Time Packet)
+        bot.client.on('time_update', (packet) => {
+            const worldAge = packet.age;
+            const timeOfDay = packet.time;
+            // Minecraft saati hesaplama (0-24000 arası)
+            let hours = Math.floor((timeOfDay / 1000) + 6) % 24;
+            let minutes = Math.floor(((timeOfDay % 1000) / 1000) * 60);
+            bot.time = {
+                timeString: `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`,
+                raw: timeOfDay
+            };
+            io.emit('bot-updated', bot);
+        });
+
+        // Chat Dinleme
         bot.client.on('chat', (packet) => {
             try {
                 const msg = JSON.parse(packet.message);
@@ -87,6 +107,13 @@ function startBotInstance(bot) {
             } catch (e) {
                 addLog(bot, `[Chat] ${packet.message}`);
             }
+        });
+
+        // Yakınlardaki Varlıklar (Radar için)
+        bot.client.on('spawn_entity', (packet) => {
+            if (!bot.radarEntities) bot.radarEntities = [];
+            bot.radarEntities.push({ id: packet.entityId, type: packet.type, x: packet.x, z: packet.z });
+            if (bot.radarEntities.length > 20) bot.radarEntities.shift();
         });
 
         bot.client.on('end', (reason) => {
@@ -119,6 +146,10 @@ io.on('connection', (socket) => {
             health: 20,
             food: 20,
             pos: { x: 0, y: 0, z: 0 },
+            time: { timeString: '00:00' },
+            scoreboard: { title: 'Skorbord', items: ['Sunucuya bağlı değil'] },
+            tabList: [data.username],
+            radarEntities: [],
             config: { ...globalSettings },
             logs: [],
             client: null
@@ -170,6 +201,16 @@ io.on('connection', (socket) => {
                 io.emit('bot-updated', bot);
             }
         });
+    });
+
+    // Tekil Bot Komut / Chat Gönderimi (Doğrudan Terminalden)
+    socket.on('bot-command', (data) => {
+        const { botId, command } = data;
+        const bot = bots.find(b => b.id === botId);
+        if (bot && bot.client && bot.status === 'Online') {
+            bot.client.write('chat', { message: command });
+            addLog(bot, `[Komut] ${command}`, 'system');
+        }
     });
 
     socket.on('global-command', (data) => {

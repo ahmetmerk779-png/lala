@@ -1,6 +1,7 @@
 const express = require('express');
 const http = require('http');
 const https = require('https');
+const axios = require('axios');
 const { Server } = require('socket.io');
 const mc = require('minecraft-protocol');
 const mcData = require('minecraft-data');
@@ -31,6 +32,29 @@ const PROXY_SOURCES = [
 ];
 
 let fetchedProxies = [];
+
+async function fetchAutoProxiesWithAxios() {
+    console.log('🔄 [Axios] Görsellerdeki GitHub kaynaklarından SOCKS5 proxy listeleri çekiliyor...');
+    let tempProxies = new Set();
+    
+    for (const url of PROXY_SOURCES) {
+        try {
+            const response = await axios.get(url, { timeout: 10000 });
+            if (response.data && typeof response.data === 'string') {
+                const lines = response.data.split(/\r?\n/).map(l => l.trim()).filter(l => l && l.includes(':'));
+                lines.forEach(proxy => tempProxies.add(proxy));
+            }
+        } catch (err) {
+            console.error(`⚠️ [Axios Proxy İndirme Hatası] (${url}):`, err.message);
+        }
+    }
+
+    if (tempProxies.size > 0) {
+        fetchedProxies = Array.from(tempProxies);
+        console.log(`✅ [Axios Oto Proxy] Toplam ${fetchedProxies.length} adet benzersiz SOCKS5 proxy yüklendi.`);
+        io.emit('auto-proxies-updated', { count: fetchedProxies.length });
+    }
+}
 
 function fetchAutoProxies() {
     console.log('🔄 Görsellerdeki GitHub kaynaklarından SOCKS5 proxy listeleri çekiliyor...');

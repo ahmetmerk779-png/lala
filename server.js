@@ -24,72 +24,47 @@ console.log('📁 Kayıt dosyasının tam yolu:', DATA_FILE);
 
 const botPool = new Map();
 
-// === OTOMATİK PROXY ÇEKME SİSTEMİ (GÖRSELLERDEKİ LİNKLER) ===
+// === OTOMATİK PROXY ÇEKME SİSTEMİ ===
 const PROXY_SOURCES = [
     'https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/socks5.txt',
     'https://raw.githubusercontent.com/TheSpeedX/SOCKS-List/master/socks5.txt',
-    'https://raw.githubusercontent.com/hookzof/socks5_list/master/proxy.txt'
+    'https://raw.githubusercontent.com/hookzof/socks5_list/master/proxy.txt',
+    'https://raw.githubusercontent.com/prxctr/proxy-list/main/socks5.txt'
 ];
 
 let fetchedProxies = [];
 
-async function fetchAutoProxiesWithAxios() {
-    console.log('🔄 [Axios] Görsellerdeki GitHub kaynaklarından SOCKS5 proxy listeleri çekiliyor...');
+async function fetchAutoProxies() {
+    console.log('🔄 SOCKS5 proxy listeleri çekiliyor...');
     let tempProxies = new Set();
     
     for (const url of PROXY_SOURCES) {
         try {
-            const response = await axios.get(url, { timeout: 10000 });
+            const response = await axios.get(url, { timeout: 8000 });
             if (response.data && typeof response.data === 'string') {
-                const lines = response.data.split(/\r?\n/).map(l => l.trim()).filter(l => l && l.includes(':'));
+                const lines = response.data
+                    .split(/\r?\n/)
+                    .map(l => l.trim())
+                    .filter(l => l && /^(\d{1,3}\.){3}\d{1,3}:\d+/.test(l));
                 lines.forEach(proxy => tempProxies.add(proxy));
             }
         } catch (err) {
-            console.error(`⚠️ [Axios Proxy İndirme Hatası] (${url}):`, err.message);
+            console.error(`⚠️ [Proxy İndirme Hatası] (${url}):`, err.message);
         }
     }
 
     if (tempProxies.size > 0) {
         fetchedProxies = Array.from(tempProxies);
-        console.log(`✅ [Axios Oto Proxy] Toplam ${fetchedProxies.length} adet benzersiz SOCKS5 proxy yüklendi.`);
+        console.log(`✅ [Oto Proxy] Toplam ${fetchedProxies.length} adet benzersiz SOCKS5 proxy yüklendi.`);
         io.emit('auto-proxies-updated', { count: fetchedProxies.length });
+    } else {
+        console.warn('⚠️ Proxy listeleri çekilemedi veya havuz boş.');
     }
 }
 
-function fetchAutoProxies() {
-    console.log('🔄 Görsellerdeki GitHub kaynaklarından SOCKS5 proxy listeleri çekiliyor...');
-    let tempProxies = new Set();
-    let completedRequests = 0;
-
-    PROXY_SOURCES.forEach((url) => {
-        https.get(url, (res) => {
-            let data = '';
-            res.on('data', chunk => data += chunk);
-            res.on('end', () => {
-                const lines = data.split(/\r?\n/).map(l => l.trim()).filter(l => l && l.includes(':'));
-                lines.forEach(proxy => tempProxies.add(proxy));
-                completedRequests++;
-
-                if (completedRequests === PROXY_SOURCES.length) {
-                    fetchedProxies = Array.from(tempProxies);
-                    console.log(`✅ [Oto Proxy] Toplam ${fetchedProxies.length} adet benzersiz SOCKS5 proxy yüklendi.`);
-                    io.emit('auto-proxies-updated', { count: fetchedProxies.length });
-                }
-            });
-        }).on('error', (err) => {
-            console.error(`⚠️ [Proxy İndirme Hatası] (${url}):`, err.message);
-            completedRequests++;
-            if (completedRequests === PROXY_SOURCES.length && tempProxies.size > 0) {
-                fetchedProxies = Array.from(tempProxies);
-                console.log(`✅ [Oto Proxy] Toplam ${fetchedProxies.length} adet SOCKS5 proxy yüklendi.`);
-            }
-        });
-    });
-}
-
-// Otomatik başlat ve her 15 dakikada bir güncelle
+// Otomatik başlat ve her 10 dakikada bir güncelle
 fetchAutoProxies();
-setInterval(fetchAutoProxies, 15 * 60 * 1000);
+setInterval(fetchAutoProxies, 10 * 60 * 1000);
 
 let globalConfig = {
     host: '141.95.82.164',
@@ -877,7 +852,8 @@ function startBotInstance(botId) {
                         destination: {
                             host: host,
                             port: port
-                        }
+                        },
+                        timeout: 10000 // Proxy bağlantı zaman aşımı süresi (10sn)
                     }, (err, info) => {
                         if (err) {
                             cleanupBot(botId, `Proxy Bağlantı Hatası (${selectedProxy}): ${err.message}`);

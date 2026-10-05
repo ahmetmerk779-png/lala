@@ -5,7 +5,6 @@ const axios = require('axios');
 const { Server } = require('socket.io');
 const mc = require('minecraft-protocol');
 const mcData = require('minecraft-data');
-const { SocksClient } = require('socks');
 const path = require('path');
 const fs = require('fs');
 
@@ -24,65 +23,6 @@ console.log('📁 Kayıt dosyasının tam yolu:', DATA_FILE);
 
 const botPool = new Map();
 
-// === OTOMATİK PROXY ÇEKME & WEBSHARE SİSTEMİ ===
-const PROXY_SOURCES = [
-    'https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/socks5.txt',
-    'https://raw.githubusercontent.com/TheSpeedX/SOCKS-List/master/socks5.txt',
-    'https://raw.githubusercontent.com/hookzof/socks5_list/master/proxy.txt',
-    'https://raw.githubusercontent.com/prxctr/proxy-list/main/socks5.txt'
-];
-
-let fetchedProxies = [];
-
-async function fetchAutoProxies() {
-    console.log('🔄 SOCKS5 ve Webshare proxy listeleri yükleniyor...');
-    let tempProxies = new Set();
-
-    // 1. Yerel Dosya Kontrolü (Proje dizinindeki proxies.txt veya webshare.txt)
-    const localFiles = ['proxies.txt', 'webshare.txt'];
-    for (const file of localFiles) {
-        const filePath = path.join(__dirname, file);
-        if (fs.existsSync(filePath)) {
-            try {
-                const content = fs.readFileSync(filePath, 'utf8');
-                const lines = content.split(/\r?\n/).map(l => l.trim()).filter(l => l && !l.startsWith('#'));
-                lines.forEach(proxy => tempProxies.add(proxy));
-                console.log(`📄 [Yerel Proxy] ${file} dosyasından ${lines.length} adet proxy eklendi.`);
-            } catch (e) {
-                console.error(`⚠️ Yerel proxy dosyası okunamadı (${file}):`, e.message);
-            }
-        }
-    }
-    
-    // 2. Çevrimiçi Açık Kaynak Proxy'ler
-    for (const url of PROXY_SOURCES) {
-        try {
-            const response = await axios.get(url, { timeout: 8000 });
-            if (response.data && typeof response.data === 'string') {
-                const lines = response.data
-                    .split(/\r?\n/)
-                    .map(l => l.trim())
-                    .filter(l => l && l.includes(':'));
-                lines.forEach(proxy => tempProxies.add(proxy));
-            }
-        } catch (err) {
-            console.error(`⚠️️ [Proxy İndirme Hatası] (${url}):`, err.message);
-        }
-    }
-
-    if (tempProxies.size > 0) {
-        fetchedProxies = Array.from(tempProxies);
-        console.log(`✅ [Proxy Havuzu] Toplam ${fetchedProxies.length} adet benzersiz SOCKS5 / Webshare proxy aktif.`);
-        io.emit('auto-proxies-updated', { count: fetchedProxies.length });
-    } else {
-        console.warn('⚠️ Proxy listeleri çekilemedi veya havuz boş.');
-    }
-}
-
-// Otomatik başlat ve her 10 dakikada bir güncelle
-fetchAutoProxies();
-setInterval(fetchAutoProxies, 10 * 60 * 1000);
-
 let globalConfig = {
     host: '141.95.82.164',
     port: 25565,
@@ -90,14 +30,13 @@ let globalConfig = {
     autoPassword: 'deliyizpassword',
     autoSubServerCmd: '/gir asmp',
     autoSubServerDelay: 4,
-    autoReconnect: true,
-    proxy: 'auto'
+    autoReconnect: true
 };
 
 const defaultBotConfigs = [
-    { id: 'bot_1', username: 'Deliyiz_1', host: '141.95.82.164', port: 25565, autoPassword: 'deliyizpassword', proxy: 'auto' },
-    { id: 'bot_2', username: 'Deliyiz_2', host: '141.95.82.164', port: 25565, autoPassword: 'deliyizpassword', proxy: 'auto' },
-    { id: 'bot_3', username: 'Deliyiz_3', host: '141.95.82.164', port: 25565, autoPassword: 'deliyizpassword', proxy: 'auto' }
+    { id: 'bot_1', username: 'Deliyiz_1', host: '141.95.82.164', port: 25565, autoPassword: 'deliyizpassword' },
+    { id: 'bot_2', username: 'Deliyiz_2', host: '141.95.82.164', port: 25565, autoPassword: 'deliyizpassword' },
+    { id: 'bot_3', username: 'Deliyiz_3', host: '141.95.82.164', port: 25565, autoPassword: 'deliyizpassword' }
 ];
 
 const mcDataCache = {};
@@ -210,8 +149,7 @@ function saveDataToFile() {
         const botList = Array.from(botPool.values()).map(b => ({
             id: b.id, username: b.username, host: b.host, port: b.port,
             version: b.version, autoPassword: b.autoPassword,
-            autoSubServerCmd: b.autoSubServerCmd, autoSubServerDelay: b.autoSubServerDelay,
-            proxy: b.proxy || 'auto'
+            autoSubServerCmd: b.autoSubServerCmd, autoSubServerDelay: b.autoSubServerDelay
         }));
         const fileContent = JSON.stringify({ globalConfig, bots: botList }, null, 2);
         fs.writeFileSync(DATA_FILE, fileContent, 'utf8');
@@ -819,22 +757,8 @@ function startBotInstance(botId) {
     const host = botData.host || globalConfig.host;
     const port = Number(botData.port || globalConfig.port);
     const version = botData.version || globalConfig.version;
-    let proxyConfig = (botData.proxy !== undefined ? botData.proxy : globalConfig.proxy) || 'auto';
 
-    let selectedProxy = proxyConfig.trim();
-
-    // Otomatik Proxy Seçimi (Her başlatmada listeden rastgele canlı proxy atanır)
-    if (!selectedProxy || selectedProxy.toLowerCase() === 'auto') {
-        if (fetchedProxies.length > 0) {
-            selectedProxy = fetchedProxies[Math.floor(Math.random() * fetchedProxies.length)];
-            broadcastLog(botId, `🎲 [Oto Proxy Atandı]: ${selectedProxy}`, 'info');
-        } else {
-            broadcastLog(botId, `⚠️ Proxy havuzu henüz yüklenemedi veya boş, doğrudan bağlanılıyor...`, 'warn');
-            selectedProxy = '';
-        }
-    }
-
-    broadcastLog(botId, `${botData.username} bağlanıyor (${host}:${port}${selectedProxy ? ' | Proxy: ' + selectedProxy : ''})...`, 'info');
+    broadcastLog(botId, `${botData.username} bağlanıyor (${host}:${port})...`, 'info');
     botData.status = 'Connecting';
     io.emit('status-update', { botId, status: 'Connecting', onlineSince: null });
 
@@ -847,56 +771,6 @@ function startBotInstance(botId) {
             checkTimeoutInterval: 60000,
             keepAlive: true
         };
-
-        if (selectedProxy && selectedProxy.trim() !== '') {
-            let proxyHost, proxyPort, proxyUser, proxyPassword;
-
-            // Webshare ve Genel Proxy Format Ayrıştırma
-            if (selectedProxy.includes('@')) {
-                // Format: user:pass@host:port
-                const [auth, hostPort] = selectedProxy.trim().split('@');
-                const [u, p] = auth.split(':');
-                const [h, pt] = hostPort.split(':');
-                proxyHost = h;
-                proxyPort = parseInt(pt, 10);
-                proxyUser = u;
-                proxyPassword = p;
-            } else {
-                // Format: host:port:user:pass VEYA host:port
-                const parts = selectedProxy.trim().split(':');
-                proxyHost = parts[0];
-                proxyPort = parseInt(parts[1], 10);
-                proxyUser = parts[2] || undefined;
-                proxyPassword = parts[3] || undefined;
-            }
-
-            if (proxyHost && proxyPort) {
-                clientOptions.connect = (client) => {
-                    SocksClient.createConnection({
-                        proxy: {
-                            host: proxyHost,
-                            port: proxyPort,
-                            type: 5, // SOCKS5
-                            userId: proxyUser,
-                            password: proxyPassword
-                        },
-                        command: 'connect',
-                        destination: {
-                            host: host,
-                            port: port
-                        },
-                        timeout: 10000 // Webshare / SOCKS5 zaman aşımı (10sn)
-                    }, (err, info) => {
-                        if (err) {
-                            cleanupBot(botId, `Proxy Bağlantı Hatası (${selectedProxy}): ${err.message}`);
-                            return;
-                        }
-                        client.setSocket(info.socket);
-                        client.emit('connect');
-                    });
-                };
-            }
-        }
 
         const client = mc.createClient(clientOptions);
 
@@ -962,7 +836,6 @@ io.on('connection', (socket) => {
         autoPassword: b.autoPassword !== undefined ? b.autoPassword : globalConfig.autoPassword,
         autoSubServerCmd: b.autoSubServerCmd !== undefined ? b.autoSubServerCmd : globalConfig.autoSubServerCmd,
         autoSubServerDelay: b.autoSubServerDelay !== undefined ? b.autoSubServerDelay : globalConfig.autoSubServerDelay,
-        proxy: b.proxy !== undefined ? b.proxy : globalConfig.proxy,
         status: b.status, onlineSince: b.onlineSince || null, pos: b.pos || { x: 0, y: 0, z: 0 },
         logs: b.logs, inventory: b.inventory || {}
     }));
@@ -988,8 +861,6 @@ io.on('connection', (socket) => {
     socket.on('start-all', () => startAllBots());
     socket.on('stop-all', () => { for (const id of botPool.keys()) stopBotInstance(id); });
 
-    socket.on('fetch-auto-proxies', () => fetchAutoProxies());
-
     socket.on('add-bot', (data) => {
         const username = typeof data === 'string' ? data : data.username;
         if (!username) return;
@@ -1004,7 +875,6 @@ io.on('connection', (socket) => {
             autoPassword: typeof data === 'object' && data.autoPassword !== undefined ? data.autoPassword : globalConfig.autoPassword,
             autoSubServerCmd: typeof data === 'object' && data.autoSubServerCmd !== undefined ? data.autoSubServerCmd : globalConfig.autoSubServerCmd,
             autoSubServerDelay: typeof data === 'object' && data.autoSubServerDelay !== undefined ? data.autoSubServerDelay : globalConfig.autoSubServerDelay,
-            proxy: typeof data === 'object' && data.proxy !== undefined ? data.proxy : globalConfig.proxy,
             status: 'Offline', onlineSince: null, pos: { x: 0, y: 0, z: 0 },
             client: null, logs: [], inventory: {}, scoreboard: null, tabList: {}, entities: {}, isManualStop: false
         };

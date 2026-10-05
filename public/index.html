@@ -85,7 +85,7 @@
             gap: 8px;
         }
 
-        input, select {
+        input, select, textarea {
             background: var(--bg-input);
             border: 1px solid var(--border-color);
             color: var(--text-main);
@@ -436,13 +436,45 @@
         <button class="btn-secondary" onclick="openGlobalSettings()">⚙️ Genel Ayarlar</button>
     </div>
 
-    <!-- OTO PROXY BİLGİ BARI -->
-    <div class="card" style="display: flex; justify-content: space-between; align-items: center; padding: 10px 14px;">
-        <div style="font-size: 12px; color: var(--text-muted); font-weight: 600; display: flex; align-items: center; gap: 6px;">
-            <span>🌐 OTO PROXY HAVUZU:</span>
-            <strong id="proxyCount" style="color: #38bdf8; font-family: 'Fira Code', monospace;">Yükleniyor...</strong>
+    <!-- GELİŞMİŞ PROXY VE AĞ YAPILANDIRMASI KARTI -->
+    <div class="card">
+        <div class="card-header">🌐 Proxy & Ağ Yapılandırması</div>
+        <div style="display: flex; flex-direction: column; gap: 10px;">
+            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                <div class="field" style="flex: 1; min-width: 140px;">
+                    <label>Proxy Çalışma Modu</label>
+                    <select id="proxyModeSelect" onchange="toggleProxyMode()">
+                        <option value="auto">🌐 Otomatik Havuz (Auto Scraper)</option>
+                        <option value="custom">📝 Özel Proxy Listesi</option>
+                        <option value="direct">🚫 Proxy Kullanma (Doğrudan Bağlantı)</option>
+                    </select>
+                </div>
+                <div class="field" style="flex: 1; min-width: 120px;">
+                    <label>Proxy Tipi</label>
+                    <select id="proxyTypeSelect">
+                        <option value="socks5">SOCKS5</option>
+                        <option value="socks4">SOCKS4</option>
+                        <option value="http">HTTP / HTTPS</option>
+                    </select>
+                </div>
+            </div>
+
+            <div id="customProxyContainer" class="field" style="display: none;">
+                <label>Özel Proxy Listesi (Her satıra bir adet IP:Port veya IP:Port:User:Pass)</label>
+                <textarea id="customProxyList" rows="4" placeholder="185.123.45.67:1080&#10;192.168.1.50:1080:kullanici:sifre" style="font-family: 'Fira Code', monospace; font-size: 12px; resize: vertical;"></textarea>
+            </div>
+
+            <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center; justify-content: space-between; border-top: 1px dashed var(--border-color); padding-top: 10px;">
+                <div style="font-size: 12px; color: var(--text-muted); font-weight: 600;">
+                    <span>Aktif Havuz Durumu: </span>
+                    <strong id="proxyCount" style="color: #38bdf8; font-family: 'Fira Code', monospace;">Yükleniyor...</strong>
+                </div>
+                <div style="display: flex; gap: 6px;">
+                    <button class="btn-warning" onclick="refreshProxies()" style="padding: 6px 12px; font-size: 11px;">🔄 Havuzu Yenile</button>
+                    <button class="btn-primary" onclick="saveProxySettings()" style="padding: 6px 12px; font-size: 11px;">💾 Proxy Ayarlarını Kaydet</button>
+                </div>
+            </div>
         </div>
-        <button class="btn-warning" onclick="refreshProxies()" style="padding: 5px 10px; font-size: 11px;">🔄 Listeyi Yenile</button>
     </div>
 
     <div class="card">
@@ -483,7 +515,7 @@
         <div class="field"><label>Versiyon</label><input type="text" id="modalVersion"></div>
         <div class="field"><label>Şifre (/login)</label><input type="text" id="modalPassword"></div>
         <div class="field"><label>Alt Sunucu Komutu</label><input type="text" id="modalSubCmd"></div>
-        <div class="field"><label>Proxy (SOCKS5 - 'auto' veya IP:Port)</label><input type="text" id="modalProxy" placeholder="auto"></div>
+        <div class="field"><label>Özel Bot Proxy (IP:Port veya 'auto')</label><input type="text" id="modalProxy" placeholder="auto"></div>
         <div style="display: flex; gap: 8px; margin-top: 8px;">
             <button class="btn-primary" style="flex: 1;" onclick="saveBotSettings()">Kaydet</button>
             <button class="btn-secondary" onclick="closeModal('botSettingsModal')">İptal</button>
@@ -511,6 +543,29 @@
     const socket = io();
     let botsMap = new Map();
     let globalConfig = {};
+
+    function toggleProxyMode() {
+        const mode = document.getElementById('proxyModeSelect').value;
+        const customContainer = document.getElementById('customProxyContainer');
+        if (mode === 'custom') {
+            customContainer.style.display = 'flex';
+        } else {
+            customContainer.style.display = 'none';
+        }
+    }
+
+    function saveProxySettings() {
+        const mode = document.getElementById('proxyModeSelect').value;
+        const type = document.getElementById('proxyTypeSelect').value;
+        const rawList = document.getElementById('customProxyList').value;
+        const proxies = rawList.split('\n').map(p => p.trim()).filter(p => p.length > 0);
+
+        socket.emit('update-proxy-config', {
+            mode: mode,
+            type: type,
+            customProxies: proxies
+        });
+    }
 
     function formatUptime(ms) {
         if (!ms) return '00:00:00';
@@ -545,11 +600,20 @@
         globalConfig = data.globalConfig || {};
         data.botList.forEach(bot => botsMap.set(bot.id, bot));
         renderBotList();
+
+        if (data.proxyConfig) {
+            document.getElementById('proxyModeSelect').value = data.proxyConfig.mode || 'auto';
+            document.getElementById('proxyTypeSelect').value = data.proxyConfig.type || 'socks5';
+            if (data.proxyConfig.customProxies) {
+                document.getElementById('customProxyList').value = data.proxyConfig.customProxies.join('\n');
+            }
+            toggleProxyMode();
+        }
     });
 
     socket.on('auto-proxies-updated', ({ count }) => {
         const proxyEl = document.getElementById('proxyCount');
-        if (proxyEl) proxyEl.innerText = `${count} Adet SOCKS5`;
+        if (proxyEl) proxyEl.innerText = `${count} Adet Aktif`;
     });
 
     function refreshProxies() {

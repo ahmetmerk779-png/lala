@@ -1,5 +1,6 @@
 const express = require('express');
 const http = require('http');
+const https = require('https');
 const { Server } = require('socket.io');
 const mc = require('minecraft-protocol');
 const mcData = require('minecraft-data');
@@ -22,6 +23,50 @@ console.log('📁 Kayıt dosyasının tam yolu:', DATA_FILE);
 
 const botPool = new Map();
 
+// === OTOMATİK PROXY ÇEKME SİSTEMİ (GÖRSELLERDEKİ LİNKLER) ===
+const PROXY_SOURCES = [
+    'https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/socks5.txt',
+    'https://raw.githubusercontent.com/TheSpeedX/SOCKS-List/master/socks5.txt',
+    'https://raw.githubusercontent.com/hookzof/socks5_list/master/proxy.txt'
+];
+
+let fetchedProxies = [];
+
+function fetchAutoProxies() {
+    console.log('🔄 Görsellerdeki GitHub kaynaklarından SOCKS5 proxy listeleri çekiliyor...');
+    let tempProxies = new Set();
+    let completedRequests = 0;
+
+    PROXY_SOURCES.forEach((url) => {
+        https.get(url, (res) => {
+            let data = '';
+            res.on('data', chunk => data += chunk);
+            res.on('end', () => {
+                const lines = data.split(/\r?\n/).map(l => l.trim()).filter(l => l && l.includes(':'));
+                lines.forEach(proxy => tempProxies.add(proxy));
+                completedRequests++;
+
+                if (completedRequests === PROXY_SOURCES.length) {
+                    fetchedProxies = Array.from(tempProxies);
+                    console.log(`✅ [Oto Proxy] Toplam ${fetchedProxies.length} adet benzersiz SOCKS5 proxy yüklendi.`);
+                    io.emit('auto-proxies-updated', { count: fetchedProxies.length });
+                }
+            });
+        }).on('error', (err) => {
+            console.error(`⚠️ [Proxy İndirme Hatası] (${url}):`, err.message);
+            completedRequests++;
+            if (completedRequests === PROXY_SOURCES.length && tempProxies.size > 0) {
+                fetchedProxies = Array.from(tempProxies);
+                console.log(`✅ [Oto Proxy] Toplam ${fetchedProxies.length} adet SOCKS5 proxy yüklendi.`);
+            }
+        });
+    });
+}
+
+// Otomatik başlat ve her 15 dakikada bir güncelle
+fetchAutoProxies();
+setInterval(fetchAutoProxies, 15 * 60 * 1000);
+
 let globalConfig = {
     host: '141.95.82.164',
     port: 25565,
@@ -30,13 +75,13 @@ let globalConfig = {
     autoSubServerCmd: '/gir asmp',
     autoSubServerDelay: 4,
     autoReconnect: true,
-    proxy: ''
+    proxy: 'auto'
 };
 
 const defaultBotConfigs = [
-    { id: 'bot_1', username: 'Deliyiz_1', host: '141.95.82.164', port: 25565, autoPassword: 'deliyizpassword', proxy: '' },
-    { id: 'bot_2', username: 'Deliyiz_2', host: '141.95.82.164', port: 25565, autoPassword: 'deliyizpassword', proxy: '' },
-    { id: 'bot_3', username: 'Deliyiz_3', host: '141.95.82.164', port: 25565, autoPassword: 'deliyizpassword', proxy: '' }
+    { id: 'bot_1', username: 'Deliyiz_1', host: '141.95.82.164', port: 25565, autoPassword: 'deliyizpassword', proxy: 'auto' },
+    { id: 'bot_2', username: 'Deliyiz_2', host: '141.95.82.164', port: 25565, autoPassword: 'deliyizpassword', proxy: 'auto' },
+    { id: 'bot_3', username: 'Deliyiz_3', host: '141.95.82.164', port: 25565, autoPassword: 'deliyizpassword', proxy: 'auto' }
 ];
 
 const mcDataCache = {};
@@ -150,7 +195,7 @@ function saveDataToFile() {
             id: b.id, username: b.username, host: b.host, port: b.port,
             version: b.version, autoPassword: b.autoPassword,
             autoSubServerCmd: b.autoSubServerCmd, autoSubServerDelay: b.autoSubServerDelay,
-            proxy: b.proxy || ''
+            proxy: b.proxy || 'auto'
         }));
         const fileContent = JSON.stringify({ globalConfig, bots: botList }, null, 2);
         fs.writeFileSync(DATA_FILE, fileContent, 'utf8');
@@ -412,7 +457,7 @@ function setupCustomPacketHandler(client, botId) {
                                         windowId: botData.currentWindowId,
                                         stateId: botData.currentStateId,
                                         slot: 12,
-                                        mouseButton: 1, // 1 = Sağ tık
+                                        mouseButton: 1,
                                         mode: 0,
                                         changedSlots: [],
                                         cursorItem: { present: false }
@@ -758,9 +803,22 @@ function startBotInstance(botId) {
     const host = botData.host || globalConfig.host;
     const port = Number(botData.port || globalConfig.port);
     const version = botData.version || globalConfig.version;
-    const proxyStr = (botData.proxy !== undefined ? botData.proxy : globalConfig.proxy) || '';
+    let proxyConfig = (botData.proxy !== undefined ? botData.proxy : globalConfig.proxy) || 'auto';
 
-    broadcastLog(botId, `${botData.username} bağlanıyor (${host}:${port}${proxyStr ? ' | Proxy: ' + proxyStr : ''})...`, 'info');
+    let selectedProxy = proxyConfig.trim();
+
+    // Otomatik Proxy Seçimi (Her başlatmada veya yeniden bağlanmada listeden rastgele canlı proxy atanır)
+    if (!selectedProxy || selectedProxy.toLowerCase() === 'auto') {
+        if (fetchedProxies.length > 0) {
+            selectedProxy = fetchedProxies[Math.floor(Math.random() * fetchedProxies.length)];
+            broadcastLog(botId, `🎲 [Oto Proxy Atandı]: ${selectedProxy}`, 'info');
+        } else {
+            broadcastLog(botId, `⚠️ Proxy havuzu henüz yüklenemedi veya boş, doğrudan bağlanılıyor...`, 'warn');
+            selectedProxy = '';
+        }
+    }
+
+    broadcastLog(botId, `${botData.username} bağlanıyor (${host}:${port}${selectedProxy ? ' | Proxy: ' + selectedProxy : ''})...`, 'info');
     botData.status = 'Connecting';
     io.emit('status-update', { botId, status: 'Connecting', onlineSince: null });
 
@@ -774,8 +832,8 @@ function startBotInstance(botId) {
             keepAlive: true
         };
 
-        if (proxyStr && proxyStr.trim() !== '') {
-            const proxyParts = proxyStr.trim().split(':');
+        if (selectedProxy && selectedProxy.trim() !== '') {
+            const proxyParts = selectedProxy.trim().split(':');
             const proxyHost = proxyParts[0];
             const proxyPort = parseInt(proxyParts[1], 10);
             const proxyUser = proxyParts[2] || undefined;
@@ -798,7 +856,7 @@ function startBotInstance(botId) {
                         }
                     }, (err, info) => {
                         if (err) {
-                            cleanupBot(botId, `Proxy Bağlantı Hatası: ${err.message}`);
+                            cleanupBot(botId, `Proxy Bağlantı Hatası (${selectedProxy}): ${err.message}`);
                             return;
                         }
                         client.setSocket(info.socket);
@@ -897,6 +955,8 @@ io.on('connection', (socket) => {
     socket.on('stop-bot', (botId) => stopBotInstance(botId));
     socket.on('start-all', () => startAllBots());
     socket.on('stop-all', () => { for (const id of botPool.keys()) stopBotInstance(id); });
+
+    socket.on('fetch-auto-proxies', () => fetchAutoProxies());
 
     socket.on('add-bot', (data) => {
         const username = typeof data === 'string' ? data : data.username;

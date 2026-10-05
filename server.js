@@ -21,14 +21,13 @@ const DATA_FILE = path.join(__dirname, 'bots.json');
 const botPool = new Map();
 
 // -------------------------------------------------------------
-// EN İYİ ANTİ-BAN: ÇOKLU ÜLKE / IP PROXY HAVUZU LISTESI
-// IP:PORT:USER:PASS veya socks5://USER:PASS@IP:PORT formatında ekleyebilirsiniz.
+// SOCKS5 PROXY HAVUZU (Farklı IP/Ülke adreslerinizi ekleyin)
 // -------------------------------------------------------------
 const proxyPoolList = [
-    'socks5://user:pass@185.220.101.1:1080', // Örn: Almanya
-    'socks5://user:pass@193.106.191.2:1080', // Örn: Fransa
-    'socks5://user:pass@45.142.214.3:1080',  // Örn: Hollanda
-    'socks5://user:pass@103.152.112.4:1080'  // Örn: İngiltere
+    'socks5://user:pass@185.220.101.1:1080',
+    'socks5://user:pass@193.106.191.2:1080',
+    'socks5://user:pass@45.142.214.3:1080',
+    'socks5://user:pass@103.152.112.4:1080'
 ];
 
 let globalConfig = {
@@ -78,13 +77,40 @@ function parseProxy(proxyStr) {
     } catch (e) { return null; }
 }
 
-// Botlara sırayla farklı proxy atayan fonksiyon
 function getAutoProxyForBot(botId) {
     if (!proxyPoolList || proxyPoolList.length === 0) return '';
     const botKeys = Array.from(botPool.keys());
     const index = botKeys.indexOf(botId);
     const assignedIndex = index >= 0 ? index % proxyPoolList.length : 0;
     return proxyPoolList[assignedIndex];
+}
+
+function getMcData(version) {
+    const verStr = (version || '1.20.1').toString().trim();
+    if (mcDataCache[verStr]) return mcDataCache[verStr];
+
+    try {
+        const data = mcData(verStr);
+        if (data && data.items) { mcDataCache[verStr] = data; return data; }
+    } catch (e) {}
+
+    try {
+        if (!mcDataCache['1.20.1']) mcDataCache['1.20.1'] = mcData('1.20.1');
+        return mcDataCache['1.20.1'];
+    } catch (e) { return null; }
+}
+
+function getItemDetails(version, itemId) {
+    if (itemId === undefined || itemId === null || itemId === -1) return null;
+    const data = getMcData(version);
+    if (data && data.items) {
+        const item = data.items[itemId];
+        if (item) {
+            const cleanName = item.displayName || item.name.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+            return { name: item.name, displayName: cleanName };
+        }
+    }
+    return { name: 'unknown', displayName: `ID: ${itemId}` };
 }
 
 function parseMcText(text) {
@@ -153,7 +179,7 @@ function broadcastLog(botId, text, type = 'info') {
     if (botPool.has(botId)) {
         const botData = botPool.get(botId);
         botData.logs.push(logEntry);
-        if (botData.logs.length > 20) botData.logs.shift();
+        if (botData.logs.length > 25) botData.logs.shift();
     }
     io.emit('bot-log', logEntry);
 }
@@ -183,6 +209,7 @@ function sendChat(client, message) {
     } catch (e) {}
 }
 
+// ANTİ-BAN HAREKET DÖNGÜSÜ
 function startHumanBehaviorLoop(botId) {
     const botData = botPool.get(botId);
     if (!botData || !botData.client) return;
@@ -239,6 +266,10 @@ function setupCustomPacketHandler(client, botId) {
 
     clearBotTimers();
     botData.waitingForAfkGui = false;
+    botData.inventory = {};
+    botData.tabList = {};
+    botData.entities = {};
+    botData.pos = { x: 0, y: 0, z: 0 };
 
     function triggerAfkWithRetry() {
         if (!botData.client || botData.status !== 'Online') return;
@@ -291,6 +322,19 @@ function setupCustomPacketHandler(client, botId) {
                 break;
 
             case 'window_items':
+                if (data.items && Array.isArray(data.items)) {
+                    const botVer = botData.version || globalConfig.version || '1.20.1';
+                    data.items.forEach((item, idx) => {
+                        if (item && item.present !== false && item.itemId !== undefined && item.itemId !== -1) {
+                            const details = getItemDetails(botVer, item.itemId);
+                            botData.inventory[idx] = { slot: idx, count: item.itemCount || 1, ...details };
+                        } else {
+                            delete botData.inventory[idx];
+                        }
+                    });
+                    io.emit('bot-inventory-update', { botId, inventory: botData.inventory });
+                }
+
                 if (data.windowId !== 0 && botData.waitingForAfkGui) {
                     botData.waitingForAfkGui = false;
                     afkFailCount = 0;
@@ -317,6 +361,20 @@ function setupCustomPacketHandler(client, botId) {
                 }
                 break;
 
+            case 'set_slot':
+                if (data.slot !== undefined) {
+                    const botVer = botData.version || globalConfig.version || '1.20.1';
+                    const item = data.item;
+                    if (item && item.present !== false && item.itemId !== undefined && item.itemId !== -1) {
+                        const details = getItemDetails(botVer, item.itemId);
+                        botData.inventory[data.slot] = { slot: data.slot, count: item.itemCount || 1, ...details };
+                    } else {
+                        delete botData.inventory[data.slot];
+                    }
+                    io.emit('bot-inventory-update', { botId, inventory: botData.inventory });
+                }
+                break;
+
             case 'position':
                 try {
                     if (data.teleportId !== undefined) client.write('teleport_confirm', { teleportId: data.teleportId });
@@ -324,6 +382,7 @@ function setupCustomPacketHandler(client, botId) {
                 } catch (e) {}
 
                 botData.pos = { x: Math.round(data.x * 10) / 10, y: Math.round(data.y * 10) / 10, z: Math.round(data.z * 10) / 10 };
+                io.emit('bot-pos-update', { botId, pos: botData.pos });
 
                 if (!isSequenceStarted) {
                     isSequenceStarted = true;
@@ -409,6 +468,7 @@ function cleanupBot(botId, reason) {
 
     botData.status = 'Offline';
     botData.onlineSince = null;
+    botData.inventory = {};
 
     broadcastLog(botId, `🔴 ${reason}`, 'error');
     io.emit('status-update', { botId, status: 'Offline', onlineSince: null });
@@ -433,7 +493,6 @@ function startBotInstance(botId) {
     const port = Number(botData.port || globalConfig.port);
     const version = botData.version || globalConfig.version;
     
-    // Otomatik Proxy Seçimi (Botun özel proxy'si yoksa havuzdan sıradakini çeker)
     const proxyString = botData.proxy || globalConfig.proxy || getAutoProxyForBot(botId);
 
     broadcastLog(botId, `${botData.username} bağlanıyor (${host}:${port})...`, 'info');
@@ -536,7 +595,7 @@ io.on('connection', (socket) => {
         autoPassword: b.autoPassword !== undefined ? b.autoPassword : globalConfig.autoPassword,
         autoSubServerCmd: b.autoSubServerCmd !== undefined ? b.autoSubServerCmd : globalConfig.autoSubServerCmd,
         proxy: b.proxy || '', status: b.status, onlineSince: b.onlineSince || null, pos: b.pos || { x: 0, y: 0, z: 0 },
-        logs: b.logs
+        logs: b.logs, inventory: b.inventory || {}
     }));
 
     socket.emit('init-data', { botList, globalConfig });
@@ -561,7 +620,7 @@ io.on('connection', (socket) => {
             autoSubServerCmd: typeof data === 'object' && data.autoSubServerCmd !== undefined ? data.autoSubServerCmd : globalConfig.autoSubServerCmd,
             proxy: typeof data === 'object' && data.proxy ? data.proxy : globalConfig.proxy,
             status: 'Offline', onlineSince: null, pos: { x: 0, y: 0, z: 0 },
-            client: null, logs: [], isManualStop: false
+            client: null, logs: [], inventory: {}, isManualStop: false
         };
         botPool.set(id, newBot);
         saveDataToFile();

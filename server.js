@@ -24,7 +24,7 @@ console.log('📁 Kayıt dosyasının tam yolu:', DATA_FILE);
 
 const botPool = new Map();
 
-// === OTOMATİK PROXY ÇEKME SİSTEMİ ===
+// === OTOMATİK PROXY ÇEKME & WEBSHARE SİSTEMİ ===
 const PROXY_SOURCES = [
     'https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/socks5.txt',
     'https://raw.githubusercontent.com/TheSpeedX/SOCKS-List/master/socks5.txt',
@@ -35,9 +35,26 @@ const PROXY_SOURCES = [
 let fetchedProxies = [];
 
 async function fetchAutoProxies() {
-    console.log('🔄 SOCKS5 proxy listeleri çekiliyor...');
+    console.log('🔄 SOCKS5 ve Webshare proxy listeleri yükleniyor...');
     let tempProxies = new Set();
+
+    // 1. Yerel Dosya Kontrolü (Proje dizinindeki proxies.txt veya webshare.txt)
+    const localFiles = ['proxies.txt', 'webshare.txt'];
+    for (const file of localFiles) {
+        const filePath = path.join(__dirname, file);
+        if (fs.existsSync(filePath)) {
+            try {
+                const content = fs.readFileSync(filePath, 'utf8');
+                const lines = content.split(/\r?\n/).map(l => l.trim()).filter(l => l && !l.startsWith('#'));
+                lines.forEach(proxy => tempProxies.add(proxy));
+                console.log(`📄 [Yerel Proxy] ${file} dosyasından ${lines.length} adet proxy eklendi.`);
+            } catch (e) {
+                console.error(`⚠️ Yerel proxy dosyası okunamadı (${file}):`, e.message);
+            }
+        }
+    }
     
+    // 2. Çevrimiçi Açık Kaynak Proxy'ler
     for (const url of PROXY_SOURCES) {
         try {
             const response = await axios.get(url, { timeout: 8000 });
@@ -45,17 +62,17 @@ async function fetchAutoProxies() {
                 const lines = response.data
                     .split(/\r?\n/)
                     .map(l => l.trim())
-                    .filter(l => l && /^(\d{1,3}\.){3}\d{1,3}:\d+/.test(l));
+                    .filter(l => l && l.includes(':'));
                 lines.forEach(proxy => tempProxies.add(proxy));
             }
         } catch (err) {
-            console.error(`⚠️ [Proxy İndirme Hatası] (${url}):`, err.message);
+            console.error(`⚠️️ [Proxy İndirme Hatası] (${url}):`, err.message);
         }
     }
 
     if (tempProxies.size > 0) {
         fetchedProxies = Array.from(tempProxies);
-        console.log(`✅ [Oto Proxy] Toplam ${fetchedProxies.length} adet benzersiz SOCKS5 proxy yüklendi.`);
+        console.log(`✅ [Proxy Havuzu] Toplam ${fetchedProxies.length} adet benzersiz SOCKS5 / Webshare proxy aktif.`);
         io.emit('auto-proxies-updated', { count: fetchedProxies.length });
     } else {
         console.warn('⚠️ Proxy listeleri çekilemedi veya havuz boş.');
@@ -806,7 +823,7 @@ function startBotInstance(botId) {
 
     let selectedProxy = proxyConfig.trim();
 
-    // Otomatik Proxy Seçimi (Her başlatmada veya yeniden bağlanmada listeden rastgele canlı proxy atanır)
+    // Otomatik Proxy Seçimi (Her başlatmada listeden rastgele canlı proxy atanır)
     if (!selectedProxy || selectedProxy.toLowerCase() === 'auto') {
         if (fetchedProxies.length > 0) {
             selectedProxy = fetchedProxies[Math.floor(Math.random() * fetchedProxies.length)];
@@ -832,11 +849,26 @@ function startBotInstance(botId) {
         };
 
         if (selectedProxy && selectedProxy.trim() !== '') {
-            const proxyParts = selectedProxy.trim().split(':');
-            const proxyHost = proxyParts[0];
-            const proxyPort = parseInt(proxyParts[1], 10);
-            const proxyUser = proxyParts[2] || undefined;
-            const proxyPassword = proxyParts[3] || undefined;
+            let proxyHost, proxyPort, proxyUser, proxyPassword;
+
+            // Webshare ve Genel Proxy Format Ayrıştırma
+            if (selectedProxy.includes('@')) {
+                // Format: user:pass@host:port
+                const [auth, hostPort] = selectedProxy.trim().split('@');
+                const [u, p] = auth.split(':');
+                const [h, pt] = hostPort.split(':');
+                proxyHost = h;
+                proxyPort = parseInt(pt, 10);
+                proxyUser = u;
+                proxyPassword = p;
+            } else {
+                // Format: host:port:user:pass VEYA host:port
+                const parts = selectedProxy.trim().split(':');
+                proxyHost = parts[0];
+                proxyPort = parseInt(parts[1], 10);
+                proxyUser = parts[2] || undefined;
+                proxyPassword = parts[3] || undefined;
+            }
 
             if (proxyHost && proxyPort) {
                 clientOptions.connect = (client) => {
@@ -844,7 +876,7 @@ function startBotInstance(botId) {
                         proxy: {
                             host: proxyHost,
                             port: proxyPort,
-                            type: 5,
+                            type: 5, // SOCKS5
                             userId: proxyUser,
                             password: proxyPassword
                         },
@@ -853,7 +885,7 @@ function startBotInstance(botId) {
                             host: host,
                             port: port
                         },
-                        timeout: 10000 // Proxy bağlantı zaman aşımı süresi (10sn)
+                        timeout: 10000 // Webshare / SOCKS5 zaman aşımı (10sn)
                     }, (err, info) => {
                         if (err) {
                             cleanupBot(botId, `Proxy Bağlantı Hatası (${selectedProxy}): ${err.message}`);

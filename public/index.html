@@ -511,6 +511,35 @@
     let botsMap = new Map();
     let globalConfig = {};
 
+    // CANLI KAYIT VE YÜKLEME MEKANİZMASI (LOCALSTORAGE BAKIŞI)
+    function saveLocalCache() {
+        try {
+            const botsArray = Array.from(botsMap.values());
+            localStorage.setItem('mc_bots_cache', JSON.stringify(botsArray));
+            localStorage.setItem('mc_global_config', JSON.stringify(globalConfig));
+        } catch (e) {
+            console.error("Yerel kayıt hatası:", e);
+        }
+    }
+
+    function loadLocalCache() {
+        try {
+            const cachedBots = localStorage.getItem('mc_bots_cache');
+            const cachedConfig = localStorage.getItem('mc_global_config');
+            if (cachedConfig) globalConfig = JSON.parse(cachedConfig);
+            if (cachedBots) {
+                const parsed = JSON.parse(cachedBots);
+                parsed.forEach(bot => botsMap.set(bot.id, bot));
+                renderBotList();
+            }
+        } catch (e) {
+            console.error("Yerel yükleme hatası:", e);
+        }
+    }
+
+    // İlk açılışta önbellekten canlı yükle
+    loadLocalCache();
+
     function formatUptime(ms) {
         if (!ms) return '00:00:00';
         const totalSeconds = Math.floor((Date.now() - ms) / 1000);
@@ -543,6 +572,7 @@
         botsMap.clear();
         globalConfig = data.globalConfig || {};
         data.botList.forEach(bot => botsMap.set(bot.id, bot));
+        saveLocalCache();
         renderBotList();
     });
 
@@ -557,22 +587,28 @@
 
     socket.on('bot-added', (bot) => {
         botsMap.set(bot.id, bot);
+        saveLocalCache();
         renderBotList();
     });
 
     socket.on('bot-deleted', (botId) => {
         botsMap.delete(botId);
+        saveLocalCache();
         renderBotList();
     });
 
     socket.on('bot-updated', ({ botId, config }) => {
         if (botsMap.has(botId)) {
             Object.assign(botsMap.get(botId), config);
+            saveLocalCache();
             renderBotList();
         }
     });
 
-    socket.on('config-updated', (cfg) => { globalConfig = cfg; });
+    socket.on('config-updated', (cfg) => { 
+        globalConfig = cfg; 
+        saveLocalCache();
+    });
 
     socket.on('status-update', ({ botId, status, onlineSince }) => {
         if (botsMap.has(botId)) {
@@ -581,6 +617,7 @@
             if (onlineSince !== undefined) {
                 bot.onlineSince = onlineSince;
             }
+            saveLocalCache();
             
             const badge = document.getElementById(`badge-${botId}`);
             if (badge) {
@@ -954,6 +991,10 @@
         };
 
         socket.emit('update-bot-config', { botId, config });
+        if (botsMap.has(botId)) {
+            Object.assign(botsMap.get(botId), config);
+            saveLocalCache();
+        }
         closeModal('botSettingsModal');
     }
 
@@ -979,6 +1020,8 @@
         };
 
         socket.emit('update-config', newConfig);
+        globalConfig = newConfig;
+        saveLocalCache();
         closeModal('globalSettingsModal');
     }
 

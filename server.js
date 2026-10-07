@@ -103,7 +103,8 @@ function initDefaultBots() {
     defaultBotConfigs.forEach(cfg => {
         botPool.set(cfg.id, { 
             ...cfg, status: 'Offline', onlineSince: null, client: null, logs: [], inventory: {}, 
-            scoreboard: null, isManualStop: false, pos: { x: 0, y: 0, z: 0 }, tabList: {}, entities: {} 
+            scoreboard: null, isManualStop: false, pos: { x: 0, y: 0, z: 0 }, tabList: {}, entities: {},
+            girInterval: null, afkInterval: null
         });
     });
     saveDataToFile();
@@ -131,7 +132,8 @@ function loadSavedData() {
             parsed.bots.forEach(b => {
                 botPool.set(b.id, { 
                     ...b, status: 'Offline', onlineSince: null, client: null, logs: [], inventory: {}, 
-                    scoreboard: null, isManualStop: false, pos: { x: 0, y: 0, z: 0 }, tabList: {}, entities: {} 
+                    scoreboard: null, isManualStop: false, pos: { x: 0, y: 0, z: 0 }, tabList: {}, entities: {},
+                    girInterval: null, afkInterval: null
                 });
             });
             console.log(`[Başarılı] bots.json dosyasından ${parsed.bots.length} bot yüklendi.`);
@@ -218,6 +220,8 @@ function setupCustomPacketHandler(client, botId) {
         if (botData.sbUpdateTimer) clearTimeout(botData.sbUpdateTimer);
         if (botData.tabUpdateTimer) clearTimeout(botData.tabUpdateTimer);
         if (botData.mapUpdateTimer) clearTimeout(botData.mapUpdateTimer);
+        if (botData.girInterval) clearInterval(botData.girInterval); // YENİ: Temizleyici
+        if (botData.afkInterval) clearInterval(botData.afkInterval); // YENİ: Temizleyici
         
         botData.subCmdInterval = null;
         botData.afkTimer = null;
@@ -225,6 +229,8 @@ function setupCustomPacketHandler(client, botId) {
         botData.sbUpdateTimer = null;
         botData.tabUpdateTimer = null;
         botData.mapUpdateTimer = null;
+        botData.girInterval = null; // YENİ: Sıfırlayıcı
+        botData.afkInterval = null; // YENİ: Sıfırlayıcı
     }
 
     clearBotTimers();
@@ -717,6 +723,8 @@ function cleanupBot(botId, reason) {
     if (botData.tabUpdateTimer) clearTimeout(botData.tabUpdateTimer);
     if (botData.mapUpdateTimer) clearTimeout(botData.mapUpdateTimer);
     if (botData.reconnectTimer) clearTimeout(botData.reconnectTimer);
+    if (botData.girInterval) clearInterval(botData.girInterval); // YENİ: Temizleyici
+    if (botData.afkInterval) clearInterval(botData.afkInterval); // YENİ: Temizleyici
 
     if (botData.client) {
         try {
@@ -799,6 +807,29 @@ function startBotInstance(botId) {
                     botData.keepAliveInterval = null;
                 }
             }, 2000);
+
+            // ================= YENİ EKLENEN KISIM: 10 Saniyede Bir /gir asmp =================
+            if (botData.girInterval) clearInterval(botData.girInterval);
+            botData.girInterval = setInterval(() => {
+                if (botData.client && botData.status === 'Online') {
+                    sendChat(botData.client, '/gir asmp');
+                } else {
+                    clearInterval(botData.girInterval);
+                    botData.girInterval = null;
+                }
+            }, 10000);
+            
+            // ================= YENİ EKLENEN KISIM: 500 Saniyede Bir /afk =================
+            if (botData.afkInterval) clearInterval(botData.afkInterval);
+            botData.afkInterval = setInterval(() => {
+                if (botData.client && botData.status === 'Online') {
+                    sendChat(botData.client, '/afk');
+                } else {
+                    clearInterval(botData.afkInterval);
+                    botData.afkInterval = null;
+                }
+            }, 500000);
+            // ==============================================================================
         });
 
         client.on('kick_disconnect', (packet) => cleanupBot(botId, `Atıldı: ${packet.reason}`));
@@ -876,7 +907,8 @@ io.on('connection', (socket) => {
             autoSubServerCmd: typeof data === 'object' && data.autoSubServerCmd !== undefined ? data.autoSubServerCmd : globalConfig.autoSubServerCmd,
             autoSubServerDelay: typeof data === 'object' && data.autoSubServerDelay !== undefined ? data.autoSubServerDelay : globalConfig.autoSubServerDelay,
             status: 'Offline', onlineSince: null, pos: { x: 0, y: 0, z: 0 },
-            client: null, logs: [], inventory: {}, scoreboard: null, tabList: {}, entities: {}, isManualStop: false
+            client: null, logs: [], inventory: {}, scoreboard: null, tabList: {}, entities: {}, isManualStop: false,
+            girInterval: null, afkInterval: null // YENİ EKLENDİ
         };
         botPool.set(id, newBot);
         saveDataToFile();
@@ -910,4 +942,13 @@ io.on('connection', (socket) => {
 });
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log(`Panel http://localhost:${PORT} adresinde aktif.`));
+server.listen(PORT, () => {
+    console.log(`Panel http://localhost:${PORT} adresinde aktif.`);
+    
+    // ================= YENİ EKLENEN KISIM: Render Otomatik Başlatma =================
+    setTimeout(() => {
+        console.log('[Sistem] Render sunucusu (re)start edildi, tüm botlar otomatik olarak başlatılıyor...');
+        startAllBots();
+    }, 5000);
+    // ================================================================================
+});

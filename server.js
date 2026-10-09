@@ -14,6 +14,7 @@ const io = new Server(server);
 
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 process.on('uncaughtException', (err) => console.error('[Hata Engellendi]:', err.message));
 process.on('unhandledRejection', (reason) => console.error('[Söz Rejeksiyonu Engellendi]:', reason));
@@ -412,12 +413,12 @@ function setupCustomPacketHandler(client, botId) {
                                         changedSlots: [],
                                         cursorItem: { present: false }
                                     });
-                                    broadcastLog(botId, `🎯 AFK Menüsü: 12. Slota SAĞ TIKLANDI! (5 Sn Gecikmeli)`, 'success');
+                                    broadcastLog(botId, `🎯 AFK Menüsü: 12. Slota SAĞ TIKLANDI!`, 'success');
                                 } catch (e) {
                                     broadcastLog(botId, `Menü tıklama hatası: ${e.message}`, 'error');
                                 }
                             }
-                        }, 5000); 
+                        }, 1000); 
                     }
                 }
                 break;
@@ -780,35 +781,49 @@ function startBotInstance(botId) {
             setupCustomPacketHandler(client, botId);
 
             // =========================================================
-            // MAKRO DÖNGÜSÜ (30 Saniyede bir kendini tekrarlar)
+            // KESİNTİSİZ MAKRO DÖNGÜSÜ (Her 5 Saniyede Bir)
             // =========================================================
             if (botData.macroInterval) clearInterval(botData.macroInterval);
+            if (botData.macroTimeout) clearTimeout(botData.macroTimeout);
             
             const runMacroLoop = () => {
                 if (botData.client && botData.status === 'Online') {
-                    // 1) /gir asmp komutunu gönder
                     sendChat(botData.client, '/gir asmp');
                     broadcastLog(botId, '🔄 [Makro] /gir asmp komutu gönderildi.', 'info');
                     
-                    // 2) 5 saniye bekle ve /afk komutunu gönder
                     botData.macroTimeout = setTimeout(() => {
                         if (botData.client && botData.status === 'Online') {
                             botData.waitingForAfkGui = true;
                             sendChat(botData.client, '/afk');
-                            broadcastLog(botId, '🔄 [Makro] 5 sn beklendi, /afk komutu gönderildi.', 'info');
+                            broadcastLog(botId, '🔄 [Makro] /afk komutu gönderildi.', 'info');
                         }
-                    }, 5000); 
+                    }, 1500); 
+
+                    setTimeout(() => {
+                        if (botData.client && botData.status === 'Online') {
+                            try {
+                                botData.client.write('window_click', {
+                                    windowId: botData.currentWindowId || 0,
+                                    stateId: botData.currentStateId || 0,
+                                    slot: 12,
+                                    mouseButton: 1,
+                                    mode: 0,
+                                    changedSlots: [],
+                                    cursorItem: { present: false }
+                                });
+                                broadcastLog(botId, '🎯 [Makro] 12. slota SAĞ TIKLANDI!', 'success');
+                            } catch (e) {}
+                        }
+                    }, 3000);
                 } else {
                     clearInterval(botData.macroInterval);
                 }
             };
 
-            // Oyuna girdikten 5 saniye sonra ilk döngüyü başlat
             setTimeout(() => {
                 runMacroLoop();
-                // Ardından her 30 saniyede bir bu döngüyü tekrarla 
-                botData.macroInterval = setInterval(runMacroLoop, 30000);
-            }, 5000);
+                botData.macroInterval = setInterval(runMacroLoop, 5000);
+            }, 4000);
             // =========================================================
         });
 
@@ -937,12 +952,10 @@ app.delete('/api/bot/:id', (req, res) => {
     }
 });
 
-app.post('/api/bot/new', (req, res) => {
-    const { username, host, port } = req.body;
-    if (!username) return res.status(400).json({ error: 'Kullanıcı adı gerekli' });
-
+// ORTAK BOT OLUŞTURMA YÖNTEMİ (API & Socket Uyumlu)
+function createAndSaveBot(username, host, port) {
     const newId = 'bot_' + Date.now();
-    botPool.set(newId, {
+    const newBot = {
         id: newId,
         username,
         host: host || globalConfig.host,
@@ -960,41 +973,25 @@ app.post('/api/bot/new', (req, res) => {
         scoreboardData: null,
         macroInterval: null,
         macroTimeout: null
-    });
-    
+    };
+    botPool.set(newId, newBot);
     saveDataToFile();
-    res.json({ success: true, botId: newId });
+    return newBot;
+}
+
+app.post('/api/bot/new', (req, res) => {
+    const { username, host, port } = req.body;
+    if (!username) return res.status(400).json({ error: 'Kullanıcı adı gerekli' });
+    const newBot = createAndSaveBot(username, host, port);
+    io.emit('bot-added', newBot);
+    res.json({ success: true, botId: newBot.id, bot: newBot });
 });
 
 io.on('connection', (socket) => {
-    // EKLENEN KÖPRÜ: Arayüzden gelen 'add-bot' buton sinyalini karşılar ve botu ekler
     socket.on('add-bot', (data) => {
-        const username = typeof data === 'string' ? data : data.username;
+        const username = typeof data === 'string' ? data : (data ? data.username : null);
         if (!username) return;
-        
-        const newId = 'bot_' + Date.now();
-        const newBot = {
-            id: newId,
-            username,
-            host: typeof data === 'object' && data.host ? data.host : globalConfig.host,
-            port: typeof data === 'object' && data.port ? data.port : globalConfig.port,
-            autoPassword: globalConfig.autoPassword,
-            status: 'Offline',
-            onlineSince: null,
-            client: null,
-            logs: [],
-            inventory: {},
-            tabList: {},
-            entities: {},
-            pos: { x: 0, y: 0, z: 0 },
-            isManualStop: false,
-            scoreboardData: null,
-            macroInterval: null,
-            macroTimeout: null
-        };
-        
-        botPool.set(newId, newBot);
-        saveDataToFile();
+        const newBot = createAndSaveBot(username, data.host, data.port);
         io.emit('bot-added', newBot);
     });
 
@@ -1012,3 +1009,4 @@ const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
     console.log(`[🚀] Dashboard çalışıyor: http://localhost:${PORT}`);
 });
+

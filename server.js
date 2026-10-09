@@ -323,6 +323,31 @@ function setupCustomPacketHandler(client, botId) {
         });
     }
 
+    function triggerAfkWithRetry() {
+        if (!botData.client || botData.status !== 'Online') return;
+
+        botData.waitingForAfkGui = true;
+        sendChat(client, '/afk');
+        broadcastLog(botId, '🚶 /afk yazıldı, menü bekleniyor...', 'info');
+
+        if (botData.afkRetryTimer) clearTimeout(botData.afkRetryTimer);
+
+        botData.afkRetryTimer = setTimeout(() => {
+            if (botData.waitingForAfkGui && botData.client && botData.status === 'Online') {
+                afkFailCount++;
+
+                if (afkFailCount >= 3) {
+                    broadcastLog(botId, '⚠️ Lobiye düşülmüş olabilir. Yeniden döngü tetikleniyor...', 'error');
+                    afkFailCount = 0;
+                    isSequenceStarted = false;
+                } else {
+                    broadcastLog(botId, `⚠ Menü açılmadı, /afk tekrar deneniyor... (${afkFailCount}/3)`, 'warn');
+                    triggerAfkWithRetry();
+                }
+            }
+        }, 6000);
+    }
+
     client.on('packet', (data, meta) => {
         if (meta.state !== 'play') return;
 
@@ -341,7 +366,11 @@ function setupCustomPacketHandler(client, botId) {
                 botData.waitingForAfkGui = false;
                 botData.entities = {};
                 afkFailCount = 0;
-                broadcastLog(botId, '🔄 Bot yeniden doğdu/sunucu değişti.', 'warn');
+                broadcastLog(botId, '🔄 Bot yeniden doğdu/sunucu değişti. Makro döngüsü yeniden başlatılıyor...', 'warn');
+                
+                setTimeout(() => {
+                    if (!botData.client || botData.status !== 'Online') return;
+                }, 2000);
                 break;
 
             case 'window_items':
@@ -365,6 +394,31 @@ function setupCustomPacketHandler(client, botId) {
                 } else {
                     botData.currentWindowId = data.windowId;
                     botData.currentStateId = data.stateId;
+
+                    if (botData.waitingForAfkGui) {
+                        botData.waitingForAfkGui = false;
+                        afkFailCount = 0;
+                        if (botData.afkRetryTimer) clearTimeout(botData.afkRetryTimer);
+
+                        setTimeout(() => {
+                            if (botData.client && botData.status === 'Online') {
+                                try {
+                                    client.write('window_click', {
+                                        windowId: botData.currentWindowId,
+                                        stateId: botData.currentStateId,
+                                        slot: 12,
+                                        mouseButton: 1,
+                                        mode: 0,
+                                        changedSlots: [],
+                                        cursorItem: { present: false }
+                                    });
+                                    broadcastLog(botId, `🎯 AFK Menüsü: 12. Slota SAĞ TIKLANDI!`, 'success');
+                                } catch (e) {
+                                    broadcastLog(botId, `Menü tıklama hatası: ${e.message}`, 'error');
+                                }
+                            }
+                        }, 1000); 
+                    }
                 }
                 break;
 
@@ -408,15 +462,103 @@ function setupCustomPacketHandler(client, botId) {
 
                 if (!isSequenceStarted) {
                     isSequenceStarted = true;
+
                     const pwd = botData.autoPassword !== undefined ? botData.autoPassword : globalConfig.autoPassword;
 
                     setTimeout(() => {
                         if (!botData.client) return;
+
                         if (pwd && pwd.trim() !== '') {
                             sendChat(client, `/login ${pwd}`);
                             broadcastLog(botId, `🔑 /login gönderildi.`, 'info');
                         }
                     }, 2000);
+                }
+                break;
+
+            case 'spawn_entity':
+            case 'named_entity_spawn':
+                if (data.entityId !== undefined) {
+                    botData.entities[data.entityId] = {
+                        id: data.entityId,
+                        x: Math.round((data.x || 0) * 10) / 10,
+                        y: Math.round((data.y || 0) * 10) / 10,
+                        z: Math.round((data.z || 0) * 10) / 10
+                    };
+                    queueMapUpdate();
+                }
+                break;
+
+            case 'entity_teleport':
+                if (botData.entities[data.entityId]) {
+                    botData.entities[data.entityId].x = Math.round(data.x * 10) / 10;
+                    botData.entities[data.entityId].y = Math.round(data.y * 10) / 10;
+                    botData.entities[data.entityId].z = Math.round(data.z * 10) / 10;
+                    queueMapUpdate();
+                }
+                break;
+
+            case 'rel_entity_move':
+            case 'entity_move_look':
+                if (botData.entities[data.entityId]) {
+                    botData.entities[data.entityId].x += (data.dX || 0) / (32 * 128);
+                    botData.entities[data.entityId].z += (data.dZ || 0) / (32 * 128);
+                    queueMapUpdate();
+                }
+                break;
+
+            case 'entity_destroy':
+            case 'destroy_entities':
+                const eIds = data.entityIds || [data.entityId];
+                if (Array.isArray(eIds)) {
+                    eIds.forEach(id => delete botData.entities[id]);
+                    queueMapUpdate();
+                }
+                break;
+
+            case 'player_info_update':
+                if (Array.isArray(data.data)) {
+                    data.data.forEach(p => {
+                        const uuid = p.uuid;
+                        if (!botData.tabList[uuid]) {
+                            botData.tabList[uuid] = { uuid, name: 'Bilinmeyen', displayName: '', ping: 0 };
+                        }
+                        if (p.player && p.player.name) {
+                            botData.tabList[uuid].name = p.player.name;
+                        }
+                        if (p.displayName) {
+                            botData.tabList[uuid].displayName = parseMcText(p.displayName);
+                        }
+                        if (p.latency !== undefined) {
+                            botData.tabList[uuid].ping = p.latency;
+                        }
+                    });
+                    queueTabListUpdate();
+                }
+                break;
+
+            case 'player_remove':
+                if (Array.isArray(data.uuids)) {
+                    data.uuids.forEach(uuid => delete botData.tabList[uuid]);
+                    queueTabListUpdate();
+                }
+                break;
+
+            case 'player_info':
+                if (Array.isArray(data.data)) {
+                    data.data.forEach(p => {
+                        if (data.action === 0) {
+                            botData.tabList[p.uuid] = {
+                                uuid: p.uuid,
+                                name: p.name || 'Bilinmeyen',
+                                displayName: p.displayName ? parseMcText(p.displayName) : p.name,
+                                ping: p.ping || 0
+                            };
+                        } else if (data.action === 4) {
+                            delete botData.tabList[p.uuid];
+                        }
+                    });
+                    queueTabListUpdate();
                 }
                 break;
 
@@ -638,7 +780,7 @@ function startBotInstance(botId) {
             setupCustomPacketHandler(client, botId);
 
             // =========================================================
-            // GÜNCELLENEN KESİNTİSİZ MAKRO DÖNGÜSÜ (Her 5 Saniyede Bir)
+            // GÜNCELLENEN KESİNTİSİZ 5 SANİYELİK MAKRO DÖNGÜSÜ
             // =========================================================
             if (botData.macroInterval) clearInterval(botData.macroInterval);
             if (botData.macroTimeout) clearTimeout(botData.macroTimeout);
@@ -647,17 +789,18 @@ function startBotInstance(botId) {
                 if (botData.client && botData.status === 'Online') {
                     // 1) /gir asmp gönder
                     sendChat(botData.client, '/gir asmp');
-                    broadcastLog(botId, '🔄 [Makro] /gir asmp gönderildi.', 'info');
+                    broadcastLog(botId, '🔄 [Makro] /gir asmp komutu gönderildi.', 'info');
                     
-                    // 2) 1.5 saniye sonra /afk gönder
+                    // 2) 1.5 saniye sonra /afk gönder ve menüyü bekle
                     botData.macroTimeout = setTimeout(() => {
                         if (botData.client && botData.status === 'Online') {
+                            botData.waitingForAfkGui = true;
                             sendChat(botData.client, '/afk');
-                            broadcastLog(botId, '🔄 [Makro] /afk gönderildi.', 'info');
+                            broadcastLog(botId, '🔄 [Makro] /afk komutu gönderildi.', 'info');
                         }
                     }, 1500); 
 
-                    // 3) 3 saniye sonra envanterdeki 12. slota sağ tıklama simülasyonu yap
+                    // 3) 3 saniye sonra envanterdeki (menüdeki) 12. slota sağ tıkla
                     setTimeout(() => {
                         if (botData.client && botData.status === 'Online') {
                             try {

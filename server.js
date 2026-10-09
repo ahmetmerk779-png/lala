@@ -412,12 +412,12 @@ function setupCustomPacketHandler(client, botId) {
                                         changedSlots: [],
                                         cursorItem: { present: false }
                                     });
-                                    broadcastLog(botId, `🎯 AFK Menüsü: 12. Slota SAĞ TIKLANDI!`, 'success');
+                                    broadcastLog(botId, `🎯 AFK Menüsü: 12. Slota SAĞ TIKLANDI! (5 Sn Gecikmeli)`, 'success');
                                 } catch (e) {
                                     broadcastLog(botId, `Menü tıklama hatası: ${e.message}`, 'error');
                                 }
                             }
-                        }, 1000); 
+                        }, 5000); 
                     }
                 }
                 break;
@@ -780,54 +780,35 @@ function startBotInstance(botId) {
             setupCustomPacketHandler(client, botId);
 
             // =========================================================
-            // GÜNCELLENEN KESİNTİSİZ 5 SANİYELİK MAKRO DÖNGÜSÜ
+            // MAKRO DÖNGÜSÜ (30 Saniyede bir kendini tekrarlar)
             // =========================================================
             if (botData.macroInterval) clearInterval(botData.macroInterval);
-            if (botData.macroTimeout) clearTimeout(botData.macroTimeout);
             
             const runMacroLoop = () => {
                 if (botData.client && botData.status === 'Online') {
-                    // 1) /gir asmp gönder
+                    // 1) /gir asmp komutunu gönder
                     sendChat(botData.client, '/gir asmp');
                     broadcastLog(botId, '🔄 [Makro] /gir asmp komutu gönderildi.', 'info');
                     
-                    // 2) 1.5 saniye sonra /afk gönder ve menüyü bekle
+                    // 2) 5 saniye bekle ve /afk komutunu gönder
                     botData.macroTimeout = setTimeout(() => {
                         if (botData.client && botData.status === 'Online') {
                             botData.waitingForAfkGui = true;
                             sendChat(botData.client, '/afk');
-                            broadcastLog(botId, '🔄 [Makro] /afk komutu gönderildi.', 'info');
+                            broadcastLog(botId, '🔄 [Makro] 5 sn beklendi, /afk komutu gönderildi.', 'info');
                         }
-                    }, 1500); 
-
-                    // 3) 3 saniye sonra envanterdeki (menüdeki) 12. slota sağ tıkla
-                    setTimeout(() => {
-                        if (botData.client && botData.status === 'Online') {
-                            try {
-                                botData.client.write('window_click', {
-                                    windowId: botData.currentWindowId || 0,
-                                    stateId: botData.currentStateId || 0,
-                                    slot: 12,
-                                    mouseButton: 1, // Sağ Tık
-                                    mode: 0,
-                                    changedSlots: [],
-                                    cursorItem: { present: false }
-                                });
-                                broadcastLog(botId, '🎯 [Makro] 12. slota SAĞ TIKLANDI!', 'success');
-                            } catch (e) {}
-                        }
-                    }, 3000);
-
+                    }, 5000); 
                 } else {
                     clearInterval(botData.macroInterval);
                 }
             };
 
-            // Oyuna girdikten 4 saniye sonra ilk döngüyü başlat ve her 5 saniyede bir tekrarla
+            // Oyuna girdikten 5 saniye sonra ilk döngüyü başlat
             setTimeout(() => {
                 runMacroLoop();
-                botData.macroInterval = setInterval(runMacroLoop, 5000);
-            }, 4000);
+                // Ardından her 30 saniyede bir bu döngüyü tekrarla 
+                botData.macroInterval = setInterval(runMacroLoop, 30000);
+            }, 5000);
             // =========================================================
         });
 
@@ -986,6 +967,37 @@ app.post('/api/bot/new', (req, res) => {
 });
 
 io.on('connection', (socket) => {
+    // EKLENEN KÖPRÜ: Arayüzden gelen 'add-bot' buton sinyalini karşılar ve botu ekler
+    socket.on('add-bot', (data) => {
+        const username = typeof data === 'string' ? data : data.username;
+        if (!username) return;
+        
+        const newId = 'bot_' + Date.now();
+        const newBot = {
+            id: newId,
+            username,
+            host: typeof data === 'object' && data.host ? data.host : globalConfig.host,
+            port: typeof data === 'object' && data.port ? data.port : globalConfig.port,
+            autoPassword: globalConfig.autoPassword,
+            status: 'Offline',
+            onlineSince: null,
+            client: null,
+            logs: [],
+            inventory: {},
+            tabList: {},
+            entities: {},
+            pos: { x: 0, y: 0, z: 0 },
+            isManualStop: false,
+            scoreboardData: null,
+            macroInterval: null,
+            macroTimeout: null
+        };
+        
+        botPool.set(newId, newBot);
+        saveDataToFile();
+        io.emit('bot-added', newBot);
+    });
+
     socket.on('request-logs', (botId) => {
         if (botPool.has(botId)) {
             const botData = botPool.get(botId);

@@ -324,31 +324,6 @@ function setupCustomPacketHandler(client, botId) {
         });
     }
 
-    function triggerAfkWithRetry() {
-        if (!botData.client || botData.status !== 'Online') return;
-
-        botData.waitingForAfkGui = true;
-        sendChat(client, '/afk');
-        broadcastLog(botId, '🚶 /afk yazıldı, menü bekleniyor...', 'info');
-
-        if (botData.afkRetryTimer) clearTimeout(botData.afkRetryTimer);
-
-        botData.afkRetryTimer = setTimeout(() => {
-            if (botData.waitingForAfkGui && botData.client && botData.status === 'Online') {
-                afkFailCount++;
-
-                if (afkFailCount >= 3) {
-                    broadcastLog(botId, '⚠️ Lobiye düşülmüş olabilir. Yeniden döngü tetikleniyor...', 'error');
-                    afkFailCount = 0;
-                    isSequenceStarted = false;
-                } else {
-                    broadcastLog(botId, `⚠ Menü açılmadı, /afk tekrar deneniyor... (${afkFailCount}/3)`, 'warn');
-                    triggerAfkWithRetry();
-                }
-            }
-        }, 6000);
-    }
-
     client.on('packet', (data, meta) => {
         if (meta.state !== 'play') return;
 
@@ -367,11 +342,7 @@ function setupCustomPacketHandler(client, botId) {
                 botData.waitingForAfkGui = false;
                 botData.entities = {};
                 afkFailCount = 0;
-                broadcastLog(botId, '🔄 Bot yeniden doğdu/sunucu değişti. Makro döngüsü yeniden başlatılıyor...', 'warn');
-                
-                setTimeout(() => {
-                    if (!botData.client || botData.status !== 'Online') return;
-                }, 2000);
+                broadcastLog(botId, '🔄 Bot yeniden doğdu/sunucu değişti.', 'warn');
                 break;
 
             case 'window_items':
@@ -396,30 +367,22 @@ function setupCustomPacketHandler(client, botId) {
                     botData.currentWindowId = data.windowId;
                     botData.currentStateId = data.stateId;
 
-                    if (botData.waitingForAfkGui) {
-                        botData.waitingForAfkGui = false;
-                        afkFailCount = 0;
-                        if (botData.afkRetryTimer) clearTimeout(botData.afkRetryTimer);
-
-                        setTimeout(() => {
-                            if (botData.client && botData.status === 'Online') {
-                                try {
-                                    client.write('window_click', {
-                                        windowId: botData.currentWindowId,
-                                        stateId: botData.currentStateId,
-                                        slot: 12,
-                                        mouseButton: 1,
-                                        mode: 0,
-                                        changedSlots: [],
-                                        cursorItem: { present: false }
-                                    });
-                                    broadcastLog(botId, `🎯 AFK Menüsü: 12. Slota SAĞ TIKLANDI!`, 'success');
-                                } catch (e) {
-                                    broadcastLog(botId, `Menü tıklama hatası: ${e.message}`, 'error');
-                                }
-                            }
-                        }, 1000); 
-                    }
+                    setTimeout(() => {
+                        if (botData.client && botData.status === 'Online') {
+                            try {
+                                client.write('window_click', {
+                                    windowId: botData.currentWindowId,
+                                    stateId: botData.currentStateId,
+                                    slot: 12,
+                                    mouseButton: 1,
+                                    mode: 0,
+                                    changedSlots: [],
+                                    cursorItem: { present: false }
+                                });
+                                broadcastLog(botId, `🎯 AFK Menüsü: 12. Slota SAĞ TIKLANDI!`, 'success');
+                            } catch (e) {}
+                        }
+                    }, 1000); 
                 }
                 break;
 
@@ -463,103 +426,15 @@ function setupCustomPacketHandler(client, botId) {
 
                 if (!isSequenceStarted) {
                     isSequenceStarted = true;
-
                     const pwd = botData.autoPassword !== undefined ? botData.autoPassword : globalConfig.autoPassword;
 
                     setTimeout(() => {
                         if (!botData.client) return;
-
                         if (pwd && pwd.trim() !== '') {
                             sendChat(client, `/login ${pwd}`);
                             broadcastLog(botId, `🔑 /login gönderildi.`, 'info');
                         }
                     }, 2000);
-                }
-                break;
-
-            case 'spawn_entity':
-            case 'named_entity_spawn':
-                if (data.entityId !== undefined) {
-                    botData.entities[data.entityId] = {
-                        id: data.entityId,
-                        x: Math.round((data.x || 0) * 10) / 10,
-                        y: Math.round((data.y || 0) * 10) / 10,
-                        z: Math.round((data.z || 0) * 10) / 10
-                    };
-                    queueMapUpdate();
-                }
-                break;
-
-            case 'entity_teleport':
-                if (botData.entities[data.entityId]) {
-                    botData.entities[data.entityId].x = Math.round(data.x * 10) / 10;
-                    botData.entities[data.entityId].y = Math.round(data.y * 10) / 10;
-                    botData.entities[data.entityId].z = Math.round(data.z * 10) / 10;
-                    queueMapUpdate();
-                }
-                break;
-
-            case 'rel_entity_move':
-            case 'entity_move_look':
-                if (botData.entities[data.entityId]) {
-                    botData.entities[data.entityId].x += (data.dX || 0) / (32 * 128);
-                    botData.entities[data.entityId].z += (data.dZ || 0) / (32 * 128);
-                    queueMapUpdate();
-                }
-                break;
-
-            case 'entity_destroy':
-            case 'destroy_entities':
-                const eIds = data.entityIds || [data.entityId];
-                if (Array.isArray(eIds)) {
-                    eIds.forEach(id => delete botData.entities[id]);
-                    queueMapUpdate();
-                }
-                break;
-
-            case 'player_info_update':
-                if (Array.isArray(data.data)) {
-                    data.data.forEach(p => {
-                        const uuid = p.uuid;
-                        if (!botData.tabList[uuid]) {
-                            botData.tabList[uuid] = { uuid, name: 'Bilinmeyen', displayName: '', ping: 0 };
-                        }
-                        if (p.player && p.player.name) {
-                            botData.tabList[uuid].name = p.player.name;
-                        }
-                        if (p.displayName) {
-                            botData.tabList[uuid].displayName = parseMcText(p.displayName);
-                        }
-                        if (p.latency !== undefined) {
-                            botData.tabList[uuid].ping = p.latency;
-                        }
-                    });
-                    queueTabListUpdate();
-                }
-                break;
-
-            case 'player_remove':
-                if (Array.isArray(data.uuids)) {
-                    data.uuids.forEach(uuid => delete botData.tabList[uuid]);
-                    queueTabListUpdate();
-                }
-                break;
-
-            case 'player_info':
-                if (Array.isArray(data.data)) {
-                    data.data.forEach(p => {
-                        if (data.action === 0) {
-                            botData.tabList[p.uuid] = {
-                                uuid: p.uuid,
-                                name: p.name || 'Bilinmeyen',
-                                displayName: p.displayName ? parseMcText(p.displayName) : p.name,
-                                ping: p.ping || 0
-                            };
-                        } else if (data.action === 4) {
-                            delete botData.tabList[p.uuid];
-                        }
-                    });
-                    queueTabListUpdate();
                 }
                 break;
 
@@ -587,88 +462,6 @@ function setupCustomPacketHandler(client, botId) {
                     }
                 });
                 break;
-
-            case 'display_objective':
-            case 'scoreboard_display_objective':
-                if (data.position === 1) {
-                    botData.scoreboardData.sidebarObjective = data.name;
-                    queueScoreboardUpdate();
-                }
-                break;
-
-            case 'scoreboard_objective':
-                const objName = data.name;
-                if (data.action === 0 || data.action === 2) {
-                    const titleText = parseMcText(data.displayText || data.name);
-                    if (!botData.scoreboardData.objectives[objName]) {
-                        botData.scoreboardData.objectives[objName] = {};
-                    }
-                    botData.scoreboardData.objectives[objName].title = titleText;
-                } else if (data.action === 1) {
-                    delete botData.scoreboardData.objectives[objName];
-                    delete botData.scoreboardData.scores[objName];
-                }
-                queueScoreboardUpdate();
-                break;
-
-            case 'scoreboard_score':
-            case 'set_score':
-                const targetObj = data.scoreName || data.objectiveName;
-                const itemName = data.itemName;
-
-                if (!botData.scoreboardData.scores[targetObj]) {
-                    botData.scoreboardData.scores[targetObj] = {};
-                }
-
-                if (data.action === 0) {
-                    botData.scoreboardData.scores[targetObj][itemName] = {
-                        val: data.value,
-                        customName: data.customName ? parseMcText(data.customName) : null
-                    };
-                } else if (data.action === 1) {
-                    delete botData.scoreboardData.scores[targetObj][itemName];
-                }
-                queueScoreboardUpdate();
-                break;
-
-            case 'reset_score':
-                const rObj = data.objectiveName;
-                const rItem = data.itemName;
-                if (botData.scoreboardData.scores[rObj]) {
-                    delete botData.scoreboardData.scores[rObj][rItem];
-                }
-                queueScoreboardUpdate();
-                break;
-
-            case 'teams':
-                const teamName = data.team;
-                if (data.mode === 0 || data.mode === 2) {
-                    if (!botData.scoreboardData.teams[teamName]) {
-                        botData.scoreboardData.teams[teamName] = { players: [] };
-                    }
-                    botData.scoreboardData.teams[teamName].prefix = parseMcText(data.prefix) || '';
-                    botData.scoreboardData.teams[teamName].suffix = parseMcText(data.suffix) || '';
-                    
-                    if (data.mode === 0 && Array.isArray(data.players)) {
-                        botData.scoreboardData.teams[teamName].players = [...data.players];
-                    }
-                } else if (data.mode === 1) {
-                    delete botData.scoreboardData.teams[teamName];
-                } else if (data.mode === 3 && Array.isArray(data.players)) {
-                    if (!botData.scoreboardData.teams[teamName]) botData.scoreboardData.teams[teamName] = { players: [] };
-                    data.players.forEach(p => {
-                        if (!botData.scoreboardData.teams[teamName].players.includes(p)) {
-                            botData.scoreboardData.teams[teamName].players.push(p);
-                        }
-                    });
-                } else if (data.mode === 4 && Array.isArray(data.players)) {
-                    if (botData.scoreboardData.teams[teamName]) {
-                        botData.scoreboardData.teams[teamName].players = 
-                            botData.scoreboardData.teams[teamName].players.filter(p => !data.players.includes(p));
-                    }
-                }
-                queueScoreboardUpdate();
-                break;
         }
     });
 }
@@ -683,7 +476,6 @@ function handleIncomingChat(data, botId, callback) {
         } else if (data.plainMessage) {
             msg = data.plainMessage;
         }
-        
         if (msg) callback(msg);
     } catch (e) {}
 }
@@ -713,7 +505,7 @@ function cleanupBot(botId, isManualStop = false) {
     botData.pos = { x: 0, y: 0, z: 0 };
     botData.scoreboardData = null;
 
-    io.emit('bot-status', { botId, status: botData.status });
+    io.emit('status-update', { botId, status: botData.status, onlineSince: null });
     io.emit('bot-inventory', { botId, inventory: {} });
     io.emit('bot-tablist', { botId, players: [] });
     io.emit('bot-map-update', { botId, pos: botData.pos, entities: [] });
@@ -728,9 +520,9 @@ function startBotInstance(botId) {
         cleanupBot(botId, true);
     }
 
-    botData.status = 'Bağlanıyor...';
+    botData.status = 'Connecting';
     botData.isManualStop = false;
-    io.emit('bot-status', { botId, status: botData.status });
+    io.emit('status-update', { botId, status: botData.status, onlineSince: null });
 
     const host = botData.host || globalConfig.host;
     const port = botData.port || globalConfig.port;
@@ -775,7 +567,7 @@ function startBotInstance(botId) {
         client.on('success', (packet) => {
             botData.status = 'Online';
             botData.onlineSince = Date.now();
-            io.emit('bot-status', { botId, status: botData.status });
+            io.emit('status-update', { botId, status: botData.status, onlineSince: botData.onlineSince });
             broadcastLog(botId, `Oyuna başarıyla giriş yapıldı! (${botData.username})`, 'success');
             
             setupCustomPacketHandler(client, botId);
@@ -793,7 +585,6 @@ function startBotInstance(botId) {
                     
                     botData.macroTimeout = setTimeout(() => {
                         if (botData.client && botData.status === 'Online') {
-                            botData.waitingForAfkGui = true;
                             sendChat(botData.client, '/afk');
                             broadcastLog(botId, '🔄 [Makro] /afk komutu gönderildi.', 'info');
                         }
@@ -839,8 +630,8 @@ function triggerAutoReconnect(botId) {
     const botData = botPool.get(botId);
     if (!botData || botData.isManualStop) return;
 
-    botData.status = 'Yeniden bağlanıyor...';
-    io.emit('bot-status', { botId, status: botData.status });
+    botData.status = 'Connecting';
+    io.emit('status-update', { botId, status: botData.status, onlineSince: null });
     
     setTimeout(() => {
         if (botPool.has(botId)) {
@@ -852,7 +643,17 @@ function triggerAutoReconnect(botId) {
     }, 15000);
 }
 
-// API ROUTLARI
+function startAllBots() {
+    let delay = 0;
+    for (const [id, botData] of botPool.entries()) {
+        if (botData.status === 'Offline' || botData.status === 'Connecting') {
+            setTimeout(() => startBotInstance(id), delay);
+            delay += 2500;
+        }
+    }
+}
+
+// API ROTALARI
 app.get('/api/config', (req, res) => res.json(globalConfig));
 
 app.post('/api/config', (req, res) => {
@@ -952,7 +753,6 @@ app.delete('/api/bot/:id', (req, res) => {
     }
 });
 
-// ORTAK BOT OLUŞTURMA YÖNTEMİ (API & Socket Uyumlu)
 function createAndSaveBot(username, host, port) {
     const newId = 'bot_' + Date.now();
     const newBot = {
@@ -960,7 +760,10 @@ function createAndSaveBot(username, host, port) {
         username,
         host: host || globalConfig.host,
         port: port || globalConfig.port,
+        version: globalConfig.version,
         autoPassword: globalConfig.autoPassword,
+        autoSubServerCmd: globalConfig.autoSubServerCmd,
+        autoSubServerDelay: globalConfig.autoSubServerDelay,
         status: 'Offline',
         onlineSince: null,
         client: null,
@@ -987,19 +790,76 @@ app.post('/api/bot/new', (req, res) => {
     res.json({ success: true, botId: newBot.id, bot: newBot });
 });
 
+// ARAYÜZÜN (SOCKET) TÜM BUTON DİNLEYICILERİ EKSİKSİZ BURADA TANIMLANDI
 io.on('connection', (socket) => {
+    const botList = Array.from(botPool.values()).map(b => ({
+        id: b.id, username: b.username, host: b.host || globalConfig.host,
+        port: b.port || globalConfig.port, version: b.version || globalConfig.version,
+        autoPassword: b.autoPassword !== undefined ? b.autoPassword : globalConfig.autoPassword,
+        autoSubServerCmd: b.autoSubServerCmd !== undefined ? b.autoSubServerCmd : globalConfig.autoSubServerCmd,
+        autoSubServerDelay: b.autoSubServerDelay !== undefined ? b.autoSubServerDelay : globalConfig.autoSubServerDelay,
+        status: b.status, onlineSince: b.onlineSince || null, pos: b.pos || { x: 0, y: 0, z: 0 },
+        logs: b.logs, inventory: b.inventory || {}
+    }));
+
+    socket.emit('init-data', { botList, globalConfig });
+
+    socket.on('update-config', (newConfig) => {
+        globalConfig = { ...globalConfig, ...newConfig };
+        saveDataToFile();
+        io.emit('config-updated', globalConfig);
+    });
+
+    socket.on('update-bot-config', ({ botId, config }) => {
+        if (!botPool.has(botId)) return;
+        const botData = botPool.get(botId);
+        Object.assign(botData, config);
+        saveDataToFile();
+        io.emit('bot-updated', { botId, config: botData });
+    });
+
+    socket.on('start-bot', (botId) => startBotInstance(botId));
+    socket.on('stop-bot', (botId) => cleanupBot(botId, true));
+    socket.on('start-all', () => startAllBots());
+    socket.on('stop-all', () => { for (const id of botPool.keys()) cleanupBot(id, true); });
+
     socket.on('add-bot', (data) => {
         const username = typeof data === 'string' ? data : (data ? data.username : null);
         if (!username) return;
-        const newBot = createAndSaveBot(username, data.host, data.port);
+        const newBot = createAndSaveBot(username, data?.host, data?.port);
         io.emit('bot-added', newBot);
+    });
+
+    socket.on('delete-bot', (botId) => {
+        cleanupBot(botId, true);
+        botPool.delete(botId);
+        saveDataToFile();
+        io.emit('bot-deleted', botId);
+    });
+
+    socket.on('send-command', ({ targetBotId, command }) => {
+        if (!command) return;
+        if (targetBotId === 'all') {
+            botPool.forEach((botData) => {
+                if (botData.client && botData.status === 'Online') {
+                    sendChat(botData.client, command);
+                    broadcastLog(botData.id, `> ${command}`, 'command');
+                }
+            });
+        } else {
+            const botData = botPool.get(targetBotId);
+            if (botData && botData.client && botData.status === 'Online') {
+                sendChat(botData.client, command);
+                broadcastLog(targetBotId, `> ${command}`, 'command');
+            }
+        }
     });
 
     socket.on('request-logs', (botId) => {
         if (botPool.has(botId)) {
             const botData = botPool.get(botId);
             botData.logs.forEach(log => socket.emit('bot-log', log));
-            socket.emit('bot-status', { botId, status: botData.status });
+            socket.emit('status-update', { botId, status: botData.status, onlineSince: botData.onlineSince });
             socket.emit('bot-inventory', { botId, inventory: botData.inventory });
         }
     });
@@ -1009,4 +869,3 @@ const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
     console.log(`[🚀] Dashboard çalışıyor: http://localhost:${PORT}`);
 });
-

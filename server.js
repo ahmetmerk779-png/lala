@@ -713,7 +713,7 @@ function cleanupBot(botId, isManualStop = false) {
     botData.pos = { x: 0, y: 0, z: 0 };
     botData.scoreboardData = null;
 
-    io.emit('bot-status', { botId, status: botData.status });
+    io.emit('status-update', { botId, status: botData.status, onlineSince: null });
     io.emit('bot-inventory', { botId, inventory: {} });
     io.emit('bot-tablist', { botId, players: [] });
     io.emit('bot-map-update', { botId, pos: botData.pos, entities: [] });
@@ -728,9 +728,9 @@ function startBotInstance(botId) {
         cleanupBot(botId, true);
     }
 
-    botData.status = 'Bağlanıyor...';
+    botData.status = 'Connecting';
     botData.isManualStop = false;
-    io.emit('bot-status', { botId, status: botData.status });
+    io.emit('status-update', { botId, status: botData.status, onlineSince: null });
 
     const host = botData.host || globalConfig.host;
     const port = botData.port || globalConfig.port;
@@ -775,7 +775,7 @@ function startBotInstance(botId) {
         client.on('success', (packet) => {
             botData.status = 'Online';
             botData.onlineSince = Date.now();
-            io.emit('bot-status', { botId, status: botData.status });
+            io.emit('status-update', { botId, status: botData.status, onlineSince: botData.onlineSince });
             broadcastLog(botId, `Oyuna başarıyla giriş yapıldı! (${botData.username})`, 'success');
             
             setupCustomPacketHandler(client, botId);
@@ -817,8 +817,8 @@ function triggerAutoReconnect(botId) {
     const botData = botPool.get(botId);
     if (!botData || botData.isManualStop) return;
 
-    botData.status = 'Yeniden bağlanıyor...';
-    io.emit('bot-status', { botId, status: botData.status });
+    botData.status = 'Connecting';
+    io.emit('status-update', { botId, status: botData.status, onlineSince: null });
     
     setTimeout(() => {
         if (botPool.has(botId)) {
@@ -830,107 +830,48 @@ function triggerAutoReconnect(botId) {
     }, 15000);
 }
 
-app.get('/api/config', (req, res) => res.json(globalConfig));
-
-app.post('/api/config', (req, res) => {
-    globalConfig = { ...globalConfig, ...req.body };
-    saveDataToFile();
-    res.json({ success: true, config: globalConfig });
-});
-
-app.get('/api/bots', (req, res) => {
-    const list = Array.from(botPool.values()).map(b => ({
-        id: b.id,
-        username: b.username,
-        status: b.status,
-        onlineSince: b.onlineSince,
-        host: b.host,
-        port: b.port
-    }));
-    res.json(list);
-});
-
-app.post('/api/bot/:id/start', (req, res) => {
-    const botId = req.params.id;
-    if (botPool.has(botId)) {
-        startBotInstance(botId);
-        res.json({ success: true });
-    } else {
-        res.status(404).json({ error: 'Bot bulunamadı' });
-    }
-});
-
-app.post('/api/bot/:id/stop', (req, res) => {
-    const botId = req.params.id;
-    if (botPool.has(botId)) {
-        cleanupBot(botId, true);
-        res.json({ success: true });
-    } else {
-        res.status(404).json({ error: 'Bot bulunamadı' });
-    }
-});
-
-app.post('/api/bot/:id/chat', (req, res) => {
-    const botId = req.params.id;
-    const msg = req.body.message;
-    if (botPool.has(botId)) {
-        const botData = botPool.get(botId);
-        if (botData.client && botData.status === 'Online' && msg) {
-            sendChat(botData.client, msg);
-            res.json({ success: true });
-        } else {
-            res.status(400).json({ error: 'Bot aktif değil veya mesaj boş.' });
+function startAllBots() {
+    let delay = 0;
+    for (const [id, botData] of botPool.entries()) {
+        if (botData.status === 'Offline' || botData.status === 'Connecting') {
+            setTimeout(() => startBotInstance(id), delay);
+            delay += 2500;
         }
-    } else {
-        res.status(404).json({ error: 'Bot bulunamadı' });
     }
-});
-
-app.post('/api/bot/:id/inventory/click', (req, res) => {
-    const botId = req.params.id;
-    const { slot, button } = req.body;
-    
-    if (botPool.has(botId)) {
-        const botData = botPool.get(botId);
-        if (botData.client && botData.status === 'Online') {
-            try {
-                const mouseBtn = button === 'right' ? 1 : 0;
-                botData.client.write('window_click', {
-                    windowId: 0,
-                    stateId: 0,
-                    slot: parseInt(slot),
-                    mouseButton: mouseBtn,
-                    mode: 0,
-                    changedSlots: [],
-                    cursorItem: { present: false }
-                });
-                broadcastLog(botId, `Envanter: Slot ${slot} tıklandı (${button}).`, 'info');
-                res.json({ success: true });
-            } catch (e) {
-                res.status(500).json({ error: e.message });
-            }
-        } else {
-            res.status(400).json({ error: 'Bot aktif değil' });
-        }
-    } else {
-        res.status(404).json({ error: 'Bot bulunamadı' });
-    }
-});
-
-app.delete('/api/bot/:id', (req, res) => {
-    const botId = req.params.id;
-    if (botPool.has(botId)) {
-        cleanupBot(botId, true);
-        botPool.delete(botId);
-        saveDataToFile();
-        res.json({ success: true });
-    } else {
-        res.status(404).json({ error: 'Bot bulunamadı' });
-    }
-});
+}
 
 io.on('connection', (socket) => {
-    // EKLENEN KISIM: Arayüzden gelen 'add-bot' soket sinyalini dinler ve botu listeye ekler
+    const botList = Array.from(botPool.values()).map(b => ({
+        id: b.id, username: b.username, host: b.host || globalConfig.host,
+        port: b.port || globalConfig.port, version: b.version || globalConfig.version,
+        autoPassword: b.autoPassword !== undefined ? b.autoPassword : globalConfig.autoPassword,
+        autoSubServerCmd: b.autoSubServerCmd !== undefined ? b.autoSubServerCmd : globalConfig.autoSubServerCmd,
+        autoSubServerDelay: b.autoSubServerDelay !== undefined ? b.autoSubServerDelay : globalConfig.autoSubServerDelay,
+        status: b.status, onlineSince: b.onlineSince || null, pos: b.pos || { x: 0, y: 0, z: 0 },
+        logs: b.logs, inventory: b.inventory || {}
+    }));
+
+    socket.emit('init-data', { botList, globalConfig });
+
+    socket.on('update-config', (newConfig) => {
+        globalConfig = { ...globalConfig, ...newConfig };
+        saveDataToFile();
+        io.emit('config-updated', globalConfig);
+    });
+
+    socket.on('update-bot-config', ({ botId, config }) => {
+        if (!botPool.has(botId)) return;
+        const botData = botPool.get(botId);
+        Object.assign(botData, config);
+        saveDataToFile();
+        io.emit('bot-updated', { botId, config: botData });
+    });
+
+    socket.on('start-bot', (botId) => startBotInstance(botId));
+    socket.on('stop-bot', (botId) => stopBotInstance(botId));
+    socket.on('start-all', () => startAllBots());
+    socket.on('stop-all', () => { for (const id of botPool.keys()) cleanupBot(id, true); });
+
     socket.on('add-bot', (data) => {
         const username = typeof data === 'string' ? data : data.username;
         if (!username) return;
@@ -964,11 +905,36 @@ io.on('connection', (socket) => {
         io.emit('bot-added', newBot);
     });
 
+    socket.on('delete-bot', (botId) => {
+        cleanupBot(botId, true);
+        botPool.delete(botId);
+        saveDataToFile();
+        io.emit('bot-deleted', botId);
+    });
+
+    socket.on('send-command', ({ targetBotId, command }) => {
+        if (!command) return;
+        if (targetBotId === 'all') {
+            botPool.forEach((botData) => {
+                if (botData.client && botData.status === 'Online') {
+                    sendChat(botData.client, command);
+                    broadcastLog(botData.id, `> ${command}`, 'command');
+                }
+            });
+        } else {
+            const botData = botPool.get(targetBotId);
+            if (botData && botData.client && botData.status === 'Online') {
+                sendChat(botData.client, command);
+                broadcastLog(targetBotId, `> ${command}`, 'command');
+            }
+        }
+    });
+
     socket.on('request-logs', (botId) => {
         if (botPool.has(botId)) {
             const botData = botPool.get(botId);
             botData.logs.forEach(log => socket.emit('bot-log', log));
-            socket.emit('bot-status', { botId, status: botData.status });
+            socket.emit('status-update', { botId, status: botData.status, onlineSince: botData.onlineSince });
             socket.emit('bot-inventory', { botId, inventory: botData.inventory });
         }
     });
@@ -977,4 +943,9 @@ io.on('connection', (socket) => {
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
     console.log(`[🚀] Dashboard çalışıyor: http://localhost:${PORT}`);
+    
+    setTimeout(() => {
+        console.log('[Sistem] Render sunucusu başlatıldı, tüm botlar otomatik olarak başlatılıyor...');
+        startAllBots();
+    }, 5000);
 });

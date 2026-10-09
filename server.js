@@ -14,7 +14,6 @@ const io = new Server(server);
 
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
-// YENİ EKLENDİ: Veri okuma sorununu çözen satır
 app.use(express.urlencoded({ extended: true }));
 
 process.on('uncaughtException', (err) => console.error('[Hata Engellendi]:', err.message));
@@ -930,43 +929,41 @@ app.delete('/api/bot/:id', (req, res) => {
     }
 });
 
-// DÜZELTİLEN VE GÜNCELLENEN BOT EKLEME ROTASI
-app.post('/api/bot/new', (req, res) => {
-    const { username, host, port } = req.body;
-    if (!username) return res.status(400).json({ error: 'Kullanıcı adı gerekli' });
-
-    const newId = 'bot_' + Date.now();
-    const newBot = {
-        id: newId,
-        username,
-        host: host || globalConfig.host,
-        port: port || globalConfig.port,
-        version: globalConfig.version,
-        autoPassword: globalConfig.autoPassword,
-        autoSubServerCmd: globalConfig.autoSubServerCmd,
-        autoSubServerDelay: globalConfig.autoSubServerDelay,
-        status: 'Offline',
-        onlineSince: null,
-        client: null,
-        logs: [],
-        inventory: {},
-        tabList: {},
-        entities: {},
-        pos: { x: 0, y: 0, z: 0 },
-        isManualStop: false,
-        scoreboardData: null,
-        macroInterval: null,
-        macroTimeout: null
-    };
-    
-    botPool.set(newId, newBot);
-    saveDataToFile();
-    
-    io.emit('bot-added', newBot);
-    res.json({ success: true, botId: newId, bot: newBot });
-});
-
 io.on('connection', (socket) => {
+    // EKLENEN KISIM: Arayüzden gelen 'add-bot' soket sinyalini dinler ve botu listeye ekler
+    socket.on('add-bot', (data) => {
+        const username = typeof data === 'string' ? data : data.username;
+        if (!username) return;
+        
+        const newId = 'bot_' + Date.now();
+        const newBot = {
+            id: newId,
+            username,
+            host: typeof data === 'object' && data.host ? data.host : globalConfig.host,
+            port: typeof data === 'object' && data.port ? data.port : globalConfig.port,
+            version: globalConfig.version,
+            autoPassword: globalConfig.autoPassword,
+            autoSubServerCmd: globalConfig.autoSubServerCmd,
+            autoSubServerDelay: globalConfig.autoSubServerDelay,
+            status: 'Offline',
+            onlineSince: null,
+            client: null,
+            logs: [],
+            inventory: {},
+            tabList: {},
+            entities: {},
+            pos: { x: 0, y: 0, z: 0 },
+            isManualStop: false,
+            scoreboardData: null,
+            macroInterval: null,
+            macroTimeout: null
+        };
+        
+        botPool.set(newId, newBot);
+        saveDataToFile();
+        io.emit('bot-added', newBot);
+    });
+
     socket.on('request-logs', (botId) => {
         if (botPool.has(botId)) {
             const botData = botPool.get(botId);

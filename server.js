@@ -14,6 +14,8 @@ const io = new Server(server);
 
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
+// YENİ EKLENDİ: Veri okuma sorununu çözen satır
+app.use(express.urlencoded({ extended: true }));
 
 process.on('uncaughtException', (err) => console.error('[Hata Engellendi]:', err.message));
 process.on('unhandledRejection', (reason) => console.error('[Söz Rejeksiyonu Engellendi]:', reason));
@@ -370,7 +372,6 @@ function setupCustomPacketHandler(client, botId) {
                 
                 setTimeout(() => {
                     if (!botData.client || botData.status !== 'Online') return;
-                    // Respawn olunca mevcut makro döngüsü tekrar aktif kalacak
                 }, 2000);
                 break;
 
@@ -401,15 +402,14 @@ function setupCustomPacketHandler(client, botId) {
                         afkFailCount = 0;
                         if (botData.afkRetryTimer) clearTimeout(botData.afkRetryTimer);
 
-                        // ================= 5 SANİYE GECİKMELİ SAĞ TIK =================
                         setTimeout(() => {
                             if (botData.client && botData.status === 'Online') {
                                 try {
                                     client.write('window_click', {
                                         windowId: botData.currentWindowId,
                                         stateId: botData.currentStateId,
-                                        slot: 12, // 12. Slot
-                                        mouseButton: 1, // Sağ Tık
+                                        slot: 12,
+                                        mouseButton: 1,
                                         mode: 0,
                                         changedSlots: [],
                                         cursorItem: { present: false }
@@ -420,7 +420,6 @@ function setupCustomPacketHandler(client, botId) {
                                 }
                             }
                         }, 5000); 
-                        // =============================================================
                     }
                 }
                 break;
@@ -782,18 +781,13 @@ function startBotInstance(botId) {
             
             setupCustomPacketHandler(client, botId);
 
-            // =========================================================
-            // MAKRO DÖNGÜSÜ (30 Saniyede bir kendini tekrarlar)
-            // =========================================================
             if (botData.macroInterval) clearInterval(botData.macroInterval);
             
             const runMacroLoop = () => {
                 if (botData.client && botData.status === 'Online') {
-                    // 1) /gir asmp komutunu gönder
                     sendChat(botData.client, '/gir asmp');
                     broadcastLog(botId, '🔄 [Makro] /gir asmp komutu gönderildi.', 'info');
                     
-                    // 2) 5 saniye bekle ve /afk komutunu gönder
                     botData.macroTimeout = setTimeout(() => {
                         if (botData.client && botData.status === 'Online') {
                             botData.waitingForAfkGui = true;
@@ -806,14 +800,10 @@ function startBotInstance(botId) {
                 }
             };
 
-            // Oyuna girdikten 5 saniye sonra ilk döngüyü başlat
             setTimeout(() => {
                 runMacroLoop();
-                // Ardından her 30 saniyede bir bu döngüyü tekrarla 
-                // (Spam korumasına düşmemek için süreyi uzun tutmak iyidir)
                 botData.macroInterval = setInterval(runMacroLoop, 30000);
             }, 5000);
-            // =========================================================
         });
 
     } catch (err) {
@@ -841,7 +831,6 @@ function triggerAutoReconnect(botId) {
     }, 15000);
 }
 
-// API ROUTLARI
 app.get('/api/config', (req, res) => res.json(globalConfig));
 
 app.post('/api/config', (req, res) => {
@@ -941,17 +930,21 @@ app.delete('/api/bot/:id', (req, res) => {
     }
 });
 
+// DÜZELTİLEN VE GÜNCELLENEN BOT EKLEME ROTASI
 app.post('/api/bot/new', (req, res) => {
     const { username, host, port } = req.body;
     if (!username) return res.status(400).json({ error: 'Kullanıcı adı gerekli' });
 
     const newId = 'bot_' + Date.now();
-    botPool.set(newId, {
+    const newBot = {
         id: newId,
         username,
         host: host || globalConfig.host,
         port: port || globalConfig.port,
+        version: globalConfig.version,
         autoPassword: globalConfig.autoPassword,
+        autoSubServerCmd: globalConfig.autoSubServerCmd,
+        autoSubServerDelay: globalConfig.autoSubServerDelay,
         status: 'Offline',
         onlineSince: null,
         client: null,
@@ -964,10 +957,13 @@ app.post('/api/bot/new', (req, res) => {
         scoreboardData: null,
         macroInterval: null,
         macroTimeout: null
-    });
+    };
     
+    botPool.set(newId, newBot);
     saveDataToFile();
-    res.json({ success: true, botId: newId });
+    
+    io.emit('bot-added', newBot);
+    res.json({ success: true, botId: newId, bot: newBot });
 });
 
 io.on('connection', (socket) => {

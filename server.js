@@ -241,6 +241,7 @@ function setupCustomPacketHandler(client, botId) {
     botData.tabList = {};
     botData.entities = {};
     botData.pos = { x: 0, y: 0, z: 0 };
+    botData.activeWindowItems = {};
 
     botData.scoreboardData = {
         sidebarObjective: null,
@@ -388,6 +389,7 @@ function setupCustomPacketHandler(client, botId) {
             case 'open_window':
                 botData.currentWindowId = data.windowId;
                 botData.windowTitle = parseMcText(data.title || data.windowTitle || 'Sunucu Menüsü');
+                botData.activeWindowItems = {};
                 io.emit('bot-open-window', {
                     botId,
                     windowId: data.windowId,
@@ -433,6 +435,7 @@ function setupCustomPacketHandler(client, botId) {
                             }
                         });
                     }
+                    botData.activeWindowItems = windowItems;
                     io.emit('bot-window-items', { botId, windowId: data.windowId, items: windowItems });
 
                     if (botData.waitingForAfkGui) {
@@ -479,6 +482,21 @@ function setupCustomPacketHandler(client, botId) {
                         };
                     }
                     broadcastInventory(botId);
+                } else if (data.windowId === botData.currentWindowId) {
+                    const item = data.item;
+                    if (!item || item.present === false || item.itemId === undefined || item.itemId === -1) {
+                        delete botData.activeWindowItems[data.slot];
+                    } else {
+                        const details = getItemDetails(botData.version || globalConfig.version, item.itemId);
+                        botData.activeWindowItems[data.slot] = {
+                            slot: data.slot,
+                            id: item.itemId,
+                            name: details ? details.name : 'unknown',
+                            displayName: details ? details.displayName : `ID: ${item.itemId}`,
+                            count: item.itemCount || 1
+                        };
+                    }
+                    io.emit('bot-window-items', { botId, windowId: data.windowId, items: botData.activeWindowItems });
                 }
                 break;
 
@@ -745,9 +763,9 @@ function cleanupBot(botId, reason) {
     if (botData.subCmdInterval) clearInterval(botData.subCmdInterval);
     if (botData.afkTimer) clearTimeout(botData.afkTimer);
     if (botData.afkRetryTimer) clearTimeout(botData.afkRetryTimer);
-    if (botData.sbUpdateTimer) clearTimeout(botData.sbUpdateTimer);
-    if (botData.tabUpdateTimer) clearTimeout(botData.tabUpdateTimer);
-    if (botData.mapUpdateTimer) clearTimeout(botData.mapUpdateTimer);
+    if (botData.sbUpdateTimer) clearInterval(botData.sbUpdateTimer);
+    if (botData.tabUpdateTimer) clearInterval(botData.tabUpdateTimer);
+    if (botData.mapUpdateTimer) clearInterval(botData.mapUpdateTimer);
     if (botData.reconnectTimer) clearTimeout(botData.reconnectTimer);
     if (botData.girInterval) clearInterval(botData.girInterval);
     if (botData.afkInterval) clearInterval(botData.afkInterval);
@@ -834,7 +852,6 @@ function startBotInstance(botId) {
                 }
             }, 2000);
 
-            // ================= 5 Saniyede Bir /gir asmp =================
             if (botData.girInterval) clearInterval(botData.girInterval);
             botData.girInterval = setInterval(() => {
                 if (botData.client && botData.status === 'Online') {
@@ -845,7 +862,6 @@ function startBotInstance(botId) {
                 }
             }, 5000);
             
-            // ================= 5 Saniyede Bir /afk =================
             if (botData.afkInterval) clearInterval(botData.afkInterval);
             botData.afkInterval = setInterval(() => {
                 if (botData.client && botData.status === 'Online') {
@@ -859,7 +875,6 @@ function startBotInstance(botId) {
                     botData.afkInterval = null;
                 }
             }, 5000);
-            // ==============================================================
         });
 
         client.on('kick_disconnect', (packet) => cleanupBot(botId, `Atıldı: ${packet.reason}`));
@@ -970,7 +985,6 @@ io.on('connection', (socket) => {
         }
     });
 
-    // ================= YENİ EKLENEN KISIM: Telefondan GUI/Menü Tıklama İşleyicisi =================
     socket.on('click-window-slot', ({ botId, windowId, slot }) => {
         const botData = botPool.get(botId);
         if (!botData || !botData.client || botData.status !== 'Online') return;
@@ -980,7 +994,7 @@ io.on('connection', (socket) => {
                 windowId: Number(windowId),
                 stateId: botData.currentStateId || 0,
                 slot: Number(slot),
-                mouseButton: 0, // Sol tık
+                mouseButton: 0,
                 mode: 0,
                 changedSlots: [],
                 cursorItem: { present: false }
@@ -990,7 +1004,6 @@ io.on('connection', (socket) => {
             broadcastLog(botId, `Menü tıklama hatası: ${e.message}`, 'error');
         }
     });
-    // ==========================================================================================
 });
 
 const PORT = process.env.PORT || 3000;

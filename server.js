@@ -265,7 +265,6 @@ function setupCustomPacketHandler(client, botId) {
         teams: {}
     };
 
-    // Özelleştirilebilir Otomatik Ürün / Kristal Satın Alma Kontrolü
     function checkAndBuyItem() {
         if (botData.isBuying || botData.status !== 'Online') return;
 
@@ -1066,19 +1065,19 @@ io.on('connection', (socket) => {
     socket.on('stop-all', () => { for (const id of botPool.keys()) stopBotInstance(id); });
 
     socket.on('add-bot', (data) => {
-        const username = typeof data === 'string' ? data : data.username;
+        const username = typeof data === 'string' ? data : (data && data.username);
         if (!username) return;
         
         console.log('[Socket] Bot ekleme isteği alındı:', username);
         const id = 'bot_' + Date.now();
         const newBot = {
             id, username,
-            host: typeof data === 'object' && data.host ? data.host : globalConfig.host,
-            port: typeof data === 'object' && data.port ? data.port : globalConfig.port,
-            version: typeof data === 'object' && data.version ? data.version : globalConfig.version,
-            autoPassword: typeof data === 'object' && data.autoPassword !== undefined ? data.autoPassword : globalConfig.autoPassword,
-            autoSubServerCmd: typeof data === 'object' && data.autoSubServerCmd !== undefined ? data.autoSubServerCmd : globalConfig.autoSubServerCmd,
-            autoSubServerDelay: typeof data === 'object' && data.autoSubServerDelay !== undefined ? data.autoSubServerDelay : globalConfig.autoSubServerDelay,
+            host: typeof data === 'object' && data && data.host ? data.host : globalConfig.host,
+            port: typeof data === 'object' && data && data.port ? data.port : globalConfig.port,
+            version: typeof data === 'object' && data && data.version ? data.version : globalConfig.version,
+            autoPassword: typeof data === 'object' && data && data.autoPassword !== undefined ? data.autoPassword : globalConfig.autoPassword,
+            autoSubServerCmd: typeof data === 'object' && data && data.autoSubServerCmd !== undefined ? data.autoSubServerCmd : globalConfig.autoSubServerCmd,
+            autoSubServerDelay: typeof data === 'object' && data && data.autoSubServerDelay !== undefined ? data.autoSubServerDelay : globalConfig.autoSubServerDelay,
             autoBuyConfig: { ...defaultAutoBuyConfig },
             status: 'Offline', onlineSince: null, pos: { x: 0, y: 0, z: 0 },
             client: null, logs: [], inventory: {}, scoreboard: null, tabList: {}, entities: {}, isManualStop: false,
@@ -1148,7 +1147,7 @@ io.on('connection', (socket) => {
                     windowId: windowId,
                     stateId: stateId,
                     slot: Number(slot),
-                    mouseButton: 0, 
+                    mouseButton:0, 
                     mode: 4, 
                     changedSlots: [],
                     cursorItem: { present: false }

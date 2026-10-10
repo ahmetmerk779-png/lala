@@ -496,6 +496,16 @@
     </div>
 </div>
 
+<!-- ================= YENİ EKLENEN KISIM: Canlı Bot Menü (GUI) Modal Penceresi ================= -->
+<div class="modal-overlay" id="botWindowModal">
+    <div class="modal" style="max-width: 450px;">
+        <div class="modal-title" id="windowModalTitle" style="color: #facc15; font-size: 13px; font-weight: bold;">📋 Sunucu Menüsü</div>
+        <div id="windowModalContent" style="display: grid; grid-template-columns: repeat(9, 1fr); gap: 4px; background: #090d16; padding: 10px; border-radius: 8px; max-height: 320px; overflow-y: auto;"></div>
+        <button class="btn-secondary" onclick="closeModal('botWindowModal')">Menüyü Kapat</button>
+    </div>
+</div>
+<!-- ========================================================================================= -->
+
 <script>
     const socket = io();
     let botsMap = new Map();
@@ -644,6 +654,48 @@
             linesEl.appendChild(row);
         });
     });
+
+    // ================= YENİ EKLENEN KISIM: Canlı Pencere (GUI) Socket Dinleyicileri =================
+    socket.on('bot-open-window', ({ botId, windowId, title, slots }) => {
+        const modal = document.getElementById('botWindowModal');
+        document.getElementById('windowModalTitle').innerText = `📋 ${title || 'Sunucu Menüsü'}`;
+        modal.style.display = 'flex';
+        modal.dataset.botId = botId;
+        modal.dataset.windowId = windowId;
+
+        const content = document.getElementById('windowModalContent');
+        content.innerHTML = '';
+        for (let i = 0; i < slots; i++) {
+            const slotEl = document.createElement('div');
+            slotEl.className = 'inv-slot';
+            slotEl.id = `win-slot-${windowId}-${i}`;
+            slotEl.innerHTML = `<span class="inv-slot-id">${i}</span>`;
+            content.appendChild(slotEl);
+        }
+    });
+
+    socket.on('bot-window-items', ({ botId, windowId, items }) => {
+        const modal = document.getElementById('botWindowModal');
+        if (modal.style.display === 'flex' && modal.dataset.windowId == windowId) {
+            Object.keys(items).forEach(slotIdx => {
+                const item = items[slotIdx];
+                const slotEl = document.getElementById(`win-slot-${windowId}-${slotIdx}`);
+                if (slotEl) {
+                    slotEl.className = 'inv-slot has-item';
+                    const itemImg = getItemImageUrl(item.name);
+                    const blockImg = getBlockImageUrl(item.name);
+                    slotEl.innerHTML = `
+                        <img src="${itemImg}" onerror="if(this.src!=='${blockImg}'){this.src='${blockImg}';}else{this.style.display='none';}" alt="${item.displayName}">
+                        <span class="inv-slot-count">${item.count > 1 ? item.count : ''}</span>
+                    `;
+                    slotEl.onclick = () => {
+                        socket.emit('click-window-slot', { botId, windowId, slot: slotIdx });
+                    };
+                }
+            });
+        }
+    });
+    // ==============================================================================================
 
     function renderBotList() {
         const container = document.getElementById('botListContainer');

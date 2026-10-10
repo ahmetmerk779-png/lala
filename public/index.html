@@ -132,14 +132,6 @@
         <div class="field"><label>1. Aşama Kategori Slotu (/shop)</label><input type="number" id="modalCategorySlot" placeholder="örn. 7"></div>
         <div class="field"><label>2. Aşama Ürün Slotu</label><input type="number" id="modalItemSlot" placeholder="örn. 3"></div>
         <div class="field"><label>3. Aşama Onay/Satın Al Slotu</label><input type="number" id="modalConfirmSlot" placeholder="örn. 22"></div>
-
-        <hr style="border-color: #27354a; margin: 4px 0;">
-        <div style="font-size: 11px; font-weight: bold; color: #38bdf8;">🌐 Proxy Ayarları</div>
-        <div class="field"><label>Proxy IP</label><input type="text" id="modalProxyHost"></div>
-        <div class="field"><label>Proxy Port</label><input type="number" id="modalProxyPort"></div>
-        <div class="field"><label>Proxy Türü</label><select id="modalProxyType"><option value="5">SOCKS5</option><option value="4">SOCKS4</option></select></div>
-        <div class="field"><label>Kullanıcı Adı</label><input type="text" id="modalProxyUser"></div>
-        <div class="field"><label>Şifre</label><input type="text" id="modalProxyPass"></div>
         
         <div style="display: flex; gap: 8px; margin-top: 8px;">
             <button class="btn-primary" style="flex: 1;" onclick="saveBotSettings()">Kaydet</button>
@@ -460,13 +452,6 @@
         document.getElementById('modalItemSlot').value = buyCfg.itemSlot !== undefined ? buyCfg.itemSlot : 3;
         document.getElementById('modalConfirmSlot').value = buyCfg.confirmSlot !== undefined ? buyCfg.confirmSlot : 22;
 
-        const proxy = bot.proxy || {};
-        document.getElementById('modalProxyHost').value = proxy.host || '';
-        document.getElementById('modalProxyPort').value = proxy.port || '';
-        document.getElementById('modalProxyType').value = proxy.type || 5;
-        document.getElementById('modalProxyUser').value = proxy.userId || '';
-        document.getElementById('modalProxyPass').value = proxy.password || '';
-
         document.getElementById('botSettingsModal').style.display = 'flex';
     }
 
@@ -484,13 +469,6 @@
                 categorySlot: Number(document.getElementById('modalCategorySlot').value),
                 itemSlot: Number(document.getElementById('modalItemSlot').value),
                 confirmSlot: Number(document.getElementById('modalConfirmSlot').value)
-            },
-            proxy: {
-                host: document.getElementById('modalProxyHost').value.trim(),
-                port: document.getElementById('modalProxyPort').value.trim(),
-                type: Number(document.getElementById('modalProxyType').value),
-                userId: document.getElementById('modalProxyUser').value.trim(),
-                password: document.getElementById('modalProxyPass').value.trim()
             }
         };
 

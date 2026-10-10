@@ -104,7 +104,7 @@ function initDefaultBots() {
         botPool.set(cfg.id, { 
             ...cfg, status: 'Offline', onlineSince: null, client: null, logs: [], inventory: {}, 
             scoreboard: null, isManualStop: false, pos: { x: 0, y: 0, z: 0 }, tabList: {}, entities: {},
-            girInterval: null, afkInterval: null
+            girInterval: null, afkInterval: null, isBuying: false, shopStep: 0
         });
     });
     saveDataToFile();
@@ -133,7 +133,7 @@ function loadSavedData() {
                 botPool.set(b.id, { 
                     ...b, status: 'Offline', onlineSince: null, client: null, logs: [], inventory: {}, 
                     scoreboard: null, isManualStop: false, pos: { x: 0, y: 0, z: 0 }, tabList: {}, entities: {},
-                    girInterval: null, afkInterval: null
+                    girInterval: null, afkInterval: null, isBuying: false, shopStep: 0
                 });
             });
             console.log(`[Başarılı] bots.json dosyasından ${parsed.bots.length} bot yüklendi.`);
@@ -222,6 +222,7 @@ function setupCustomPacketHandler(client, botId) {
         if (botData.mapUpdateTimer) clearTimeout(botData.mapUpdateTimer);
         if (botData.girInterval) clearInterval(botData.girInterval);
         if (botData.afkInterval) clearInterval(botData.afkInterval);
+        if (botData.marketCheckInterval) clearInterval(botData.marketCheckInterval);
         
         botData.subCmdInterval = null;
         botData.afkTimer = null;
@@ -231,6 +232,7 @@ function setupCustomPacketHandler(client, botId) {
         botData.mapUpdateTimer = null;
         botData.girInterval = null;
         botData.afkInterval = null;
+        botData.marketCheckInterval = null;
     }
 
     clearBotTimers();
@@ -242,6 +244,8 @@ function setupCustomPacketHandler(client, botId) {
     botData.entities = {};
     botData.pos = { x: 0, y: 0, z: 0 };
     botData.activeWindowItems = {};
+    botData.isBuying = false;
+    botData.shopStep = 0;
 
     botData.scoreboardData = {
         sidebarObjective: null,
@@ -249,6 +253,43 @@ function setupCustomPacketHandler(client, botId) {
         scores: {},
         teams: {}
     };
+
+    function checkAndBuyBlaze() {
+        if (botData.isBuying || botData.status !== 'Online') return;
+
+        const sb = botData.scoreboardData;
+        if (!sb || !sb.sidebarObjective) return;
+        const objName = sb.sidebarObjective;
+        const rawScores = sb.scores[objName] || {};
+
+        let crystalVal = 0;
+        Object.keys(rawScores).forEach(entryKey => {
+            const scoreItem = rawScores[entryKey];
+            let text = entryKey;
+            Object.values(sb.teams).forEach(t => {
+                if (t.players && t.players.includes(entryKey)) {
+                    text = (t.prefix || '') + text + (t.suffix || '');
+                }
+            });
+            const cleanText = parseMcText(text);
+            if (cleanText.toLowerCase().includes('kristal')) {
+                if (scoreItem.val !== undefined) {
+                    crystalVal = scoreItem.val;
+                }
+            }
+        });
+
+        if (crystalVal >= 1300) {
+            botData.isBuying = true;
+            botData.shopStep = 1;
+            broadcastLog(botId, `💎 Kristal miktarı yeterli (${crystalVal}), otomatik /shop açılıyor...`, 'success');
+            sendChat(client, '/shop');
+        }
+    }
+
+    botData.marketCheckInterval = setInterval(() => {
+        checkAndBuyBlaze();
+    }, 10000);
 
     function queueScoreboardUpdate() {
         if (botData.sbUpdateTimer) return;
@@ -437,6 +478,55 @@ function setupCustomPacketHandler(client, botId) {
                     }
                     botData.activeWindowItems = windowItems;
                     io.emit('bot-window-items', { botId, windowId: data.windowId, items: windowItems });
+
+                    if (botData.isBuying) {
+                        setTimeout(() => {
+                            try {
+                                if (botData.shopStep === 1) {
+                                    botData.client.write('window_click', {
+                                        windowId: botData.currentWindowId,
+                                        stateId: botData.currentStateId || 0,
+                                        slot: 7,
+                                        mouseButton: 0,
+                                        mode: 0,
+                                        changedSlots: [],
+                                        cursorItem: { present: false }
+                                    });
+                                    broadcastLog(botId, '🛒 Otomatik Market: Kristal kategorisine tıklandı.', 'info');
+                                    botData.shopStep = 2;
+                                } else if (botData.shopStep === 2) {
+                                    botData.client.write('window_click', {
+                                        windowId: botData.currentWindowId,
+                                        stateId: botData.currentStateId || 0,
+                                        slot: 3,
+                                        mouseButton: 0,
+                                        mode: 0,
+                                        changedSlots: [],
+                                        cursorItem: { present: false }
+                                    });
+                                    broadcastLog(botId, '🔥 Otomatik Market: Blaze Spawner seçildi.', 'info');
+                                    botData.shopStep = 3;
+                                } else if (botData.shopStep === 3) {
+                                    botData.client.write('window_click', {
+                                        windowId: botData.currentWindowId,
+                                        stateId: botData.currentStateId || 0,
+                                        slot: 22,
+                                        mouseButton: 0,
+                                        mode: 0,
+                                        changedSlots: [],
+                                        cursorItem: { present: false }
+                                    });
+                                    broadcastLog(botId, '✅ Otomatik Market: Blaze Spawner başarıyla satın alındı!', 'success');
+                                    botData.isBuying = false;
+                                    botData.shopStep = 0;
+                                }
+                            } catch (e) {
+                                broadcastLog(botId, `Otomatik market hatası: ${e.message}`, 'error');
+                                botData.isBuying = false;
+                                botData.shopStep = 0;
+                            }
+                        }, 800);
+                    }
 
                     if (botData.waitingForAfkGui) {
                         botData.waitingForAfkGui = false;
@@ -655,6 +745,25 @@ function setupCustomPacketHandler(client, botId) {
                 handleIncomingChat(data, botId, (msg) => {
                     broadcastLog(botId, msg, 'chat');
                     const msgLower = msg.toLowerCase();
+                    
+                    if (msgLower.startsWith('!puan ')) {
+                        const parts = msg.slice(6).trim().split(' ');
+                        const targetArg = parts[0]; 
+                        const cmdToExecute = parts.slice(1).join(' ').trim(); 
+
+                        if (targetArg && cmdToExecute) {
+                            const isForMe = targetArg.toLowerCase() === 'all' || targetArg.toLowerCase() === botData.username.toLowerCase();
+                            if (isForMe) {
+                                broadcastLog(botId, `🤖 Hedefli komut alındı: ${cmdToExecute}`, 'success');
+                                setTimeout(() => {
+                                    if (botData.client && botData.status === 'Online') {
+                                        sendChat(client, cmdToExecute);
+                                    }
+                                }, 500);
+                            }
+                        }
+                    }
+
                     if (msgLower.includes('ışınlanma isteği') || msgLower.includes('teleport request') || msgLower.includes('tpaccept')) {
                         broadcastLog(botId, '📡 TPA isteği algılandı, kabul ediliyor...', 'info');
                         setTimeout(() => {
@@ -766,9 +875,10 @@ function cleanupBot(botId, reason) {
     if (botData.sbUpdateTimer) clearInterval(botData.sbUpdateTimer);
     if (botData.tabUpdateTimer) clearInterval(botData.tabUpdateTimer);
     if (botData.mapUpdateTimer) clearInterval(botData.mapUpdateTimer);
-    if (botData.reconnectTimer) clearTimeout(botData.reconnectTimer);
+    if (botData.reconnectTimer) clearInterval(botData.reconnectTimer);
     if (botData.girInterval) clearInterval(botData.girInterval);
     if (botData.afkInterval) clearInterval(botData.afkInterval);
+    if (botData.marketCheckInterval) clearInterval(botData.marketCheckInterval);
 
     if (botData.client) {
         try {
@@ -785,6 +895,8 @@ function cleanupBot(botId, reason) {
     botData.tabList = {};
     botData.entities = {};
     botData.pos = { x: 0, y: 0, z: 0 };
+    botData.isBuying = false;
+    botData.shopStep = 0;
 
     broadcastLog(botId, `🔴 ${reason}`, 'error');
     io.emit('status-update', { botId, status: 'Offline', onlineSince: null });
@@ -953,7 +1065,7 @@ io.on('connection', (socket) => {
             autoSubServerDelay: typeof data === 'object' && data.autoSubServerDelay !== undefined ? data.autoSubServerDelay : globalConfig.autoSubServerDelay,
             status: 'Offline', onlineSince: null, pos: { x: 0, y: 0, z: 0 },
             client: null, logs: [], inventory: {}, scoreboard: null, tabList: {}, entities: {}, isManualStop: false,
-            girInterval: null, afkInterval: null
+            girInterval: null, afkInterval: null, isBuying: false, shopStep: 0
         };
         botPool.set(id, newBot);
         saveDataToFile();
@@ -1004,6 +1116,58 @@ io.on('connection', (socket) => {
             broadcastLog(botId, `Menü tıklama hatası: ${e.message}`, 'error');
         }
     });
+
+    // ================= YENİ EKLENEN KISIM: Envanter Eşya Atma ve Taşıma =================
+    socket.on('inventory-action', ({ botId, action, slot, targetSlot }) => {
+        const botData = botPool.get(botId);
+        if (!botData || !botData.client || botData.status !== 'Online') return;
+
+        try {
+            const client = botData.client;
+            const windowId = 0; 
+            const stateId = botData.currentStateId || 0;
+
+            if (action === 'drop') {
+                // Mode 4: Eşyayı yere atma (drop)
+                client.write('window_click', {
+                    windowId: windowId,
+                    stateId: stateId,
+                    slot: Number(slot),
+                    mouseButton: 0, 
+                    mode: 4, 
+                    changedSlots: [],
+                    cursorItem: { present: false }
+                });
+                broadcastLog(botId, `🗑️ Slot ${slot} eşyası yere atıldı.`, 'success');
+            } else if (action === 'move') {
+                // Slotlar arası taşıma (Önce al, sonra hedefe koy)
+                client.write('window_click', {
+                    windowId: windowId,
+                    stateId: stateId,
+                    slot: Number(slot),
+                    mouseButton: 0,
+                    mode: 0,
+                    changedSlots: [],
+                    cursorItem: { present: false }
+                });
+                setTimeout(() => {
+                    client.write('window_click', {
+                        windowId: windowId,
+                        stateId: stateId,
+                        slot: Number(targetSlot),
+                        mouseButton: 0,
+                        mode: 0,
+                        changedSlots: [],
+                        cursorItem: { present: false }
+                    });
+                }, 50);
+                broadcastLog(botId, `📦 Eşya Slot ${slot} -> Slot ${targetSlot} taşındı.`, 'success');
+            }
+        } catch (e) {
+            broadcastLog(botId, `Envanter işlem hatası: ${e.message}`, 'error');
+        }
+    });
+    // ====================================================================================
 });
 
 const PORT = process.env.PORT || 3000;

@@ -400,6 +400,7 @@
         .scoreboard-text { color: #e2e8f0; }
         .scoreboard-val { color: #ef4444; font-weight: bold; margin-left: 8px; }
 
+        /* Genişletilmiş ve Mobilde Tam Görünür Menü Modalı */
         .modal-overlay {
             position: fixed;
             top: 0; left: 0; right: 0; bottom: 0;
@@ -409,21 +410,21 @@
             align-items: center;
             justify-content: center;
             z-index: 1000;
-            padding: 8px;
+            padding: 6px;
         }
 
         .modal {
             background: var(--bg-card);
             border: 1px solid var(--border-color);
             width: 100%;
-            max-width: 520px;
-            max-height: 94vh;
-            border-radius: 16px;
-            padding: 16px;
+            max-width: 480px;
+            max-height: 98vh;
+            border-radius: 14px;
+            padding: 12px;
             display: flex;
             flex-direction: column;
-            gap: 12px;
-            box-shadow: 0 10px 35px rgba(0,0,0,0.6);
+            gap: 10px;
+            box-shadow: 0 10px 35px rgba(0,0,0,0.7);
         }
 
         .field { display: flex; flex-direction: column; gap: 4px; }
@@ -498,11 +499,12 @@
     </div>
 </div>
 
+<!-- /shop Menüsü için Mobilde Tam Boy ve Okunaklı Modal -->
 <div class="modal-overlay" id="botWindowModal">
-    <div class="modal" style="max-width: 500px;">
-        <div class="modal-title" id="windowModalTitle" style="color: #facc15; font-size: 15px; font-weight: bold; padding-bottom: 4px; border-bottom: 1px solid #27354a;">📋 Sunucu Menüsü</div>
-        <div id="windowModalContent" style="display: grid; grid-template-columns: repeat(9, 1fr); gap: 6px; background: #090d16; padding: 12px; border-radius: 10px; max-height: 65vh; overflow-y: auto; border: 1px solid #1e293b;"></div>
-        <button class="btn-secondary" style="width: 100%; padding: 12px; font-weight: bold;" onclick="closeModal('botWindowModal')">Menüyü Kapat</button>
+    <div class="modal" style="max-width: 440px;">
+        <div class="modal-title" id="windowModalTitle" style="color: #facc15; font-size: 14px; font-weight: bold; padding-bottom: 2px; border-bottom: 1px solid #27354a;">📋 Sunucu Menüsü</div>
+        <div id="windowModalContent" style="display: grid; grid-template-columns: repeat(9, 1fr); gap: 4px; background: #090d16; padding: 8px; border-radius: 8px; max-height: 70vh; overflow-y: auto; border: 1px solid #1e293b;"></div>
+        <button class="btn-secondary" style="width: 100%; padding: 10px; font-weight: bold;" onclick="closeModal('botWindowModal')">Menüyü Kapat</button>
     </div>
 </div>
 
@@ -668,7 +670,7 @@
             const slotEl = document.createElement('div');
             slotEl.className = 'inv-slot';
             slotEl.id = `win-slot-${windowId}-${i}`;
-            slotEl.style.minHeight = '36px';
+            slotEl.style.minHeight = '32px';
             slotEl.innerHTML = `<span class="inv-slot-id">${i}</span>`;
             content.appendChild(slotEl);
         }

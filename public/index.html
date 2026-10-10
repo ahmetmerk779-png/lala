@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Minecraft Bot Panel - Özel Sunucu Uyumlu</title>
+    <title>Minecraft Bot Panel</title>
     <script src="/socket.io/socket.io.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
@@ -401,7 +401,6 @@
         .scoreboard-text { color: #e2e8f0; }
         .scoreboard-val { color: #ef4444; font-weight: bold; margin-left: 8px; }
 
-        /* Özel /Shop Menüsü İçin Tam Ekran Mobil Uyumlu Tasarım */
         .modal-overlay {
             position: fixed;
             top: 0; left: 0; right: 0; bottom: 0;
@@ -436,7 +435,7 @@
 
 <div class="container">
     <div class="header">
-        <h1>🤖 MC Bot Manager (Özel Sunucu)</h1>
+        <h1>🤖 MC Bot Manager</h1>
         <button class="btn-secondary" onclick="openGlobalSettings()">⚙️ Genel Ayarlar</button>
     </div>
 
@@ -500,7 +499,6 @@
     </div>
 </div>
 
-<!-- Özel /Shop Sunucu Menü Modalı (Mobilde Tam Boy & Net Görünüm) -->
 <div class="modal-overlay" id="botWindowModal">
     <div class="modal" style="max-width: 440px;">
         <div class="modal-title" id="windowModalTitle" style="color: #facc15; font-size: 14px; font-weight: bold; padding-bottom: 2px; border-bottom: 1px solid #27354a;">📋 Sunucu Menüsü</div>
@@ -1046,7 +1044,7 @@
             host: document.getElementById('gModalHost').value.trim(),
             port: Number(document.getElementById('gModalPort').value),
             version: document.getElementById('gModalVersion').value.trim(),
-            autoPassword: document.getElementById('gModalPassword'].value.trim(),
+            autoPassword: document.getElementById('gModalPassword').value.trim(),
             autoSubServerCmd: document.getElementById('gModalSubCmd').value.trim()
         };
 

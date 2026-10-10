@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Minecraft Bot Panel</title>
+    <title>Minecraft Bot Panel - Özel Sunucu Uyumlu</title>
     <script src="/socket.io/socket.io.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
@@ -249,8 +249,8 @@
         }
 
         .inv-slot img {
-            width: 28px;
-            height: 28px;
+            width: 26px;
+            height: 26px;
             image-rendering: pixelated;
             object-fit: contain;
             pointer-events: none;
@@ -268,10 +268,11 @@
         }
 
         .inv-slot-id {
-            opacity: 0.2;
+            opacity: 0.3;
             font-size: 9px;
-            color: #64748b;
+            color: #38bdf8;
             pointer-events: none;
+            font-weight: bold;
         }
 
         .inv-info-bar {
@@ -400,31 +401,31 @@
         .scoreboard-text { color: #e2e8f0; }
         .scoreboard-val { color: #ef4444; font-weight: bold; margin-left: 8px; }
 
-        /* Genişletilmiş ve Mobilde Tam Görünür Menü Modalı */
+        /* Özel /Shop Menüsü İçin Tam Ekran Mobil Uyumlu Tasarım */
         .modal-overlay {
             position: fixed;
             top: 0; left: 0; right: 0; bottom: 0;
-            background: rgba(0, 0, 0, 0.85);
+            background: rgba(0, 0, 0, 0.88);
             backdrop-filter: blur(6px);
             display: none;
             align-items: center;
             justify-content: center;
             z-index: 1000;
-            padding: 6px;
+            padding: 4px;
         }
 
         .modal {
             background: var(--bg-card);
             border: 1px solid var(--border-color);
             width: 100%;
-            max-width: 480px;
+            max-width: 450px;
             max-height: 98vh;
             border-radius: 14px;
-            padding: 12px;
+            padding: 10px;
             display: flex;
             flex-direction: column;
-            gap: 10px;
-            box-shadow: 0 10px 35px rgba(0,0,0,0.7);
+            gap: 8px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.8);
         }
 
         .field { display: flex; flex-direction: column; gap: 4px; }
@@ -435,7 +436,7 @@
 
 <div class="container">
     <div class="header">
-        <h1>🤖 MC Bot Manager</h1>
+        <h1>🤖 MC Bot Manager (Özel Sunucu)</h1>
         <button class="btn-secondary" onclick="openGlobalSettings()">⚙️ Genel Ayarlar</button>
     </div>
 
@@ -477,7 +478,7 @@
         <div class="field"><label>Versiyon</label><input type="text" id="modalVersion"></div>
         <div class="field"><label>Şifre (/login)</label><input type="text" id="modalPassword"></div>
         <div class="field"><label>Alt Sunucu Komutu</label><input type="text" id="modalSubCmd"></div>
-        <div style="display: flex; gap: 8px; margin-top: 8px;">
+        <div style="display: flex; gap: 8px; margin-top: 6px;">
             <button class="btn-primary" style="flex: 1;" onclick="saveBotSettings()">Kaydet</button>
             <button class="btn-secondary" onclick="closeModal('botSettingsModal')">İptal</button>
         </div>
@@ -492,18 +493,18 @@
         <div class="field"><label>Versiyon</label><input type="text" id="gModalVersion"></div>
         <div class="field"><label>Şifre</label><input type="text" id="gModalPassword"></div>
         <div class="field"><label>Alt Sunucu Komutu</label><input type="text" id="gModalSubCmd"></div>
-        <div style="display: flex; gap: 8px; margin-top: 8px;">
+        <div style="display: flex; gap: 8px; margin-top: 6px;">
             <button class="btn-primary" style="flex: 1;" onclick="saveGlobalSettings()">Kaydet</button>
             <button class="btn-secondary" onclick="closeModal('globalSettingsModal')">Kapat</button>
         </div>
     </div>
 </div>
 
-<!-- /shop Menüsü için Mobilde Tam Boy ve Okunaklı Modal -->
+<!-- Özel /Shop Sunucu Menü Modalı (Mobilde Tam Boy & Net Görünüm) -->
 <div class="modal-overlay" id="botWindowModal">
     <div class="modal" style="max-width: 440px;">
         <div class="modal-title" id="windowModalTitle" style="color: #facc15; font-size: 14px; font-weight: bold; padding-bottom: 2px; border-bottom: 1px solid #27354a;">📋 Sunucu Menüsü</div>
-        <div id="windowModalContent" style="display: grid; grid-template-columns: repeat(9, 1fr); gap: 4px; background: #090d16; padding: 8px; border-radius: 8px; max-height: 70vh; overflow-y: auto; border: 1px solid #1e293b;"></div>
+        <div id="windowModalContent" style="display: grid; grid-template-columns: repeat(9, 1fr); gap: 4px; background: #090d16; padding: 6px; border-radius: 8px; max-height: 72vh; overflow-y: auto; border: 1px solid #1e293b;"></div>
         <button class="btn-secondary" style="width: 100%; padding: 10px; font-weight: bold;" onclick="closeModal('botWindowModal')">Menüyü Kapat</button>
     </div>
 </div>
@@ -691,8 +692,9 @@
                     slotEl.innerHTML = `
                         <img src="${imgUrl}" onerror="if(this.src!=='${blockUrl}'){this.src='${blockUrl}';}else if(this.src!=='${fallbackUrl}'){this.src='${fallbackUrl}';}else{this.style.display='none';}" alt="${item.displayName}">
                         <span class="inv-slot-count">${item.count > 1 ? item.count : ''}</span>
+                        <span class="inv-slot-id" style="position:absolute; top:1px; left:2px; font-size:8px;">${slotIdx}</span>
                     `;
-                    slotEl.title = item.displayName;
+                    slotEl.title = `${item.displayName} (Slot: ${slotIdx})`;
                     slotEl.onclick = () => {
                         socket.emit('click-window-slot', { botId, windowId, slot: slotIdx });
                     };
@@ -967,6 +969,7 @@
                      onerror="if(this.src!=='${blockUrl}'){this.src='${blockUrl}';}else if(this.src!=='${fallbackUrl}'){this.src='${fallbackUrl}';}else{this.style.display='none';}"
                      alt="${item.displayName}">
                 <span class="inv-slot-count">${item.count > 1 ? item.count : ''}</span>
+                <span class="inv-slot-id" style="position:absolute; top:1px; left:2px; font-size:8px;">${slotIndex}</span>
             `;
 
             slot.onclick = () => selectItemWithOptions(botId, item.displayName, item.count, slotIndex, true);
@@ -1043,7 +1046,7 @@
             host: document.getElementById('gModalHost').value.trim(),
             port: Number(document.getElementById('gModalPort').value),
             version: document.getElementById('gModalVersion').value.trim(),
-            autoPassword: document.getElementById('gModalPassword').value.trim(),
+            autoPassword: document.getElementById('gModalPassword'].value.trim(),
             autoSubServerCmd: document.getElementById('gModalSubCmd').value.trim()
         };
 

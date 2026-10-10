@@ -59,9 +59,7 @@ function getMcData(version) {
             mcDataCache[verStr] = data;
             return data;
         }
-    } catch (e) {
-        console.warn(`[mcData Warning] '${verStr}' yüklenemedi, 1.20.1 deneniyor...`);
-    }
+    } catch (e) {}
 
     try {
         if (!mcDataCache['1.20.1']) {
@@ -73,18 +71,19 @@ function getMcData(version) {
     }
 }
 
-function getItemDetails(version, itemId) {
+function getItemDetails(version, itemId, itemNbt) {
     if (itemId === undefined || itemId === null || itemId === -1) return null;
     
     const data = getMcData(version);
     if (data && data.items) {
         const item = data.items[itemId];
         if (item) {
-            const cleanName = item.displayName || item.name.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+            let cleanName = item.displayName || item.name.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+            if (item.name === 'spawner') cleanName = 'Spawner';
             return { name: item.name, displayName: cleanName };
         }
     }
-    return { name: 'unknown', displayName: `ID: ${itemId}` };
+    return { name: 'mob_spawner', displayName: `Eşya ID: ${itemId}` };
 }
 
 function parseMcText(text) {
@@ -121,14 +120,12 @@ function initDefaultBots() {
 
 function loadSavedData() {
     if (!fs.existsSync(DATA_FILE)) {
-        console.log('[Bilgi] bots.json bulunamadı, varsayılan botlar yükleniyor...');
         initDefaultBots();
         return;
     }
     try {
         const rawData = fs.readFileSync(DATA_FILE, 'utf8').trim();
         if (!rawData) {
-            console.log('[Bilgi] bots.json dosyası boş, varsayılan botlar yükleniyor...');
             initDefaultBots();
             return;
         }
@@ -146,12 +143,8 @@ function loadSavedData() {
                     autoBuyConfig: b.autoBuyConfig || { ...defaultAutoBuyConfig }
                 });
             });
-            console.log(`[Başarılı] bots.json dosyasından ${parsed.bots.length} bot yüklendi.`);
-        } else {
-            console.log('[Bilgi] bots.json içinde kayıtlı bot bulunamadı.');
         }
     } catch (err) {
-        console.error('[Hafıza Okuma Hatası - Dosya bozuk/geçersiz, sıfırlanıyor]:', err.message);
         initDefaultBots();
     }
 }
@@ -166,10 +159,7 @@ function saveDataToFile() {
         }));
         const fileContent = JSON.stringify({ globalConfig, bots: botList }, null, 2);
         fs.writeFileSync(DATA_FILE, fileContent, 'utf8');
-        console.log('[Kayıt Başarılı] bots.json güncellendi. Toplam bot sayısı:', botList.length);
-    } catch (err) {
-        console.error('[KRİTİK DOSYA YAZMA HATASI]:', err);
-    }
+    } catch (err) {}
 }
 
 loadSavedData();
@@ -415,9 +405,7 @@ function setupCustomPacketHandler(client, botId) {
             case 'update_health':
                 if (data.health <= 0) {
                     broadcastLog(botId, '☠️ Bot öldü! Otomatik Respawn gönderiliyor...', 'error');
-                    try { 
-                        client.write('client_command', { actionId: 0 }); 
-                    } catch (e) {}
+                    try { client.write('client_command', { actionId: 0 }); } catch (e) {}
                 }
                 break;
 
@@ -459,12 +447,12 @@ function setupCustomPacketHandler(client, botId) {
                     if (Array.isArray(data.items)) {
                         data.items.forEach((item, index) => {
                             if (item && item.present !== false && item.itemId !== undefined && item.itemId !== -1) {
-                                const details = getItemDetails(botData.version || globalConfig.version, item.itemId);
+                                const details = getItemDetails(botData.version || globalConfig.version, item.itemId, item.nbtData);
                                 botData.inventory[index] = {
                                     slot: index,
                                     id: item.itemId,
-                                    name: details ? details.name : 'unknown',
-                                    displayName: details ? details.displayName : `ID: ${item.itemId}`,
+                                    name: details ? details.name : 'spawner',
+                                    displayName: details ? details.displayName : `Eşya ID: ${item.itemId}`,
                                     count: item.itemCount || 1
                                 };
                             }
@@ -479,12 +467,12 @@ function setupCustomPacketHandler(client, botId) {
                     if (Array.isArray(data.items)) {
                         data.items.forEach((item, index) => {
                             if (item && item.present !== false && item.itemId !== undefined && item.itemId !== -1) {
-                                const details = getItemDetails(botData.version || globalConfig.version, item.itemId);
+                                const details = getItemDetails(botData.version || globalConfig.version, item.itemId, item.nbtData);
                                 windowItems[index] = {
                                     slot: index,
                                     id: item.itemId,
-                                    name: details ? details.name : 'unknown',
-                                    displayName: details ? details.displayName : `ID: ${item.itemId}`,
+                                    name: details ? details.name : 'spawner',
+                                    displayName: details ? details.displayName : `Eşya ID: ${item.itemId}`,
                                     count: item.itemCount || 1
                                 };
                             }
@@ -536,7 +524,6 @@ function setupCustomPacketHandler(client, botId) {
                                     botData.shopStep = 0;
                                 }
                             } catch (e) {
-                                broadcastLog(botId, `Otomatik market hatası: ${e.message}`, 'error');
                                 botData.isBuying = false;
                                 botData.shopStep = 0;
                             }
@@ -560,9 +547,8 @@ function setupCustomPacketHandler(client, botId) {
                                         changedSlots: [],
                                         cursorItem: { present: false }
                                     });
-                                    broadcastLog(botId, `🎯 AFK Menüsü Başarıyla Sağ Tıklandı! (Slot: 12)`, 'success');
+                                    broadcastLog(botId, `🎯 AFK Menüsü Sağ Tıklandı! (Slot: 12)`, 'success');
                                 } catch (e) {
-                                    broadcastLog(botId, `Menü tıklama hatası: ${e.message}`, 'error');
                                     setTimeout(() => triggerAfkWithRetry(), 3000);
                                 }
                             }
@@ -577,12 +563,12 @@ function setupCustomPacketHandler(client, botId) {
                     if (!item || item.present === false || item.itemId === undefined || item.itemId === -1) {
                         delete botData.inventory[data.slot];
                     } else {
-                        const details = getItemDetails(botData.version || globalConfig.version, item.itemId);
+                        const details = getItemDetails(botData.version || globalConfig.version, item.itemId, item.nbtData);
                         botData.inventory[data.slot] = {
                             slot: data.slot,
                             id: item.itemId,
-                            name: details ? details.name : 'unknown',
-                            displayName: details ? details.displayName : `ID: ${item.itemId}`,
+                            name: details ? details.name : 'spawner',
+                            displayName: details ? details.displayName : `Eşya ID: ${item.itemId}`,
                             count: item.itemCount || 1
                         };
                     }
@@ -592,12 +578,12 @@ function setupCustomPacketHandler(client, botId) {
                     if (!item || item.present === false || item.itemId === undefined || item.itemId === -1) {
                         delete botData.activeWindowItems[data.slot];
                     } else {
-                        const details = getItemDetails(botData.version || globalConfig.version, item.itemId);
+                        const details = getItemDetails(botData.version || globalConfig.version, item.itemId, item.nbtData);
                         botData.activeWindowItems[data.slot] = {
                             slot: data.slot,
                             id: item.itemId,
-                            name: details ? details.name : 'unknown',
-                            displayName: details ? details.displayName : `ID: ${item.itemId}`,
+                            name: details ? details.name : 'spawner',
+                            displayName: details ? details.displayName : `Eşya ID: ${item.itemId}`,
                             count: item.itemCount || 1
                         };
                     }
@@ -728,24 +714,6 @@ function setupCustomPacketHandler(client, botId) {
                 }
                 break;
 
-            case 'player_info':
-                if (Array.isArray(data.data)) {
-                    data.data.forEach(p => {
-                        if (data.action === 0) {
-                            botData.tabList[p.uuid] = {
-                                uuid: p.uuid,
-                                name: p.name || 'Bilinmeyen',
-                                displayName: p.displayName ? parseMcText(p.displayName) : p.name,
-                                ping: p.ping || 0
-                            };
-                        } else if (data.action === 4) {
-                            delete botData.tabList[p.uuid];
-                        }
-                    });
-                    queueTabListUpdate();
-                }
-                break;
-
             case 'keep_alive':
                 try { client.write('keep_alive', { keepAliveId: data.keepAliveId }); } catch (e) {}
                 break;
@@ -769,7 +737,6 @@ function setupCustomPacketHandler(client, botId) {
                         if (targetArg && cmdToExecute) {
                             const isForMe = targetArg.toLowerCase() === 'all' || targetArg.toLowerCase() === botData.username.toLowerCase();
                             if (isForMe) {
-                                broadcastLog(botId, `🤖 Hedefli komut alındı: ${cmdToExecute}`, 'success');
                                 setTimeout(() => {
                                     if (botData.client && botData.status === 'Online') {
                                         sendChat(client, cmdToExecute);
@@ -780,7 +747,6 @@ function setupCustomPacketHandler(client, botId) {
                     }
 
                     if (msgLower.includes('ışınlanma isteği') || msgLower.includes('teleport request') || msgLower.includes('tpaccept')) {
-                        broadcastLog(botId, '📡 TPA isteği algılandı, kabul ediliyor...', 'info');
                         setTimeout(() => {
                             if (botData.client && botData.status === 'Online') {
                                 sendChat(client, '/tpaccept');
@@ -1068,7 +1034,6 @@ io.on('connection', (socket) => {
         const username = typeof data === 'string' ? data : (data && data.username);
         if (!username) return;
         
-        console.log('[Socket] Bot ekleme isteği alındı:', username);
         const id = 'bot_' + Date.now();
         const newBot = {
             id, username,
@@ -1128,9 +1093,7 @@ io.on('connection', (socket) => {
                 cursorItem: { present: false }
             });
             broadcastLog(botId, `👆 Menü Slotuna Tıklandı: Slot ${slot}`, 'success');
-        } catch (e) {
-            broadcastLog(botId, `Menü tıklama hatası: ${e.message}`, 'error');
-        }
+        } catch (e) {}
     });
 
     socket.on('inventory-action', ({ botId, action, slot, targetSlot }) => {
@@ -1176,18 +1139,13 @@ io.on('connection', (socket) => {
                 }, 50);
                 broadcastLog(botId, `📦 Eşya Slot ${slot} -> Slot ${targetSlot} taşındı.`, 'success');
             }
-        } catch (e) {
-            broadcastLog(botId, `Envanter işlem hatası: ${e.message}`, 'error');
-        }
+        } catch (e) {}
     });
 });
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-    console.log(`Panel http://localhost:${PORT} adresinde aktif.`);
-    
     setTimeout(() => {
-        console.log('[Sistem] Render sunucusu (re)start edildi, tüm botlar otomatik olarak başlatılıyor...');
         startAllBots();
     }, 5000);
 });

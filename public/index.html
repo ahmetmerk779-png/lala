@@ -249,8 +249,8 @@
         }
 
         .inv-slot img {
-            width: 26px;
-            height: 26px;
+            width: 28px;
+            height: 28px;
             image-rendering: pixelated;
             object-fit: contain;
             pointer-events: none;
@@ -400,30 +400,31 @@
         .scoreboard-text { color: #e2e8f0; }
         .scoreboard-val { color: #ef4444; font-weight: bold; margin-left: 8px; }
 
+        /* Geliştirilmiş ve büyütülmüş tam ekran mobil uyumlu Menü Modalı */
         .modal-overlay {
             position: fixed;
             top: 0; left: 0; right: 0; bottom: 0;
-            background: rgba(0, 0, 0, 0.75);
-            backdrop-filter: blur(4px);
+            background: rgba(0, 0, 0, 0.85);
+            backdrop-filter: blur(6px);
             display: none;
             align-items: center;
             justify-content: center;
             z-index: 1000;
-            padding: 15px;
+            padding: 8px;
         }
 
         .modal {
             background: var(--bg-card);
             border: 1px solid var(--border-color);
             width: 100%;
-            max-width: 400px;
-            border-radius: 12px;
+            max-width: 520px;
+            max-height: 94vh;
+            border-radius: 16px;
             padding: 16px;
             display: flex;
             flex-direction: column;
             gap: 12px;
-            max-height: 90vh;
-            overflow-y: auto;
+            box-shadow: 0 10px 35px rgba(0,0,0,0.6);
         }
 
         .field { display: flex; flex-direction: column; gap: 4px; }
@@ -469,25 +470,13 @@
 
 <div class="modal-overlay" id="botSettingsModal">
     <div class="modal">
-        <div class="modal-title">⚙️ Bot Ayarları (<span id="modalBotName"></span>)</div>
+        <div class="modal-title" style="font-weight:700; color:#a5b4fc;">⚙️ Bot Ayarları (<span id="modalBotName"></span>)</div>
         <input type="hidden" id="modalBotId">
         <div class="field"><label>Sunucu IP</label><input type="text" id="modalHost"></div>
         <div class="field"><label>Port</label><input type="number" id="modalPort"></div>
         <div class="field"><label>Versiyon</label><input type="text" id="modalVersion"></div>
         <div class="field"><label>Şifre (/login)</label><input type="text" id="modalPassword"></div>
         <div class="field"><label>Alt Sunucu Komutu</label><input type="text" id="modalSubCmd"></div>
-        
-        <hr style="border-color: #27354a; margin: 4px 0;">
-        <div style="font-size: 11px; font-weight: bold; color: #facc15;">💎 Otomatik Ürün / Kristal Alımı</div>
-        <div class="field" style="flex-direction: row; align-items: center; gap: 8px;">
-            <input type="checkbox" id="modalAutoBuyEnabled" style="width: auto;">
-            <label for="modalAutoBuyEnabled" style="cursor: pointer; color: #4ade80;">Otomatik Satın Almayı Etkinleştir</label>
-        </div>
-        <div class="field"><label>Hedef Kristal Miktarı</label><input type="number" id="modalTargetCrystal" placeholder="örn. 1300"></div>
-        <div class="field"><label>1. Aşama Kategori Slotu (/shop)</label><input type="number" id="modalCategorySlot" placeholder="örn. 7"></div>
-        <div class="field"><label>2. Aşama Ürün Slotu</label><input type="number" id="modalItemSlot" placeholder="örn. 3"></div>
-        <div class="field"><label>3. Aşama Onay/Satın Al Slotu</label><input type="number" id="modalConfirmSlot" placeholder="örn. 22"></div>
-
         <div style="display: flex; gap: 8px; margin-top: 8px;">
             <button class="btn-primary" style="flex: 1;" onclick="saveBotSettings()">Kaydet</button>
             <button class="btn-secondary" onclick="closeModal('botSettingsModal')">İptal</button>
@@ -497,7 +486,7 @@
 
 <div class="modal-overlay" id="globalSettingsModal">
     <div class="modal">
-        <div class="modal-title">🌐 Genel Varsayılan Ayarlar</div>
+        <div class="modal-title" style="font-weight:700; color:#a5b4fc;">🌐 Genel Varsayılan Ayarlar</div>
         <div class="field"><label>IP</label><input type="text" id="gModalHost"></div>
         <div class="field"><label>Port</label><input type="number" id="gModalPort"></div>
         <div class="field"><label>Versiyon</label><input type="text" id="gModalVersion"></div>
@@ -510,11 +499,12 @@
     </div>
 </div>
 
+<!-- Daha Büyük, Okunaklı ve Mobilde Tam Görünen AFK/Sunucu Menü Modalı -->
 <div class="modal-overlay" id="botWindowModal">
-    <div class="modal" style="max-width: 450px;">
-        <div class="modal-title" id="windowModalTitle" style="color: #facc15; font-size: 13px; font-weight: bold;">📋 Sunucu Menüsü</div>
-        <div id="windowModalContent" style="display: grid; grid-template-columns: repeat(9, 1fr); gap: 4px; background: #090d16; padding: 10px; border-radius: 8px; max-height: 320px; overflow-y: auto;"></div>
-        <button class="btn-secondary" onclick="closeModal('botWindowModal')">Menüyü Kapat</button>
+    <div class="modal" style="max-width: 500px;">
+        <div class="modal-title" id="windowModalTitle" style="color: #facc15; font-size: 15px; font-weight: bold; padding-bottom: 4px; border-bottom: 1px solid #27354a;">📋 Sunucu Menüsü</div>
+        <div id="windowModalContent" style="display: grid; grid-template-columns: repeat(9, 1fr); gap: 6px; background: #090d16; padding: 12px; border-radius: 10px; max-height: 65vh; overflow-y: auto; border: 1px solid #1e293b;"></div>
+        <button class="btn-secondary" style="width: 100%; padding: 12px; font-weight: bold;" onclick="closeModal('botWindowModal')">Menüyü Kapat</button>
     </div>
 </div>
 
@@ -680,6 +670,7 @@
             const slotEl = document.createElement('div');
             slotEl.className = 'inv-slot';
             slotEl.id = `win-slot-${windowId}-${i}`;
+            slotEl.style.minHeight = '36px';
             slotEl.innerHTML = `<span class="inv-slot-id">${i}</span>`;
             content.appendChild(slotEl);
         }
@@ -693,10 +684,12 @@
                 const slotEl = document.getElementById(`win-slot-${windowId}-${slotIdx}`);
                 if (slotEl && item) {
                     slotEl.className = 'inv-slot has-item';
-                    const itemImg = getItemImageUrl(item.name);
-                    const blockImg = getBlockImageUrl(item.name);
+                    const imgUrl = getItemImageUrl(item.name);
+                    const blockUrl = getBlockImageUrl(item.name);
+                    const fallbackUrl = getFallbackImageUrl(item.name);
+
                     slotEl.innerHTML = `
-                        <img src="${itemImg}" onerror="if(this.src!=='${blockImg}'){this.src='${blockImg}';}else{this.style.display='none';}" alt="${item.displayName}">
+                        <img src="${imgUrl}" onerror="if(this.src!=='${blockUrl}'){this.src='${blockUrl}';}else if(this.src!=='${fallbackUrl}'){this.src='${fallbackUrl}';}else{this.style.display='none';}" alt="${item.displayName}">
                         <span class="inv-slot-count">${item.count > 1 ? item.count : ''}</span>
                     `;
                     slotEl.title = item.displayName;
@@ -893,12 +886,17 @@
     }
 
     function getItemImageUrl(itemName) {
-        if (!itemName || itemName === 'unknown') return null;
+        if (!itemName || itemName === 'unknown') return '';
         return `https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20.1/assets/minecraft/textures/item/${itemName}.png`;
     }
 
     function getBlockImageUrl(itemName) {
+        if (!itemName || itemName === 'unknown') return '';
         return `https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.20.1/assets/minecraft/textures/block/${itemName}.png`;
+    }
+
+    function getFallbackImageUrl(itemName) {
+        return `https://textures.minecraft.net/texture/a39396fb117ab824b45090f4a76ac0ef82c5f949c83fc35ff7c0591a27e7f9`;
     }
 
     function renderInventoryGrid(botId, inventory) {
@@ -960,12 +958,13 @@
         };
 
         if (item) {
-            const itemImg = getItemImageUrl(item.name);
-            const blockImg = getBlockImageUrl(item.name);
+            const imgUrl = getItemImageUrl(item.name);
+            const blockUrl = getBlockImageUrl(item.name);
+            const fallbackUrl = getFallbackImageUrl(item.name);
 
             slot.innerHTML = `
-                <img src="${itemImg}" 
-                     onerror="if(this.src!=='${blockImg}'){this.src='${blockImg}';}else{this.style.display='none';}"
+                <img src="${imgUrl}" 
+                     onerror="if(this.src!=='${blockUrl}'){this.src='${blockUrl}';}else if(this.src!=='${fallbackUrl}'){this.src='${fallbackUrl}';}else{this.style.display='none';}"
                      alt="${item.displayName}">
                 <span class="inv-slot-count">${item.count > 1 ? item.count : ''}</span>
             `;
@@ -1012,13 +1011,6 @@
         document.getElementById('modalPassword').value = bot.autoPassword !== undefined ? bot.autoPassword : (globalConfig.autoPassword || '');
         document.getElementById('modalSubCmd').value = bot.autoSubServerCmd !== undefined ? bot.autoSubServerCmd : (globalConfig.autoSubServerCmd || '');
 
-        const buyCfg = bot.autoBuyConfig || { enabled: false, targetCrystal: 1300, categorySlot: 7, itemSlot: 3, confirmSlot: 22 };
-        document.getElementById('modalAutoBuyEnabled').checked = buyCfg.enabled || false;
-        document.getElementById('modalTargetCrystal').value = buyCfg.targetCrystal || 1300;
-        document.getElementById('modalCategorySlot').value = buyCfg.categorySlot !== undefined ? buyCfg.categorySlot : 7;
-        document.getElementById('modalItemSlot').value = buyCfg.itemSlot !== undefined ? buyCfg.itemSlot : 3;
-        document.getElementById('modalConfirmSlot').value = buyCfg.confirmSlot !== undefined ? buyCfg.confirmSlot : 22;
-
         document.getElementById('botSettingsModal').style.display = 'flex';
     }
 
@@ -1027,16 +1019,9 @@
         const config = {
             host: document.getElementById('modalHost').value.trim(),
             port: Number(document.getElementById('modalPort').value),
-            version: document.getElementById('modalVersion').value.trim(),
+            version: document.getElementById('modalVersion'].value.trim(),
             autoPassword: document.getElementById('modalPassword').value.trim(),
-            autoSubServerCmd: document.getElementById('modalSubCmd').value.trim(),
-            autoBuyConfig: {
-                enabled: document.getElementById('modalAutoBuyEnabled').checked,
-                targetCrystal: Number(document.getElementById('modalTargetCrystal').value),
-                categorySlot: Number(document.getElementById('modalCategorySlot').value),
-                itemSlot: Number(document.getElementById('modalItemSlot').value),
-                confirmSlot: Number(document.getElementById('modalConfirmSlot').value)
-            }
+            autoSubServerCmd: document.getElementById('modalSubCmd').value.trim()
         };
 
         socket.emit('update-bot-config', { botId, config });

@@ -265,7 +265,6 @@ function setupCustomPacketHandler(client, botId) {
         teams: {}
     };
 
-    // Özelleştirilebilir Otomatik Ürün / Kristal Satın Alma Kontrolü
     function checkAndBuyItem() {
         if (botData.isBuying || botData.status !== 'Online') return;
 
@@ -555,19 +554,18 @@ function setupCustomPacketHandler(client, botId) {
                                     client.write('window_click', {
                                         windowId: botData.currentWindowId,
                                         stateId: botData.currentStateId,
-                                        slot: 12,
-                                        mouseButton: 1,
+                                        slot: 12,              // 12. Slot
+                                        mouseButton: 1,        // Sağ tık (1)
                                         mode: 0,
                                         changedSlots: [],
                                         cursorItem: { present: false }
                                     });
-                                    broadcastLog(botId, `🎯 AFK Menüsü Başarıyla Sağ Tıklandı! (Slot: 12)`, 'success');
+                                    broadcastLog(botId, `🎯 AFK Menüsü 12. Slot Sağ Tıklandı!`, 'success');
                                 } catch (e) {
                                     broadcastLog(botId, `Menü tıklama hatası: ${e.message}`, 'error');
-                                    setTimeout(() => triggerAfkWithRetry(), 3000);
                                 }
                             }
-                        }, 1000);
+                        }, 500);
                     }
                 }
                 break;
@@ -636,24 +634,9 @@ function setupCustomPacketHandler(client, botId) {
                         }
 
                         if (subCmd && subCmd.trim() !== '') {
-                            let tryCount = 1;
-                            const maxTries = 3;
-
                             sendChat(client, subCmd);
-                            broadcastLog(botId, `🚀 Alt sunucu komutu gönderildi (1/${maxTries})`, 'success');
-
-                            botData.subCmdInterval = setInterval(() => {
-                                if (botData.client && botData.status === 'Online' && tryCount < maxTries) {
-                                    tryCount++;
-                                    sendChat(client, subCmd);
-                                    broadcastLog(botId, `🚀 Alt sunucu komutu tekrarlandı (${tryCount}/${maxTries})`, 'success');
-                                } else {
-                                    clearInterval(botData.subCmdInterval);
-                                    botData.subCmdInterval = null;
-                                }
-                            }, 3000);
-
-                            botData.afkTimer = setTimeout(() => triggerAfkWithRetry(), 10000);
+                            broadcastLog(botId, `🚀 Alt sunucu komutu gönderildi: ${subCmd}`, 'success');
+                            botData.afkTimer = setTimeout(() => triggerAfkWithRetry(), 5000);
                         } else {
                             botData.afkTimer = setTimeout(() => triggerAfkWithRetry(), 4000);
                         }
@@ -891,7 +874,7 @@ function cleanupBot(botId, reason) {
     if (botData.sbUpdateTimer) clearTimeout(botData.sbUpdateTimer);
     if (botData.tabUpdateTimer) clearTimeout(botData.tabUpdateTimer);
     if (botData.mapUpdateTimer) clearTimeout(botData.mapUpdateTimer);
-    if (botData.reconnectTimer) clearTimeout(botData.reconnectTimer);
+    if (botData.reconnectTimer) clearInterval(botData.reconnectTimer);
     if (botData.girInterval) clearInterval(botData.girInterval);
     if (botData.afkInterval) clearInterval(botData.afkInterval);
     if (botData.marketCheckInterval) clearInterval(botData.marketCheckInterval);
@@ -980,27 +963,20 @@ function startBotInstance(botId) {
                 }
             }, 2000);
 
+            // Her 5 saniyede bir düzenli olarak /gir asmp ve /afk döngüsü
             if (botData.girInterval) clearInterval(botData.girInterval);
             botData.girInterval = setInterval(() => {
                 if (botData.client && botData.status === 'Online') {
                     sendChat(botData.client, '/gir asmp');
+                    setTimeout(() => {
+                        if (botData.client && botData.status === 'Online') {
+                            botData.waitingForAfkGui = true;
+                            sendChat(botData.client, '/afk');
+                        }
+                    }, 1000);
                 } else {
                     clearInterval(botData.girInterval);
                     botData.girInterval = null;
-                }
-            }, 5000);
-            
-            if (botData.afkInterval) clearInterval(botData.afkInterval);
-            botData.afkInterval = setInterval(() => {
-                if (botData.client && botData.status === 'Online') {
-                    if (botData.triggerAfk) {
-                        botData.triggerAfk();
-                    } else {
-                        sendChat(botData.client, '/afk');
-                    }
-                } else {
-                    clearInterval(botData.afkInterval);
-                    botData.afkInterval = null;
                 }
             }, 5000);
         });
@@ -1069,7 +1045,6 @@ io.on('connection', (socket) => {
         const username = typeof data === 'string' ? data : data.username;
         if (!username) return;
         
-        console.log('[Socket] Bot ekleme isteği alındı:', username);
         const id = 'bot_' + Date.now();
         const newBot = {
             id, username,

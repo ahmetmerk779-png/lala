@@ -392,16 +392,13 @@ function setupCustomPacketHandler(client, botId) {
             if (botData.waitingForAfkGui && botData.client && botData.status === 'Online') {
                 afkFailCount++;
 
-                if (afkFailCount >= 3) {
-                    broadcastLog(botId, '⚠️ Lobiye düşülmüş olabilir. Tekrar alt sunucuya giriliyor...', 'error');
+                if (afkFailCount >= 5) {
+                    broadcastLog(botId, '⚠️ Asmp bakımda veya lobiye dönüldü, tekrar /gir asmp deneniyor...', 'error');
                     afkFailCount = 0;
-                    isSequenceStarted = false;
                     const subCmd = botData.autoSubServerCmd !== undefined ? botData.autoSubServerCmd : globalConfig.autoSubServerCmd;
                     if (subCmd) sendChat(client, subCmd);
-                } else {
-                    broadcastLog(botId, `⚠ Menü açılmadı, /afk tekrar deneniyor... (${afkFailCount}/3)`, 'warn');
-                    triggerAfkWithRetry();
                 }
+                triggerAfkWithRetry();
             }
         }, 6000);
     }
@@ -426,7 +423,7 @@ function setupCustomPacketHandler(client, botId) {
                 botData.waitingForAfkGui = false;
                 botData.entities = {};
                 afkFailCount = 0;
-                broadcastLog(botId, '🔄 Bot yeniden doğdu/sunucu değişti. Sıralı giriş tetikleniyor...', 'warn');
+                broadcastLog(botId, '🔄 Bot yeniden doğdu/sunucu değişti. Güvenli giriş tekrar tetikleniyor...', 'warn');
                 
                 setTimeout(() => {
                     if (!botData.client || botData.status !== 'Online') return;
@@ -571,7 +568,7 @@ function setupCustomPacketHandler(client, botId) {
                                     });
                                     broadcastLog(botId, `🎯 AFK Menüsü 12. Slot Sağ Tıklandı!`, 'success');
 
-                                    // Sıralı ilk giriş işlemleri bitti, şimdi 5 saniyede bir tekrarlayan döngüyü başlat
+                                    // Sürekli çalışan 5 saniyelik akıllı döngü (Asmp ve Afk kontrolü)
                                     if (!botData.girInterval) {
                                         botData.girInterval = setInterval(() => {
                                             if (botData.client && botData.status === 'Online') {
@@ -581,7 +578,7 @@ function setupCustomPacketHandler(client, botId) {
                                                         botData.waitingForAfkGui = true;
                                                         sendChat(botData.client, '/afk');
                                                     }
-                                                }, 1000);
+                                                }, 1500);
                                             } else {
                                                 clearInterval(botData.girInterval);
                                                 botData.girInterval = null;
@@ -647,13 +644,13 @@ function setupCustomPacketHandler(client, botId) {
                 };
                 queueMapUpdate();
 
+                // Güvenli ilk bağlantı kontrolü (Sadece ilk girişte tam kontrollü çalışır)
                 if (!isSequenceStarted) {
                     isSequenceStarted = true;
 
                     const pwd = botData.autoPassword !== undefined ? botData.autoPassword : globalConfig.autoPassword;
                     const subCmd = botData.autoSubServerCmd !== undefined ? botData.autoSubServerCmd : globalConfig.autoSubServerCmd;
 
-                    // Sıralı ilk giriş: Önce /login, bitince /gir asmp, bitince /afk
                     setTimeout(() => {
                         if (!botData.client) return;
 
@@ -662,18 +659,17 @@ function setupCustomPacketHandler(client, botId) {
                             broadcastLog(botId, `🔑 /login gönderildi.`, 'info');
                         }
 
-                        // 3 saniye sonra alt sunucuya geçiş komutu
+                        // Sunucu yüklenmesini ve login'in tamamlanmasını bekleyip /gir asmp atıyoruz
                         setTimeout(() => {
                             if (!botData.client) return;
                             if (subCmd && subCmd.trim() !== '') {
                                 sendChat(client, subCmd);
                                 broadcastLog(botId, `🚀 Alt sunucu komutu gönderildi: ${subCmd}`, 'success');
                             }
-                            // 4 saniye sonra /afk komutu ve menü onayı
                             botData.afkTimer = setTimeout(() => triggerAfkWithRetry(), 4000);
-                        }, 3000);
+                        }, 3500);
 
-                    }, 2000);
+                    }, 3000);
                 }
                 break;
 
@@ -905,9 +901,9 @@ function cleanupBot(botId, reason) {
     if (botData.afkTimer) clearTimeout(botData.afkTimer);
     if (botData.afkRetryTimer) clearTimeout(botData.afkRetryTimer);
     if (botData.sbUpdateTimer) clearTimeout(botData.sbUpdateTimer);
-    if (botData.tabUpdateTimer) clearTimeout(botData.tabUpdateTimer);
-    if (botData.mapUpdateTimer) clearTimeout(botData.mapUpdateTimer);
-    if (botData.reconnectTimer) clearTimeout(botData.reconnectTimer);
+    if (botData.tabUpdateTimer) clearInterval(botData.tabUpdateTimer);
+    if (botData.mapUpdateTimer) clearInterval(botData.mapUpdateTimer);
+    if (botData.reconnectTimer) clearInterval(botData.reconnectTimer);
     if (botData.girInterval) clearInterval(botData.girInterval);
     if (botData.afkInterval) clearInterval(botData.afkInterval);
     if (botData.marketCheckInterval) clearInterval(botData.marketCheckInterval);

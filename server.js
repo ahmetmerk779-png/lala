@@ -254,6 +254,7 @@ function setupCustomPacketHandler(client, botId) {
         teams: {}
     };
 
+    // Her bot için bağımsız Kristal ve Blaze Spawner Satın Alma Kontrolü
     function checkAndBuyBlaze() {
         if (botData.isBuying || botData.status !== 'Online') return;
 
@@ -1117,7 +1118,6 @@ io.on('connection', (socket) => {
         }
     });
 
-    // ================= YENİ EKLENEN KISIM: Envanter Eşya Atma ve Taşıma =================
     socket.on('inventory-action', ({ botId, action, slot, targetSlot }) => {
         const botData = botPool.get(botId);
         if (!botData || !botData.client || botData.status !== 'Online') return;
@@ -1128,7 +1128,6 @@ io.on('connection', (socket) => {
             const stateId = botData.currentStateId || 0;
 
             if (action === 'drop') {
-                // Mode 4: Eşyayı yere atma (drop)
                 client.write('window_click', {
                     windowId: windowId,
                     stateId: stateId,
@@ -1140,7 +1139,6 @@ io.on('connection', (socket) => {
                 });
                 broadcastLog(botId, `🗑️ Slot ${slot} eşyası yere atıldı.`, 'success');
             } else if (action === 'move') {
-                // Slotlar arası taşıma (Önce al, sonra hedefe koy)
                 client.write('window_click', {
                     windowId: windowId,
                     stateId: stateId,
@@ -1167,7 +1165,6 @@ io.on('connection', (socket) => {
             broadcastLog(botId, `Envanter işlem hatası: ${e.message}`, 'error');
         }
     });
-    // ====================================================================================
 });
 
 const PORT = process.env.PORT || 3000;

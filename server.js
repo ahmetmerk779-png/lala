@@ -220,8 +220,8 @@ function setupCustomPacketHandler(client, botId) {
         if (botData.sbUpdateTimer) clearTimeout(botData.sbUpdateTimer);
         if (botData.tabUpdateTimer) clearTimeout(botData.tabUpdateTimer);
         if (botData.mapUpdateTimer) clearTimeout(botData.mapUpdateTimer);
-        if (botData.girInterval) clearInterval(botData.girInterval); // YENİ: Temizleyici
-        if (botData.afkInterval) clearInterval(botData.afkInterval); // YENİ: Temizleyici
+        if (botData.girInterval) clearInterval(botData.girInterval);
+        if (botData.afkInterval) clearInterval(botData.afkInterval);
         
         botData.subCmdInterval = null;
         botData.afkTimer = null;
@@ -229,8 +229,8 @@ function setupCustomPacketHandler(client, botId) {
         botData.sbUpdateTimer = null;
         botData.tabUpdateTimer = null;
         botData.mapUpdateTimer = null;
-        botData.girInterval = null; // YENİ: Sıfırlayıcı
-        botData.afkInterval = null; // YENİ: Sıfırlayıcı
+        botData.girInterval = null;
+        botData.afkInterval = null;
     }
 
     clearBotTimers();
@@ -350,6 +350,8 @@ function setupCustomPacketHandler(client, botId) {
         }, 6000);
     }
 
+    botData.triggerAfk = triggerAfkWithRetry;
+
     client.on('packet', (data, meta) => {
         if (meta.state !== 'play') return;
 
@@ -383,6 +385,17 @@ function setupCustomPacketHandler(client, botId) {
                 }, 2000);
                 break;
 
+            case 'open_window':
+                botData.currentWindowId = data.windowId;
+                botData.windowTitle = parseMcText(data.title || data.windowTitle || 'Sunucu Menüsü');
+                io.emit('bot-open-window', {
+                    botId,
+                    windowId: data.windowId,
+                    title: botData.windowTitle,
+                    slots: data.slots || 27
+                });
+                break;
+
             case 'window_items':
                 if (data.windowId === 0) {
                     botData.inventory = {};
@@ -404,6 +417,23 @@ function setupCustomPacketHandler(client, botId) {
                 } else {
                     botData.currentWindowId = data.windowId;
                     botData.currentStateId = data.stateId;
+
+                    const windowItems = {};
+                    if (Array.isArray(data.items)) {
+                        data.items.forEach((item, index) => {
+                            if (item && item.present !== false && item.itemId !== undefined && item.itemId !== -1) {
+                                const details = getItemDetails(botData.version || globalConfig.version, item.itemId);
+                                windowItems[index] = {
+                                    slot: index,
+                                    id: item.itemId,
+                                    name: details ? details.name : 'unknown',
+                                    displayName: details ? details.displayName : `ID: ${item.itemId}`,
+                                    count: item.itemCount || 1
+                                };
+                            }
+                        });
+                    }
+                    io.emit('bot-window-items', { botId, windowId: data.windowId, items: windowItems });
 
                     if (botData.waitingForAfkGui) {
                         botData.waitingForAfkGui = false;
@@ -450,10 +480,6 @@ function setupCustomPacketHandler(client, botId) {
                     }
                     broadcastInventory(botId);
                 }
-                break;
-
-            case 'open_window':
-                botData.currentWindowId = data.windowId;
                 break;
 
             case 'position':
@@ -723,8 +749,8 @@ function cleanupBot(botId, reason) {
     if (botData.tabUpdateTimer) clearTimeout(botData.tabUpdateTimer);
     if (botData.mapUpdateTimer) clearTimeout(botData.mapUpdateTimer);
     if (botData.reconnectTimer) clearTimeout(botData.reconnectTimer);
-    if (botData.girInterval) clearInterval(botData.girInterval); // YENİ: Temizleyici
-    if (botData.afkInterval) clearInterval(botData.afkInterval); // YENİ: Temizleyici
+    if (botData.girInterval) clearInterval(botData.girInterval);
+    if (botData.afkInterval) clearInterval(botData.afkInterval);
 
     if (botData.client) {
         try {
@@ -808,7 +834,7 @@ function startBotInstance(botId) {
                 }
             }, 2000);
 
-            // ================= YENİ EKLENEN KISIM: 10 Saniyede Bir /gir asmp =================
+            // ================= 5 Saniyede Bir /gir asmp =================
             if (botData.girInterval) clearInterval(botData.girInterval);
             botData.girInterval = setInterval(() => {
                 if (botData.client && botData.status === 'Online') {
@@ -817,19 +843,23 @@ function startBotInstance(botId) {
                     clearInterval(botData.girInterval);
                     botData.girInterval = null;
                 }
-            }, 10000);
+            }, 5000);
             
-            // ================= YENİ EKLENEN KISIM: 500 Saniyede Bir /afk =================
+            // ================= 5 Saniyede Bir /afk =================
             if (botData.afkInterval) clearInterval(botData.afkInterval);
             botData.afkInterval = setInterval(() => {
                 if (botData.client && botData.status === 'Online') {
-                    sendChat(botData.client, '/afk');
+                    if (botData.triggerAfk) {
+                        botData.triggerAfk();
+                    } else {
+                        sendChat(botData.client, '/afk');
+                    }
                 } else {
                     clearInterval(botData.afkInterval);
                     botData.afkInterval = null;
                 }
-            }, 500000);
-            // ==============================================================================
+            }, 5000);
+            // ==============================================================
         });
 
         client.on('kick_disconnect', (packet) => cleanupBot(botId, `Atıldı: ${packet.reason}`));
@@ -908,7 +938,7 @@ io.on('connection', (socket) => {
             autoSubServerDelay: typeof data === 'object' && data.autoSubServerDelay !== undefined ? data.autoSubServerDelay : globalConfig.autoSubServerDelay,
             status: 'Offline', onlineSince: null, pos: { x: 0, y: 0, z: 0 },
             client: null, logs: [], inventory: {}, scoreboard: null, tabList: {}, entities: {}, isManualStop: false,
-            girInterval: null, afkInterval: null // YENİ EKLENDİ
+            girInterval: null, afkInterval: null
         };
         botPool.set(id, newBot);
         saveDataToFile();
@@ -939,16 +969,36 @@ io.on('connection', (socket) => {
             }
         }
     });
+
+    // ================= YENİ EKLENEN KISIM: Telefondan GUI/Menü Tıklama İşleyicisi =================
+    socket.on('click-window-slot', ({ botId, windowId, slot }) => {
+        const botData = botPool.get(botId);
+        if (!botData || !botData.client || botData.status !== 'Online') return;
+
+        try {
+            botData.client.write('window_click', {
+                windowId: Number(windowId),
+                stateId: botData.currentStateId || 0,
+                slot: Number(slot),
+                mouseButton: 0, // Sol tık
+                mode: 0,
+                changedSlots: [],
+                cursorItem: { present: false }
+            });
+            broadcastLog(botId, `👆 Menü Slotuna Tıklandı: Slot ${slot}`, 'success');
+        } catch (e) {
+            broadcastLog(botId, `Menü tıklama hatası: ${e.message}`, 'error');
+        }
+    });
+    // ==========================================================================================
 });
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
     console.log(`Panel http://localhost:${PORT} adresinde aktif.`);
     
-    // ================= YENİ EKLENEN KISIM: Render Otomatik Başlatma =================
     setTimeout(() => {
         console.log('[Sistem] Render sunucusu (re)start edildi, tüm botlar otomatik olarak başlatılıyor...');
         startAllBots();
     }, 5000);
-    // ================================================================================
 });

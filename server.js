@@ -1,11 +1,8 @@
 const express = require('express');
 const http = require('http');
-const https = require('https');
-const axios = require('axios');
 const { Server } = require('socket.io');
 const mc = require('minecraft-protocol');
 const mcData = require('minecraft-data');
-const { SocksClient } = require('socks');
 const path = require('path');
 const fs = require('fs');
 
@@ -43,9 +40,9 @@ const defaultAutoBuyConfig = {
 };
 
 const defaultBotConfigs = [
-    { id: 'bot_1', username: 'Deliyiz_1', host: '141.95.82.164', port: 25565, autoPassword: 'deliyizpassword', proxy: { host: '', port: '', type: 5, userId: '', password: '' }, autoBuyConfig: { ...defaultAutoBuyConfig } },
-    { id: 'bot_2', username: 'Deliyiz_2', host: '141.95.82.164', port: 25565, autoPassword: 'deliyizpassword', proxy: { host: '', port: '', type: 5, userId: '', password: '' }, autoBuyConfig: { ...defaultAutoBuyConfig } },
-    { id: 'bot_3', username: 'Deliyiz_3', host: '141.95.82.164', port: 25565, autoPassword: 'deliyizpassword', proxy: { host: '', port: '', type: 5, userId: '', password: '' }, autoBuyConfig: { ...defaultAutoBuyConfig } }
+    { id: 'bot_1', username: 'Deliyiz_1', host: '141.95.82.164', port: 25565, autoPassword: 'deliyizpassword', autoBuyConfig: { ...defaultAutoBuyConfig } },
+    { id: 'bot_2', username: 'Deliyiz_2', host: '141.95.82.164', port: 25565, autoPassword: 'deliyizpassword', autoBuyConfig: { ...defaultAutoBuyConfig } },
+    { id: 'bot_3', username: 'Deliyiz_3', host: '141.95.82.164', port: 25565, autoPassword: 'deliyizpassword', autoBuyConfig: { ...defaultAutoBuyConfig } }
 ];
 
 const mcDataCache = {};
@@ -105,7 +102,6 @@ function initDefaultBots() {
             ...cfg, status: 'Offline', onlineSince: null, client: null, logs: [], inventory: {}, 
             scoreboard: null, isManualStop: false, pos: { x: 0, y: 0, z: 0 }, tabList: {}, entities: {},
             girInterval: null, afkInterval: null, isBuying: false, shopStep: 0,
-            proxy: cfg.proxy || { host: '', port: '', type: 5, userId: '', password: '' },
             autoBuyConfig: cfg.autoBuyConfig || { ...defaultAutoBuyConfig }
         });
     });
@@ -128,7 +124,6 @@ function loadSavedData() {
                     ...b, status: 'Offline', onlineSince: null, client: null, logs: [], inventory: {}, 
                     scoreboard: null, isManualStop: false, pos: { x: 0, y: 0, z: 0 }, tabList: {}, entities: {},
                     girInterval: null, afkInterval: null, isBuying: false, shopStep: 0,
-                    proxy: b.proxy || { host: '', port: '', type: 5, userId: '', password: '' },
                     autoBuyConfig: b.autoBuyConfig || { ...defaultAutoBuyConfig }
                 });
             });
@@ -142,7 +137,6 @@ function saveDataToFile() {
             id: b.id, username: b.username, host: b.host, port: b.port,
             version: b.version, autoPassword: b.autoPassword,
             autoSubServerCmd: b.autoSubServerCmd, autoSubServerDelay: b.autoSubServerDelay,
-            proxy: b.proxy,
             autoBuyConfig: b.autoBuyConfig
         }));
         const fileContent = JSON.stringify({ globalConfig, bots: botList }, null, 2);
@@ -551,9 +545,9 @@ function cleanupBot(botId, reason) {
     if (botData.subCmdInterval) clearInterval(botData.subCmdInterval);
     if (botData.afkTimer) clearTimeout(botData.afkTimer);
     if (botData.afkRetryTimer) clearTimeout(botData.afkRetryTimer);
-    if (botData.sbUpdateTimer) clearInterval(botData.sbUpdateTimer);
-    if (botData.tabUpdateTimer) clearInterval(botData.tabUpdateTimer);
-    if (botData.mapUpdateTimer) clearInterval(botData.mapUpdateTimer);
+    if (botData.sbUpdateTimer) clearTimeout(botData.sbUpdateTimer);
+    if (botData.tabUpdateTimer) clearTimeout(botData.tabUpdateTimer);
+    if (botData.mapUpdateTimer) clearTimeout(botData.mapUpdateTimer);
     if (botData.reconnectTimer) clearInterval(botData.reconnectTimer);
     if (botData.girInterval) clearInterval(botData.girInterval);
     if (botData.afkInterval) clearInterval(botData.afkInterval);
@@ -596,18 +590,6 @@ function startBotInstance(botId) {
 
     try {
         const clientOptions = { host, port, username: botData.username, version: version || '1.20.1', checkTimeoutInterval: 60000, keepAlive: true };
-
-        if (botData.proxy && botData.proxy.host && botData.proxy.port) {
-            clientOptions.connect = (client) => {
-                SocksClient.createConnection({
-                    proxy: { host: botData.proxy.host, port: Number(botData.proxy.port), type: Number(botData.proxy.type || 5), userId: botData.proxy.userId || undefined, password: botData.proxy.password || undefined },
-                    command: 'connect', destination: { host, port }
-                }, (err, info) => {
-                    if (err) { cleanupBot(botId, `Proxy Hatası: ${err.message}`); return; }
-                    client.setSocket(info.socket); client.emit('connect');
-                });
-            };
-        }
 
         const client = mc.createClient(clientOptions);
         botData.client = client;
@@ -672,7 +654,7 @@ io.on('connection', (socket) => {
         autoPassword: b.autoPassword !== undefined ? b.autoPassword : globalConfig.autoPassword,
         autoSubServerCmd: b.autoSubServerCmd !== undefined ? b.autoSubServerCmd : globalConfig.autoSubServerCmd,
         status: b.status, onlineSince: b.onlineSince || null, pos: b.pos || { x: 0, y: 0, z: 0 },
-        logs: b.logs, inventory: b.inventory || {}, proxy: b.proxy, autoBuyConfig: b.autoBuyConfig
+        logs: b.logs, inventory: b.inventory || {}, autoBuyConfig: b.autoBuyConfig
     }));
 
     socket.emit('init-data', { botList, globalConfig });
@@ -703,7 +685,6 @@ io.on('connection', (socket) => {
             id, username,
             host: globalConfig.host, port: globalConfig.port, version: globalConfig.version,
             autoPassword: globalConfig.autoPassword, autoSubServerCmd: globalConfig.autoSubServerCmd,
-            proxy: { host: '', port: '', type: 5, userId: '', password: '' },
             autoBuyConfig: { ...defaultAutoBuyConfig },
             status: 'Offline', onlineSince: null, pos: { x: 0, y: 0, z: 0 },
             client: null, logs: [], inventory: {}, scoreboard: null, tabList: {}, entities: {}, isManualStop: false

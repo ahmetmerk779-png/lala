@@ -613,7 +613,7 @@
             if (coordsEl) {
                 coordsEl.innerText = `📍 X: ${pos.x} | Y: ${pos.y} | Z: ${pos.z}`;
             }
-            drawRadar(botId, pos, entities);
+            drawTacticalRadar(botId, pos, entities);
         }
     });
 
@@ -751,8 +751,8 @@
                 <div class="bot-widgets-grid">
                     <div class="radar-box">
                         <div class="radar-title">
-                            <span>🗺️ 2D Radar</span>
-                            <span style="font-size:10px; color:#64748b;">(Yakın Varlıklar)</span>
+                            <span>📡 Canlı Taktiksel Çevre Monitörü</span>
+                            <span style="font-size:10px; color:#38bdf8;">(0 Lag / Sıfır RAM)</span>
                         </div>
                         <canvas id="map-canvas-${bot.id}" class="radar-canvas" width="220" height="220"></canvas>
                     </div>
@@ -788,7 +788,7 @@
             container.appendChild(card);
 
             renderInventoryGrid(bot.id, bot.inventory || {});
-            drawRadar(bot.id, pos, bot.entities || []);
+            drawTacticalRadar(bot.id, pos, bot.entities || []);
             renderTabList(bot.id, bot.tabList || []);
 
             const lb = document.getElementById(`logs-${bot.id}`);
@@ -796,7 +796,7 @@
         });
     }
 
-    function drawRadar(botId, pos, entities) {
+    function drawTacticalRadar(botId, pos, entities) {
         const canvas = document.getElementById(`map-canvas-${botId}`);
         if (!canvas) return;
         const ctx = canvas.getContext('2d');
@@ -804,27 +804,26 @@
         const h = canvas.height;
         const cx = w / 2;
         const cy = h / 2;
-        const scale = 3;
+        const scale = 4;
 
         ctx.fillStyle = '#020617';
         ctx.fillRect(0, 0, w, h);
 
-        ctx.strokeStyle = '#1e293b';
+        ctx.strokeStyle = 'rgba(56, 189, 248, 0.1)';
         ctx.lineWidth = 1;
         ctx.beginPath();
         ctx.moveTo(cx, 0); ctx.lineTo(cx, h);
         ctx.moveTo(0, cy); ctx.lineTo(w, cy);
         ctx.stroke();
 
-        [10, 20, 30].forEach(r => {
+        [15, 30, 45].forEach(r => {
             ctx.beginPath();
             ctx.arc(cx, cy, r * scale, 0, Math.PI * 2);
-            ctx.strokeStyle = 'rgba(30, 41, 59, 0.4)';
+            ctx.strokeStyle = 'rgba(56, 189, 248, 0.15)';
             ctx.stroke();
         });
 
         if (Array.isArray(entities)) {
-            ctx.fillStyle = '#ef4444';
             entities.forEach(ent => {
                 const dx = (ent.x - pos.x) * scale;
                 const dz = (ent.z - pos.z) * scale;
@@ -832,20 +831,33 @@
                 const ry = cy + dz;
 
                 if (rx >= 0 && rx <= w && ry >= 0 && ry <= h) {
+                    ctx.fillStyle = '#ef4444';
                     ctx.beginPath();
-                    ctx.arc(rx, ry, 3.5, 0, Math.PI * 2);
+                    ctx.arc(rx, ry, 4, 0, Math.PI * 2);
                     ctx.fill();
+
+                    ctx.strokeStyle = 'rgba(239, 68, 68, 0.4)';
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
                 }
             });
         }
 
         ctx.fillStyle = '#10b981';
         ctx.beginPath();
-        ctx.arc(cx, cy, 5, 0, Math.PI * 2);
+        ctx.arc(cx, cy, 6, 0, Math.PI * 2);
         ctx.fill();
         ctx.strokeStyle = '#34d399';
         ctx.lineWidth = 2;
         ctx.stroke();
+
+        ctx.fillStyle = '#38bdf8';
+        ctx.beginPath();
+        ctx.moveTo(cx, cy - 10);
+        ctx.lineTo(cx - 4, cy - 2);
+        ctx.lineTo(cx + 4, cy - 2);
+        ctx.closePath();
+        ctx.fill();
     }
 
     function renderTabList(botId, players) {
@@ -920,7 +932,6 @@
         const slot = document.createElement('div');
         slot.className = item ? 'inv-slot has-item' : 'inv-slot';
         
-        // Sürükle Bırak Özellikleri
         slot.draggable = item ? true : false;
         
         slot.ondragstart = (e) => {

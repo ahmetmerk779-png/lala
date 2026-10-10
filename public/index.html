@@ -496,7 +496,6 @@
     </div>
 </div>
 
-<!-- ================= YENİ EKLENEN KISIM: Canlı Bot Menü (GUI) Modal Penceresi ================= -->
 <div class="modal-overlay" id="botWindowModal">
     <div class="modal" style="max-width: 450px;">
         <div class="modal-title" id="windowModalTitle" style="color: #facc15; font-size: 13px; font-weight: bold;">📋 Sunucu Menüsü</div>
@@ -504,7 +503,6 @@
         <button class="btn-secondary" onclick="closeModal('botWindowModal')">Menüyü Kapat</button>
     </div>
 </div>
-<!-- ========================================================================================= -->
 
 <script>
     const socket = io();
@@ -655,7 +653,6 @@
         });
     });
 
-    // ================= YENİ EKLENEN KISIM: Canlı Pencere (GUI) Socket Dinleyicileri =================
     socket.on('bot-open-window', ({ botId, windowId, title, slots }) => {
         const modal = document.getElementById('botWindowModal');
         document.getElementById('windowModalTitle').innerText = `📋 ${title || 'Sunucu Menüsü'}`;
@@ -680,7 +677,7 @@
             Object.keys(items).forEach(slotIdx => {
                 const item = items[slotIdx];
                 const slotEl = document.getElementById(`win-slot-${windowId}-${slotIdx}`);
-                if (slotEl) {
+                if (slotEl && item) {
                     slotEl.className = 'inv-slot has-item';
                     const itemImg = getItemImageUrl(item.name);
                     const blockImg = getBlockImageUrl(item.name);
@@ -688,6 +685,7 @@
                         <img src="${itemImg}" onerror="if(this.src!=='${blockImg}'){this.src='${blockImg}';}else{this.style.display='none';}" alt="${item.displayName}">
                         <span class="inv-slot-count">${item.count > 1 ? item.count : ''}</span>
                     `;
+                    slotEl.title = item.displayName;
                     slotEl.onclick = () => {
                         socket.emit('click-window-slot', { botId, windowId, slot: slotIdx });
                     };
@@ -695,7 +693,6 @@
             });
         }
     });
-    // ==============================================================================================
 
     function renderBotList() {
         const container = document.getElementById('botListContainer');

@@ -400,7 +400,6 @@
         .scoreboard-text { color: #e2e8f0; }
         .scoreboard-val { color: #ef4444; font-weight: bold; margin-left: 8px; }
 
-        /* Geliştirilmiş ve büyütülmüş tam ekran mobil uyumlu Menü Modalı */
         .modal-overlay {
             position: fixed;
             top: 0; left: 0; right: 0; bottom: 0;
@@ -499,7 +498,6 @@
     </div>
 </div>
 
-<!-- Daha Büyük, Okunaklı ve Mobilde Tam Görünen AFK/Sunucu Menü Modalı -->
 <div class="modal-overlay" id="botWindowModal">
     <div class="modal" style="max-width: 500px;">
         <div class="modal-title" id="windowModalTitle" style="color: #facc15; font-size: 15px; font-weight: bold; padding-bottom: 4px; border-bottom: 1px solid #27354a;">📋 Sunucu Menüsü</div>
@@ -1019,7 +1017,7 @@
         const config = {
             host: document.getElementById('modalHost').value.trim(),
             port: Number(document.getElementById('modalPort').value),
-            version: document.getElementById('modalVersion'].value.trim(),
+            version: document.getElementById('modalVersion').value.trim(),
             autoPassword: document.getElementById('modalPassword').value.trim(),
             autoSubServerCmd: document.getElementById('modalSubCmd').value.trim()
         };
@@ -1055,7 +1053,7 @@
 
     function addBot() {
         const input = document.getElementById('newBotUsername');
-        if (input.value.trim()) {
+        if (input && input.value.trim()) {
             socket.emit('add-bot', { username: input.value.trim() });
             input.value = '';
         }

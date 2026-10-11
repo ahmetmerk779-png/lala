@@ -5,7 +5,7 @@ const axios = require('axios');
 const { Server } = require('socket.io');
 const mc = require('minecraft-protocol');
 const mcData = require('minecraft-data');
-const { SocksProxyAgent } = require('socks-proxy-agent');
+const { SocksClient } = require('socks');
 const path = require('path');
 const fs = require('fs');
 
@@ -940,7 +940,7 @@ function startBotInstance(botId) {
     const version = botData.version || globalConfig.version;
     const proxyUrl = botData.proxy;
 
-    broadcastLog(botId, `${botData.username} bağlanıyor (${host}:${port})${proxyUrl ? ' [Proxy Aktif]' : ''}...`, 'info');
+    broadcastLog(botId, `${botData.username} bağlanıyor (${host}:${port})${proxyUrl ? ' [SOCKS5 Proxy Aktif]' : ''}...`, 'info');
     botData.status = 'Connecting';
     io.emit('status-update', { botId, status: 'Connecting', onlineSince: null });
 
@@ -954,22 +954,31 @@ function startBotInstance(botId) {
             keepAlive: true
         };
 
-        // Eğer bota özel SOCKS5 proxy tanımlandıysa tünel üzerinden bağla
         if (proxyUrl && proxyUrl.trim() !== '') {
+            const cleanUrl = proxyUrl.trim().replace(/^socks5:\/\//, '');
+            const [proxyHost, proxyPort] = cleanUrl.split(':');
+
             clientOptions.connect = (client) => {
-                try {
-                    const agent = new SocksProxyAgent(proxyUrl.trim());
-                    const socket = agent.connect({
-                        hostname: host,
+                const options = {
+                    proxy: {
+                        host: proxyHost,
+                        port: Number(proxyPort),
+                        type: 5
+                    },
+                    destination: {
+                        host: host,
                         port: port
-                    });
-                    socket.on('connect', () => client.setSocket(socket));
-                    socket.on('error', (err) => {
+                    },
+                    command: 'connect'
+                };
+
+                SocksClient.createConnection(options, (err, info) => {
+                    if (err) {
                         client.emit('error', err);
-                    });
-                } catch (err) {
-                    client.emit('error', err);
-                }
+                        return;
+                    }
+                    client.setSocket(info.socket);
+                });
             };
         }
 

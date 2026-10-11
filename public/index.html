@@ -417,6 +417,8 @@
             border: 1px solid var(--border-color);
             width: 100%;
             max-width: 400px;
+            max-height: 90vh;
+            overflow-y: auto;
             border-radius: 12px;
             padding: 16px;
             display: flex;
@@ -475,6 +477,29 @@
         <div class="field"><label>Versiyon</label><input type="text" id="modalVersion"></div>
         <div class="field"><label>Şifre (/login)</label><input type="text" id="modalPassword"></div>
         <div class="field"><label>Alt Sunucu Komutu</label><input type="text" id="modalSubCmd"></div>
+
+        <hr style="border: 0; border-top: 1px solid var(--border-color); margin: 6px 0;">
+        <div style="font-size: 12px; font-weight: bold; color: #a5b4fc;">🛡️ Güvenlik ve Davranış Yönetimi</div>
+        <div class="field" style="flex-direction: row; align-items: center; gap: 8px;">
+            <input type="checkbox" id="modalTakeBreaks" style="width: 16px; height: 16px; accent-color: var(--accent-primary);">
+            <label for="modalTakeBreaks" style="margin-bottom: 0; cursor: pointer;">Gerçekçi Oyuncu Molaları Aktif</label>
+        </div>
+        <div class="field" style="flex-direction: row; align-items: center; gap: 8px;">
+            <input type="checkbox" id="modalDetectStaff" style="width: 16px; height: 16px; accent-color: var(--accent-primary);">
+            <label for="modalDetectStaff" style="margin-bottom: 0; cursor: pointer;">Yetkili (Admin) Yakınca Durma Koruması</label>
+        </div>
+
+        <hr style="border: 0; border-top: 1px solid var(--border-color); margin: 6px 0;">
+        <div style="font-size: 12px; font-weight: bold; color: #a5b4fc;">🛒 Otomatik Spawner Alım Ayarları</div>
+        <div class="field" style="flex-direction: row; align-items: center; gap: 8px;">
+            <input type="checkbox" id="modalAutoBuyEnabled" style="width: 16px; height: 16px; accent-color: var(--accent-primary);">
+            <label for="modalAutoBuyEnabled" style="margin-bottom: 0; cursor: pointer;">Otomatik Spawner Alımı Aktif</label>
+        </div>
+        <div class="field"><label>Hedef AE Kristali Miktarı</label><input type="number" id="modalTargetCrystal"></div>
+        <div class="field"><label>Kategori Slotu (/shop)</label><input type="number" id="modalCategorySlot"></div>
+        <div class="field"><label>Ürün Slotu (Blaze Spawner)</label><input type="number" id="modalItemSlot"></div>
+        <div class="field"><label>Onay Slotu</label><input type="number" id="modalConfirmSlot"></div>
+
         <div style="display: flex; gap: 8px; margin-top: 8px;">
             <button class="btn-primary" style="flex: 1;" onclick="saveBotSettings()">Kaydet</button>
             <button class="btn-secondary" onclick="closeModal('botSettingsModal')">İptal</button>
@@ -1000,6 +1025,16 @@
         document.getElementById('modalPassword').value = bot.autoPassword !== undefined ? bot.autoPassword : (globalConfig.autoPassword || '');
         document.getElementById('modalSubCmd').value = bot.autoSubServerCmd !== undefined ? bot.autoSubServerCmd : (globalConfig.autoSubServerCmd || '');
 
+        document.getElementById('modalTakeBreaks').checked = bot.takeBreaks !== undefined ? bot.takeBreaks : true;
+        document.getElementById('modalDetectStaff').checked = bot.detectStaff !== undefined ? bot.detectStaff : true;
+
+        const buyCfg = bot.autoBuyConfig || { enabled: false, targetCrystal: 1300, categorySlot: 7, itemSlot: 3, confirmSlot: 22 };
+        document.getElementById('modalAutoBuyEnabled').checked = buyCfg.enabled;
+        document.getElementById('modalTargetCrystal').value = buyCfg.targetCrystal;
+        document.getElementById('modalCategorySlot').value = buyCfg.categorySlot;
+        document.getElementById('modalItemSlot').value = buyCfg.itemSlot;
+        document.getElementById('modalConfirmSlot').value = buyCfg.confirmSlot;
+
         document.getElementById('botSettingsModal').style.display = 'flex';
     }
 
@@ -1011,7 +1046,16 @@
             proxy: document.getElementById('modalProxy').value.trim(),
             version: document.getElementById('modalVersion').value.trim(),
             autoPassword: document.getElementById('modalPassword').value.trim(),
-            autoSubServerCmd: document.getElementById('modalSubCmd').value.trim()
+            autoSubServerCmd: document.getElementById('modalSubCmd').value.trim(),
+            takeBreaks: document.getElementById('modalTakeBreaks').checked,
+            detectStaff: document.getElementById('modalDetectStaff').checked,
+            autoBuyConfig: {
+                enabled: document.getElementById('modalAutoBuyEnabled').checked,
+                targetCrystal: Number(document.getElementById('modalTargetCrystal').value),
+                categorySlot: Number(document.getElementById('modalCategorySlot').value),
+                itemSlot: Number(document.getElementById('modalItemSlot').value),
+                confirmSlot: Number(document.getElementById('modalConfirmSlot').value)
+            }
         };
 
         socket.emit('update-bot-config', { botId, config });

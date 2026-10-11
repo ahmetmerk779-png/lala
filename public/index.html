@@ -672,9 +672,22 @@
         }
     });
 
-    socket.on('bot-window-items', ({ botId, windowId, items }) => {
+    // Güncellendi: Dinamik totalSlots desteği eklendi[cite: 4]
+    socket.on('bot-window-items', ({ botId, windowId, items, totalSlots }) => {
         const modal = document.getElementById('botWindowModal');
         if (modal.style.display === 'flex' && modal.dataset.windowId == windowId) {
+            const content = document.getElementById('windowModalContent');
+            if (totalSlots && content.children.length < totalSlots) {
+                content.innerHTML = '';
+                for (let i = 0; i < totalSlots; i++) {
+                    const slotEl = document.createElement('div');
+                    slotEl.className = 'inv-slot';
+                    slotEl.id = `win-slot-${windowId}-${i}`;
+                    slotEl.innerHTML = `<span class="inv-slot-id">${i}</span>`;
+                    content.appendChild(slotEl);
+                }
+            }
+
             Object.keys(items).forEach(slotIdx => {
                 const item = items[slotIdx];
                 const slotEl = document.getElementById(`win-slot-${windowId}-${slotIdx}`);

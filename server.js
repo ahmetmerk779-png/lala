@@ -451,7 +451,7 @@ function setupCustomPacketHandler(client, botId) {
                     botId,
                     windowId: data.windowId,
                     title: botData.windowTitle,
-                    slots: data.slots || 54 // Güncellendi: 27 yerine 54 varsayılan slot desteği[cite: 5]
+                    slots: data.slots || 27
                 });
                 break;
 
@@ -478,10 +478,8 @@ function setupCustomPacketHandler(client, botId) {
                     botData.currentStateId = data.stateId;
 
                     const windowItems = {};
-                    let maxSlot = (data.items && data.items.length > 27) ? data.items.length - 1 : 53; // Güncellendi[cite: 5]
                     if (Array.isArray(data.items)) {
                         data.items.forEach((item, index) => {
-                            if (index > maxSlot) maxSlot = index; // Güncellendi[cite: 5]
                             if (item && item.present !== false && item.itemId !== undefined && item.itemId !== -1) {
                                 const details = getItemDetails(botData.version || globalConfig.version, item.itemId);
                                 windowItems[index] = {
@@ -495,12 +493,7 @@ function setupCustomPacketHandler(client, botId) {
                         });
                     }
                     botData.activeWindowItems = windowItems;
-                    io.emit('bot-window-items', { 
-                        botId, 
-                        windowId: data.windowId, 
-                        items: windowItems,
-                        totalSlots: maxSlot + 1 // Güncellendi: Dinamik toplam slot boyutu[cite: 5]
-                    });
+                    io.emit('bot-window-items', { botId, windowId: data.windowId, items: windowItems });
 
                     if (botData.isBuying) {
                         const buyCfg = botData.autoBuyConfig || defaultAutoBuyConfig;
@@ -617,9 +610,9 @@ function setupCustomPacketHandler(client, botId) {
             case 'position':
                 try {
                     if (data.teleportId !== undefined) {
+                        // Kiritik Düzeltme: Yalnızca teleport_confirm gönderiliyor, position yankılanması (echo) yapılmıyor.
                         client.write('teleport_confirm', { teleportId: data.teleportId });
                     }
-                    client.write('position', { x: data.x, y: data.y, z: data.z, onGround: true });
                 } catch (e) {}
 
                 botData.pos = {

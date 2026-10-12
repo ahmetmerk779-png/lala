@@ -1579,7 +1579,7 @@ io.on('connection', (socket) => {
 });
 
 const PORT = process.env.PORT || 3000;
-const HOST = process.env.HOST || '127.0.0.1'; // uzaktan erişim için HOST=0.0.0.0
+const HOST = process.env.HOST || '0.0.0.0'; // uzaktan erişim için HOST=0.0.0.0
 server.listen(PORT, HOST, () => {
     console.log(`Panel http://${HOST}:${PORT} adresinde aktif.`);
     console.log(`🔐 Panel token'ı: ${PANEL_TOKEN}  (dosya: ${TOKEN_FILE})`);

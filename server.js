@@ -517,7 +517,7 @@ function setupCustomPacketHandler(client, botId) {
                     botId,
                     windowId: data.windowId,
                     title: botData.windowTitle,
-                    slots: data.slots || 27
+                    slots: data.slots || 54
                 });
                 break;
 

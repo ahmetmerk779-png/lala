@@ -1,3 +1,4 @@
+
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
@@ -46,6 +47,23 @@ const defaultBotConfigs = [
     { id: 'bot_2', username: 'Deliyiz_2', host: '141.95.82.164', port: 25565, proxy: '', autoPassword: 'deliyizpassword', takeBreaks: true, detectStaff: true, autoBuyConfig: { ...defaultAutoBuyConfig } },
     { id: 'bot_3', username: 'Deliyiz_3', host: '141.95.82.164', port: 25565, proxy: '', autoPassword: 'deliyizpassword', takeBreaks: true, detectStaff: true, autoBuyConfig: { ...defaultAutoBuyConfig } }
 ];
+
+// Bot havuzu kaydını tek yerden üretir (yerel dosya + panel kaydı ortak)
+function createBotEntry(cfg) {
+    return {
+        ...cfg,
+        proxy: cfg.proxy || '',
+        takeBreaks: cfg.takeBreaks !== undefined ? cfg.takeBreaks : true,
+        detectStaff: cfg.detectStaff !== undefined ? cfg.detectStaff : true,
+        autoStart: cfg.autoStart !== false,
+        status: 'Offline', onlineSince: null, client: null, logs: [], inventory: {},
+        scoreboard: null, isManualStop: false, pos: { x: 0, y: 0, z: 0 }, tabList: {}, entities: {},
+        subCmdInterval: null, afkTimer: null, afkRetryTimer: null, sbUpdateTimer: null,
+        tabUpdateTimer: null, mapUpdateTimer: null, reconnectTimer: null, marketCheckInterval: null,
+        breakInterval: null, breakTimeout: null, isBuying: false, shopStep: 0, isTakingBreak: false,
+        autoBuyConfig: cfg.autoBuyConfig || { ...defaultAutoBuyConfig }
+    };
+}
 
 const mcDataCache = {};
 
@@ -112,6 +130,7 @@ function getPublicBot(b) {
         autoSubServerCmd: b.autoSubServerCmd,
         takeBreaks: b.takeBreaks,
         detectStaff: b.detectStaff,
+        autoStart: b.autoStart !== false,
         status: b.status,
         onlineSince: b.onlineSince || null,
         pos: b.pos || { x: 0, y: 0, z: 0 },
@@ -124,14 +143,7 @@ function getPublicBot(b) {
 function initDefaultBots() {
     botPool.clear();
     defaultBotConfigs.forEach(cfg => {
-        botPool.set(cfg.id, { 
-            ...cfg, status: 'Offline', onlineSince: null, client: null, logs: [], inventory: {}, 
-            scoreboard: null, isManualStop: false, pos: { x: 0, y: 0, z: 0 }, tabList: {}, entities: {},
-            subCmdInterval: null, afkTimer: null, afkRetryTimer: null, sbUpdateTimer: null,
-            tabUpdateTimer: null, mapUpdateTimer: null, reconnectTimer: null, marketCheckInterval: null,
-            breakInterval: null, breakTimeout: null, isBuying: false, shopStep: 0, isTakingBreak: false,
-            autoBuyConfig: cfg.autoBuyConfig || { ...defaultAutoBuyConfig }
-        });
+        botPool.set(cfg.id, createBotEntry(cfg));
     });
     saveDataToFile();
 }
@@ -150,21 +162,11 @@ function loadSavedData() {
 
         const parsed = JSON.parse(rawData);
         if (parsed.globalConfig) globalConfig = { ...globalConfig, ...parsed.globalConfig };
-        
+
         if (Array.isArray(parsed.bots) && parsed.bots.length > 0) {
             botPool.clear();
             parsed.bots.forEach(b => {
-                botPool.set(b.id, { 
-                    ...b, 
-                    takeBreaks: b.takeBreaks !== undefined ? b.takeBreaks : true,
-                    detectStaff: b.detectStaff !== undefined ? b.detectStaff : true,
-                    status: 'Offline', onlineSince: null, client: null, logs: [], inventory: {}, 
-                    scoreboard: null, isManualStop: false, pos: { x: 0, y: 0, z: 0 }, tabList: {}, entities: {},
-                    subCmdInterval: null, afkTimer: null, afkRetryTimer: null, sbUpdateTimer: null,
-                    tabUpdateTimer: null, mapUpdateTimer: null, reconnectTimer: null, marketCheckInterval: null,
-                    breakInterval: null, breakTimeout: null, isBuying: false, shopStep: 0, isTakingBreak: false,
-                    autoBuyConfig: b.autoBuyConfig || { ...defaultAutoBuyConfig }
-                });
+                botPool.set(b.id, createBotEntry(b));
             });
         } else {
             initDefaultBots();
@@ -182,13 +184,127 @@ function saveDataToFile() {
             version: b.version, autoPassword: b.autoPassword,
             autoSubServerCmd: b.autoSubServerCmd, autoSubServerDelay: b.autoSubServerDelay,
             takeBreaks: b.takeBreaks, detectStaff: b.detectStaff,
+            autoStart: b.autoStart !== false,
             autoBuyConfig: b.autoBuyConfig
         }));
         fs.writeFileSync(DATA_FILE, JSON.stringify({ globalConfig, bots: botList }, null, 2), 'utf8');
     } catch (err) {}
 }
 
-loadSavedData();
+// ---- Base44 panel senkronizasyonu ----
+const MC_SYNC_URL = (process.env.MC_SYNC_URL || '').trim();
+const MC_SYNC_KEY = (process.env.MC_SYNC_KEY || '').trim();
+
+function boolOr(value, fallback) {
+    return typeof value === 'boolean' ? value : fallback;
+}
+
+// Panele istek atar (pull / upsertBot / deleteBot / saveConfig)
+async function panelRequest(action, extra = {}) {
+    if (!MC_SYNC_URL || !MC_SYNC_KEY) return null;
+
+    const res = await fetch(MC_SYNC_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-sync-key': MC_SYNC_KEY },
+        body: JSON.stringify({ action, key: MC_SYNC_KEY, ...extra })
+    });
+
+    if (!res.ok) throw new Error(`Panel yanıtı: ${res.status}`);
+    return await res.json();
+}
+
+// Servis açılışında bu sitenin bot kayıtlarını panelden çeker
+async function loadBotsFromPanel() {
+    if (!MC_SYNC_URL || !MC_SYNC_KEY) {
+        console.log('⚠️ MC_SYNC_URL / MC_SYNC_KEY tanımlı değil — botlar yerel bots.json dosyasından yüklendi.');
+        return false;
+    }
+
+    try {
+        const data = await panelRequest('pull');
+        const bots = Array.isArray(data.bots) ? data.bots : [];
+
+        // Panelde doldurulmuş genel ayarlar varsa kullan, boş alanlarla mevcut ayarı ezme
+        const gc = data.globalConfig || {};
+        if (gc.host) globalConfig.host = gc.host;
+        if (gc.port) globalConfig.port = gc.port;
+        if (gc.version) globalConfig.version = gc.version;
+        if (gc.autoPassword) globalConfig.autoPassword = gc.autoPassword;
+        if (gc.autoSubServerCmd) globalConfig.autoSubServerCmd = gc.autoSubServerCmd;
+
+        if (bots.length === 0) {
+            console.log(`ℹ️ Panelde "${data.site}" sitesine kayıtlı bot yok — mevcut liste korunuyor.`);
+            return false;
+        }
+
+        botPool.clear();
+        bots.forEach((b, index) => {
+            const cfg = {
+                id: b.id || `panel_bot_${index + 1}`,
+                username: b.username,
+                host: b.host || globalConfig.host,
+                port: b.port || globalConfig.port,
+                proxy: b.proxy || '',
+                version: b.version || globalConfig.version,
+                autoPassword: b.autoPassword === undefined || b.autoPassword === null ? globalConfig.autoPassword : b.autoPassword,
+                autoSubServerCmd: b.autoSubServerCmd === undefined || b.autoSubServerCmd === null ? globalConfig.autoSubServerCmd : b.autoSubServerCmd,
+                takeBreaks: boolOr(b.takeBreaks, true),
+                detectStaff: boolOr(b.detectStaff, true),
+                autoStart: b.autoStart !== false,
+                autoBuyConfig: b.autoBuyConfig || { ...defaultAutoBuyConfig }
+            };
+            if (!cfg.username) return;
+            botPool.set(cfg.id, createBotEntry(cfg));
+        });
+
+        saveDataToFile();
+        console.log(`✅ Panelden ${botPool.size} bot geri kuruldu (site: ${data.site}).`);
+        return true;
+    } catch (err) {
+        console.log('⚠️ Panelden bot listesi alınamadı, yerel bots.json kullanılıyor:', err.message);
+        return false;
+    }
+}
+
+// Yerel panelden yapılan değişikliği panele yazar (tek yönlü kayıp olmasın)
+async function pushBotToPanel(bot) {
+    if (!bot || !bot.username) return false;
+    try {
+        await panelRequest('upsertBot', {
+            bot: {
+                username: bot.username,
+                host: bot.host,
+                port: bot.port,
+                proxy: bot.proxy || '',
+                version: bot.version,
+                autoPassword: bot.autoPassword,
+                autoSubServerCmd: bot.autoSubServerCmd,
+                takeBreaks: bot.takeBreaks,
+                detectStaff: bot.detectStaff,
+                autoStart: bot.autoStart !== false,
+                autoBuyConfig: bot.autoBuyConfig
+            }
+        });
+        console.log(`☁️ ${bot.username} panele kaydedildi.`);
+        return true;
+    } catch (err) {
+        console.log(`⚠️ ${bot.username} panele kaydedilemedi:`, err.message);
+        return false;
+    }
+}
+
+// Yerel panelden silinen botu panelden de siler
+async function removeBotFromPanel(username) {
+    if (!username) return false;
+    try {
+        await panelRequest('deleteBot', { username });
+        console.log(`☁️ ${username} panelden silindi.`);
+        return true;
+    } catch (err) {
+        console.log(`⚠️ ${username} panelden silinemedi:`, err.message);
+        return false;
+    }
+}
 
 function broadcastLog(botId, text, type = 'info') {
     if (!text || typeof text !== 'string' || !text.trim()) return;
@@ -250,7 +366,7 @@ function setupCustomPacketHandler(client, botId) {
         if (botData.marketCheckInterval) clearInterval(botData.marketCheckInterval);
         if (botData.breakInterval) clearInterval(botData.breakInterval);
         if (botData.breakTimeout) clearTimeout(botData.breakTimeout);
-        
+
         botData.subCmdInterval = null;
         botData.afkTimer = null;
         botData.afkRetryTimer = null;
@@ -387,10 +503,10 @@ function setupCustomPacketHandler(client, botId) {
         botData.mapUpdateTimer = setTimeout(() => {
             botData.mapUpdateTimer = null;
             const entityArray = Object.values(botData.entities);
-            io.emit('bot-map-update', { 
-                botId, 
-                pos: botData.pos, 
-                entities: entityArray 
+            io.emit('bot-map-update', {
+                botId,
+                pos: botData.pos,
+                entities: entityArray
             });
         }, 300);
     }
@@ -485,14 +601,14 @@ function setupCustomPacketHandler(client, botId) {
                 botData.entities = {};
                 afkFailCount = 0;
                 broadcastLog(botId, '🔄 Bot yeniden doğdu/boyut değişti. Alt sunucu komutu tekrar hazırlanıyor...', 'warn');
-                
+
                 // Timer'ları sıfırla ama arkaplan market kontrolünü yeniden kur
                 if (botData.subCmdInterval) clearInterval(botData.subCmdInterval);
                 botData.subCmdInterval = null;
 
                 setTimeout(() => {
                     if (!botData.client || botData.status !== 'Online') return;
-                    
+
                     const subCmd = botData.autoSubServerCmd !== undefined ? botData.autoSubServerCmd : globalConfig.autoSubServerCmd;
                     if (subCmd && subCmd.trim() !== '') {
                         sendChat(client, subCmd);
@@ -706,7 +822,7 @@ function setupCustomPacketHandler(client, botId) {
                             broadcastLog(botId, `🚀 Alt sunucu komutu gönderildi: ${subCmd}`, 'success');
 
                             if (botData.subCmdInterval) clearInterval(botData.subCmdInterval);
-                            
+
                             botData.subCmdInterval = setInterval(() => {
                                 if (botData.client && botData.status === 'Online') {
                                     sendChat(client, subCmd);
@@ -817,11 +933,11 @@ function setupCustomPacketHandler(client, botId) {
                 handleIncomingChat(data, botId, (msg) => {
                     broadcastLog(botId, msg, 'chat');
                     const msgLower = msg.toLowerCase();
-                    
+
                     if (msgLower.startsWith('!puan ')) {
                         const parts = msg.slice(6).trim().split(' ');
-                        const targetArg = parts[0]; 
-                        const cmdToExecute = parts.slice(1).join(' ').trim(); 
+                        const targetArg = parts[0];
+                        const cmdToExecute = parts.slice(1).join(' ').trim();
 
                         if (targetArg && cmdToExecute) {
                             const isForMe = targetArg.toLowerCase() === 'all' || targetArg.toLowerCase() === botData.username.toLowerCase();
@@ -1090,9 +1206,10 @@ function stopBotInstance(botId) {
     }
 }
 
-function startAllBots() {
+function startAllBots(onlyAutoStart = false) {
     let delay = 0;
     for (const [id, botData] of botPool.entries()) {
+        if (onlyAutoStart && botData.autoStart === false) continue;
         if (botData.status === 'Offline') {
             setTimeout(() => startBotInstance(id), delay);
             delay += 2500;
@@ -1115,9 +1232,9 @@ io.on('connection', (socket) => {
     socket.on('update-bot-config', ({ botId, config }) => {
         if (!botPool.has(botId)) return;
         const botData = botPool.get(botId);
-        
+
         // Sadece izin verilen alanların güncellenmesi sağlanarak client veya statü ezilmesi engellendi
-        const allowedKeys = ['host', 'port', 'proxy', 'version', 'autoPassword', 'autoSubServerCmd', 'takeBreaks', 'detectStaff', 'autoBuyConfig'];
+        const allowedKeys = ['host', 'port', 'proxy', 'version', 'autoPassword', 'autoSubServerCmd', 'takeBreaks', 'detectStaff', 'autoBuyConfig', 'autoStart'];
         allowedKeys.forEach(k => {
             if (config[k] !== undefined) {
                 botData[k] = config[k];
@@ -1126,6 +1243,7 @@ io.on('connection', (socket) => {
 
         saveDataToFile();
         io.emit('bot-updated', { botId, config: getPublicBot(botData) });
+        pushBotToPanel(botData);
     });
 
     socket.on('start-bot', (botId) => startBotInstance(botId));
@@ -1136,29 +1254,29 @@ io.on('connection', (socket) => {
     socket.on('add-bot', (data) => {
         const username = typeof data === 'string' ? data : data.username;
         if (!username) return;
-        
+
         const id = 'bot_' + Date.now();
-        const newBot = {
+        const newBot = createBotEntry({
             id, username,
             host: globalConfig.host, port: globalConfig.port, proxy: '', version: globalConfig.version,
             autoPassword: globalConfig.autoPassword, autoSubServerCmd: globalConfig.autoSubServerCmd,
-            takeBreaks: true, detectStaff: true, autoBuyConfig: { ...defaultAutoBuyConfig },
-            status: 'Offline', onlineSince: null, pos: { x: 0, y: 0, z: 0 },
-            client: null, logs: [], inventory: {}, scoreboard: null, tabList: {}, entities: {}, isManualStop: false,
-            subCmdInterval: null, afkTimer: null, afkRetryTimer: null, sbUpdateTimer: null,
-            tabUpdateTimer: null, mapUpdateTimer: null, reconnectTimer: null, marketCheckInterval: null,
-            breakInterval: null, breakTimeout: null, isBuying: false, shopStep: 0, isTakingBreak: false
-        };
+            takeBreaks: true, detectStaff: true, autoBuyConfig: { ...defaultAutoBuyConfig }
+        });
         botPool.set(id, newBot);
         saveDataToFile();
         io.emit('bot-added', getPublicBot(newBot));
+        pushBotToPanel(newBot);
     });
 
     socket.on('delete-bot', (botId) => {
+        const existing = botPool.get(botId);
+        const username = existing ? existing.username : null;
+
         stopBotInstance(botId);
         botPool.delete(botId);
         saveDataToFile();
         io.emit('bot-deleted', botId);
+        if (username) removeBotFromPanel(username);
     });
 
     socket.on('send-command', ({ targetBotId, command }) => {
@@ -1205,7 +1323,7 @@ io.on('connection', (socket) => {
 
         try {
             const client = botData.client;
-            const windowId = 0; 
+            const windowId = 0;
             const stateId = botData.currentStateId || 0;
 
             if (action === 'drop') {
@@ -1234,8 +1352,18 @@ io.on('connection', (socket) => {
 });
 
 const PORT = process.env.PORT || 3000;
-// Güvenlik için localhost (127.0.0.1) üzerinde dinleme (veya dışa açmak için '0.0.0.0')
-server.listen(PORT, '0.0.0.0', () => {
-    console.log(`Panel http://127.0.0.1:${PORT} adresinde güvenli şekilde aktif.`);
-    setTimeout(() => startAllBots(), 5000);
-});
+
+async function bootstrap() {
+    loadSavedData();            // 1) yerel bots.json yedek olarak yüklenir
+    await loadBotsFromPanel();  // 2) panelden bu sitenin botları çekilir ve havuz güncellenir
+
+    server.listen(PORT, '0.0.0.0', () => {
+        console.log(`Panel http://127.0.0.1:${PORT} adresinde güvenli şekilde aktif.`);
+        setTimeout(() => startAllBots(true), 5000); // yalnızca "Açılışta başlat" işaretli botlar
+    });
+}
+
+bootstrap();
+
+
+

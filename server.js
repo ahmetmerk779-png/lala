@@ -1,4 +1,6 @@
+Hayır — o markdown metni (`### 2)` ve sonrası) geçerli JavaScript değil, silmeden deploy edersen yine aynı hatayı verir. En kolayı: `server.js`'in **tüm içeriğini** aşağıdaki temiz kodla değiştir (hiçbir açıklama/başlık kalmayacak):
 
+```js
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
@@ -7,6 +9,7 @@ const mcData = require('minecraft-data');
 const { SocksClient } = require('socks');
 const path = require('path');
 const fs = require('fs');
+
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
@@ -1032,3 +1035,6 @@ async function bootstrap() {
 }
 
 bootstrap();
+```
+
+Tüm içeriği bununla değiştir, kaydet ve deploy et — `###` veya açıklama satırı kalmadığı için hata vermeyecek.

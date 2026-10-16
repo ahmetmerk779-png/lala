@@ -7,7 +7,6 @@ const mcData = require('minecraft-data');
 const { SocksClient } = require('socks');
 const path = require('path');
 const fs = require('fs');
-
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
@@ -15,12 +14,10 @@ const io = new Server(server);
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
 
-process.on('uncaughtException', (err) => console.error('[Hata Engellendi - Stack]:', err.stack || err.message));
-process.on('unhandledRejection', (reason) => console.error('[Söz Rejeksiyonu Engellendi]:', reason));
+process.on('uncaughtException', (err) => console.error('[Hata Engellendi]:', err.stack || err.message));
+process.on('unhandledRejection', (reason) => console.error('[Söz Rejeksiyonu]:', reason));
 
 const DATA_FILE = path.join(__dirname, 'bots.json');
-console.log('📁 Kayıt dosyasının tam yolu:', DATA_FILE);
-
 const botPool = new Map();
 
 let globalConfig = {
@@ -64,18 +61,11 @@ function createBotEntry(cfg) {
 }
 
 const mcDataCache = {};
-
 function getMcData(version) {
     const verStr = (version || '1.20.1').toString().trim();
     if (mcDataCache[verStr]) return mcDataCache[verStr];
-    try {
-        const data = mcData(verStr);
-        if (data && data.items) { mcDataCache[verStr] = data; return data; }
-    } catch (e) {}
-    try {
-        if (!mcDataCache['1.20.1']) mcDataCache['1.20.1'] = mcData('1.20.1');
-        return mcDataCache['1.20.1'];
-    } catch (e) { return null; }
+    try { const d = mcData(verStr); if (d && d.items) { mcDataCache[verStr] = d; return d; } } catch (e) {}
+    try { if (!mcDataCache['1.20.1']) mcDataCache['1.20.1'] = mcData('1.20.1'); return mcDataCache['1.20.1']; } catch (e) { return null; }
 }
 
 function getItemDetails(version, itemId) {
@@ -83,10 +73,7 @@ function getItemDetails(version, itemId) {
     const data = getMcData(version);
     if (data && data.items) {
         const item = data.items[itemId];
-        if (item) {
-            const cleanName = item.displayName || item.name.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-            return { name: item.name, displayName: cleanName };
-        }
+        if (item) return { name: item.name, displayName: item.displayName || item.name.replace(/_/g, ' ') };
     }
     return { name: 'unknown', displayName: `ID: ${itemId}` };
 }
@@ -94,9 +81,8 @@ function getItemDetails(version, itemId) {
 function parseMcText(text) {
     if (!text) return '';
     let str = '';
-    if (typeof text === 'string') {
-        try { return parseMcText(JSON.parse(text)); } catch (e) { str = text; }
-    } else if (typeof text === 'object') {
+    if (typeof text === 'string') { try { return parseMcText(JSON.parse(text)); } catch (e) { str = text; } }
+    else if (typeof text === 'object') {
         if (text.text) str += text.text;
         if (Array.isArray(text.extra)) str += text.extra.map(e => parseMcText(e)).join('');
         if (text.translate) str += text.translate;
@@ -106,14 +92,11 @@ function parseMcText(text) {
 
 function getPublicBot(b) {
     return {
-        id: b.id, username: b.username,
-        host: b.host || globalConfig.host, port: b.port || globalConfig.port,
-        proxy: b.proxy || '', version: b.version || globalConfig.version,
-        autoPassword: b.autoPassword, autoSubServerCmd: b.autoSubServerCmd,
-        takeBreaks: b.takeBreaks, detectStaff: b.detectStaff, autoStart: b.autoStart !== false,
-        status: b.status, onlineSince: b.onlineSince || null,
-        pos: b.pos || { x: 0, y: 0, z: 0 }, logs: b.logs, inventory: b.inventory || {},
-        autoBuyConfig: b.autoBuyConfig
+        id: b.id, username: b.username, host: b.host || globalConfig.host, port: b.port || globalConfig.port,
+        proxy: b.proxy || '', version: b.version || globalConfig.version, autoPassword: b.autoPassword,
+        autoSubServerCmd: b.autoSubServerCmd, takeBreaks: b.takeBreaks, detectStaff: b.detectStaff,
+        autoStart: b.autoStart !== false, status: b.status, onlineSince: b.onlineSince || null,
+        pos: b.pos || { x: 0, y: 0, z: 0 }, logs: b.logs, inventory: b.inventory || {}, autoBuyConfig: b.autoBuyConfig
     };
 }
 
@@ -133,7 +116,7 @@ function loadSavedData() {
         if (Array.isArray(parsed.bots) && parsed.bots.length > 0) {
             botPool.clear();
             parsed.bots.forEach(b => botPool.set(b.id, createBotEntry(b)));
-        } else { initDefaultBots(); }
+        } else initDefaultBots();
     } catch (err) { initDefaultBots(); }
 }
 
@@ -141,10 +124,9 @@ function saveDataToFile() {
     try {
         const botList = Array.from(botPool.values()).map(b => ({
             id: b.id, username: b.username, host: b.host, port: b.port, proxy: b.proxy || '',
-            version: b.version, autoPassword: b.autoPassword,
-            autoSubServerCmd: b.autoSubServerCmd, autoSubServerDelay: b.autoSubServerDelay,
-            takeBreaks: b.takeBreaks, detectStaff: b.detectStaff, autoStart: b.autoStart !== false,
-            autoBuyConfig: b.autoBuyConfig
+            version: b.version, autoPassword: b.autoPassword, autoSubServerCmd: b.autoSubServerCmd,
+            autoSubServerDelay: b.autoSubServerDelay, takeBreaks: b.takeBreaks, detectStaff: b.detectStaff,
+            autoStart: b.autoStart !== false, autoBuyConfig: b.autoBuyConfig
         }));
         fs.writeFileSync(DATA_FILE, JSON.stringify({ globalConfig, bots: botList }, null, 2), 'utf8');
     } catch (err) {}
@@ -154,9 +136,7 @@ function saveDataToFile() {
 const MC_SYNC_URL = (process.env.MC_SYNC_URL || '').trim();
 const MC_SYNC_KEY = (process.env.MC_SYNC_KEY || '').trim();
 
-function boolOr(value, fallback) {
-    return typeof value === 'boolean' ? value : fallback;
-}
+function boolOr(value, fallback) { return typeof value === 'boolean' ? value : fallback; }
 
 async function panelRequest(action, extra = {}) {
     if (!MC_SYNC_URL || !MC_SYNC_KEY) return null;
@@ -171,7 +151,7 @@ async function panelRequest(action, extra = {}) {
 
 async function loadBotsFromPanel() {
     if (!MC_SYNC_URL || !MC_SYNC_KEY) {
-        console.log('⚠️ MC_SYNC_URL / MC_SYNC_KEY tanımlı değil — botlar yerel bots.json dosyasından yüklendi.');
+        console.log('⚠️ MC_SYNC_URL / MC_SYNC_KEY tanımlı değil — yerel bots.json kullanılıyor.');
         return false;
     }
     try {
@@ -237,7 +217,6 @@ async function removeBotFromPanel(username) {
     try { await panelRequest('deleteBot', { username }); return true; } catch (err) { return false; }
 }
 
-// Paneldeki değişiklikleri çalışan botlara yansıtır (düzenleme / ekleme / silme)
 async function syncBotsFromPanel() {
     if (!MC_SYNC_URL || !MC_SYNC_KEY) return;
     try {
@@ -248,9 +227,7 @@ async function syncBotsFromPanel() {
 
         for (const [username, pb] of panelByUser) {
             let local = null;
-            for (const bd of botPool.values()) {
-                if (bd.username === username) { local = bd; break; }
-            }
+            for (const bd of botPool.values()) { if (bd.username === username) { local = bd; break; } }
             const cfg = {
                 host: pb.host || globalConfig.host,
                 port: pb.port || globalConfig.port,
@@ -309,7 +286,6 @@ async function syncBotsFromPanel() {
     } catch (err) {}
 }
 
-// Paneldeki bot değişikliğini anında fark etmek için son güncelleme zamanını izler
 let lastUpdated = null;
 async function checkPanel() {
     if (!MC_SYNC_URL || !MC_SYNC_KEY) return;
@@ -323,7 +299,6 @@ async function checkPanel() {
     } catch (err) {}
 }
 
-// ---- Logları panele aktar ----
 const lastLogPush = new Map();
 function pushLogToPanel(username, text, type) {
     if (!MC_SYNC_URL || !MC_SYNC_KEY || !username || !text) return;
@@ -334,24 +309,21 @@ function pushLogToPanel(username, text, type) {
     panelRequest('pushLog', { username, text: String(text).slice(0, 500), type }).catch(() => {});
 }
 
-function pushStatusToPanel(botId, status) {
+function pushStatusToPanel(botId) {
     const bd = botPool.get(botId);
-    if (bd && bd.username) pushLogToPanel(bd.username, status, 'status');
+    if (bd && bd.username) pushLogToPanel(bd.username, bd.status, 'status');
 }
 
 function broadcastLog(botId, text, type = 'info') {
     if (!text || typeof text !== 'string' || !text.trim()) return;
     const timestamp = new Date().toLocaleTimeString('tr-TR');
     const logEntry = { botId, text, timestamp, type };
-
     if (botPool.has(botId)) {
         const botData = botPool.get(botId);
         botData.logs.push(logEntry);
         if (botData.logs.length > 20) botData.logs.shift();
     }
     io.emit('bot-log', logEntry);
-
-    // Hataları ve uyarıları panele canlı akıt
     if (type === 'error' || type === 'warn') {
         const bd = botPool.get(botId);
         if (bd && bd.username) pushLogToPanel(bd.username, text, type);
@@ -833,7 +805,7 @@ function cleanupBot(botId, reason) {
     botData.inventory = {}; botData.scoreboard = null; botData.tabList = {}; botData.entities = {};
     botData.pos = { x: 0, y: 0, z: 0 }; botData.isBuying = false; botData.shopStep = 0; botData.isTakingBreak = false;
 
-    pushStatusToPanel(botId, 'Offline');
+    pushStatusToPanel(botId);
 
     const cleanReason = parseMcText(reason) || 'Bağlantı kesildi';
     broadcastLog(botId, `🔴 ${cleanReason}`, 'error');
@@ -863,7 +835,7 @@ function startBotInstance(botId) {
     broadcastLog(botId, `${botData.username} bağlanıyor (${host}:${port})${proxyUrl ? ' [SOCKS5 Proxy Aktif]' : ''}...`, 'info');
     botData.status = 'Connecting';
     io.emit('status-update', { botId, status: 'Connecting', onlineSince: null });
-    pushStatusToPanel(botId, 'Connecting');
+    pushStatusToPanel(botId);
 
     try {
         const clientOptions = {
@@ -903,7 +875,7 @@ function startBotInstance(botId) {
             botData.onlineSince = Date.now();
             broadcastLog(botId, `⚡ ${botData.username} sunucuya girdi!`, 'success');
             io.emit('status-update', { botId, status: 'Online', onlineSince: botData.onlineSince });
-            pushStatusToPanel(botId, 'Online');
+            pushStatusToPanel(botId);
 
             if (botData.keepAliveInterval) clearInterval(botData.keepAliveInterval);
             let currentYaw = 0;
@@ -968,7 +940,7 @@ io.on('connection', (socket) => {
     });
 
     socket.on('start-bot', (botId) => startBotInstance(botId));
-    socket.on('stop-bot', (botId) => stopBotInstance(botId));
+    socket.on('stop-bot', (botId) => stopBotInstance(botId);
     socket.on('start-all', () => startAllBots());
     socket.on('stop-all', () => { for (const id of botPool.keys()) stopBotInstance(id); });
 
@@ -1052,45 +1024,11 @@ async function bootstrap() {
     try { const c = await panelRequest('check'); lastUpdated = c && c.updated ? c.updated : null; } catch {}
 
     server.listen(PORT, '0.0.0.0', () => {
-        console.log(`Panel http://127.0.0.1:${PORT} adresinde güvenli şekilde aktif.`);
+        console.log(`Panel http://127.0.0.1:${PORT} adresinde aktif.`);
         setTimeout(() => startAllBots(true), 5000);
-        setInterval(checkPanel, 2000);                                              // panel düzenlemesini anında uygular
-        setInterval(() => panelRequest('pruneLogs').catch(() => {}), 10 * 60 * 1000); // 24 saatten eski logları temizler
+        setInterval(checkPanel, 2000);
+        setInterval(() => panelRequest('pruneLogs').catch(() => {}), 10 * 60 * 1000);
     });
 }
 
 bootstrap();
-```
-
-### 2) `base44/functions/mcSync/entry.ts` — eklenen aksiyonlar
-
-`saveConfig` bloğundan sonra şu üç aksiyon eklendi (dosya zaten güncellendi):
-
-```ts
-    // Panel düzenlemesini anında fark etmek için son güncelleme zamanı
-    if (action === 'check') {
-      const bots = await base44.asServiceRole.entities.Bot.filter(
-        { site: site.name },
-        { sort: '-updated_date', limit: 1, fields: ['updated_date'] }
-      );
-      const latest = (bots.items || [])[0];
-      return Response.json({ updated: latest ? latest.updated_date : null });
-    }
-
-    // Render'dan gelen logu kalıcı yazar
-    if (action === 'pushLog') {
-      const text = String(body.text || '').slice(0, 500);
-      if (!text) return Response.json({ error: 'text is required' }, { status: 400 });
-      await base44.asServiceRole.entities.BotLog.create({
-        site: site.name, username: String(body.username || ''),
-        text, type: String(body.type || 'info'),
-      });
-      return Response.json({ ok: true });
-    }
-
-    // 24 saatten eski logları temizler
-    if (action === 'pruneLogs') {
-      const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-      await base44.asServiceRole.entities.BotLog.deleteMany({ created_date: { $lt: cutoff } });
-      return Response.json({ ok: true });
-    }

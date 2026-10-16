@@ -1,6 +1,5 @@
 Hayır — o markdown metni (`### 2)` ve sonrası) geçerli JavaScript değil, silmeden deploy edersen yine aynı hatayı verir. En kolayı: `server.js`'in **tüm içeriğini** aşağıdaki temiz kodla değiştir (hiçbir açıklama/başlık kalmayacak):
 
-```js
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');

@@ -1,6 +1,3 @@
-Hayır — o markdown metni (`### 2)` ve sonrası) geçerli JavaScript değil, silmeden deploy edersen yine aynı hatayı verir. En kolayı: `server.js`'in **tüm içeriğini** aşağıdaki temiz kodla değiştir (hiçbir açıklama/başlık kalmayacak):
-
-```js
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
@@ -135,7 +132,6 @@ function saveDataToFile() {
     } catch (err) {}
 }
 
-// ---- Base44 panel senkronizasyonu ----
 const MC_SYNC_URL = (process.env.MC_SYNC_URL || '').trim();
 const MC_SYNC_KEY = (process.env.MC_SYNC_KEY || '').trim();
 
@@ -943,7 +939,7 @@ io.on('connection', (socket) => {
     });
 
     socket.on('start-bot', (botId) => startBotInstance(botId));
-    socket.on('stop-bot', (botId) => stopBotInstance(botId);
+    socket.on('stop-bot', (botId) => stopBotInstance(botId));
     socket.on('start-all', () => startAllBots());
     socket.on('stop-all', () => { for (const id of botPool.keys()) stopBotInstance(id); });
 
@@ -1035,6 +1031,3 @@ async function bootstrap() {
 }
 
 bootstrap();
-```
-
-Tüm içeriği bununla değiştir, kaydet ve deploy et — `###` veya açıklama satırı kalmadığı için hata vermeyecek.

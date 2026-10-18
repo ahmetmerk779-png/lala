@@ -14,8 +14,13 @@ const io = new Server(server);
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
 
-process.on('uncaughtException', (err) => console.error('[Hata Engellendi]:', err.stack || err.message));
-process.on('unhandledRejection', (reason) => console.error('[Söz Rejeksiyonu]:', reason));
+// 🛡️ Web sitesinin ve uygulamanın çökmesini kesin olarak engelleyen global yakalayıcılar
+process.on('uncaughtException', (err) => {
+    console.error('[Çökme Engellendi - Uncaught Exception]:', err.stack || err.message);
+});
+process.on('unhandledRejection', (reason) => {
+    console.error('[Çökme Engellendi - Unhandled Rejection]:', reason);
+});
 
 const DATA_FILE = path.join(__dirname, 'bots.json');
 const botPool = new Map();
@@ -23,7 +28,7 @@ const botPool = new Map();
 let globalConfig = {
     host: '141.95.82.164',
     port: 25565,
-    version: false, // 👈 Otomatik sürüm tespiti için false yapıldı (RegistryEntryHolder hatasını önler)
+    version: '1.20.1', // Protokol kararlılığı için sabit sürüm
     autoPassword: 'deliyizpassword',
     autoSubServerCmd: '/gir asmp',
     autoSubServerDelay: 4,
@@ -103,7 +108,7 @@ function getPublicBot(b) {
     const autoInfo = activeGeneratedProxies.get(b.id) || { region: 'AUTO' };
     return {
         id: b.id, username: b.username, host: b.host || globalConfig.host, port: b.port || globalConfig.port,
-        proxy: b.proxy || `Otomatik [Lokasyon: ${autoInfo.region}]`, version: b.version !== undefined ? b.version : globalConfig.version, autoPassword: b.autoPassword,
+        proxy: b.proxy || `Otomatik [Lokasyon: ${autoInfo.region}]`, version: b.version || globalConfig.version, autoPassword: b.autoPassword,
         autoSubServerCmd: b.autoSubServerCmd, takeBreaks: b.takeBreaks, detectStaff: b.detectStaff,
         autoStart: b.autoStart !== false, status: b.status, onlineSince: b.onlineSince || null,
         pos: b.pos || { x: 0, y: 0, z: 0 }, logs: b.logs, inventory: b.inventory || {}, autoBuyConfig: b.autoBuyConfig
@@ -169,7 +174,7 @@ async function loadBotsFromPanel() {
         const gc = data.globalConfig || {};
         if (gc.host) globalConfig.host = gc.host;
         if (gc.port) globalConfig.port = gc.port;
-        if (gc.version !== undefined) globalConfig.version = gc.version;
+        if (gc.version) globalConfig.version = gc.version;
         if (gc.autoPassword) globalConfig.autoPassword = gc.autoPassword;
         if (gc.autoSubServerCmd) globalConfig.autoSubServerCmd = gc.autoSubServerCmd;
 
@@ -185,7 +190,7 @@ async function loadBotsFromPanel() {
                 host: b.host || globalConfig.host,
                 port: b.port || globalConfig.port,
                 proxy: b.proxy || '',
-                version: b.version !== undefined ? b.version : globalConfig.version,
+                version: b.version || globalConfig.version,
                 autoPassword: b.autoPassword == null ? globalConfig.autoPassword : b.autoPassword,
                 autoSubServerCmd: b.autoSubServerCmd == null ? globalConfig.autoSubServerCmd : b.autoSubServerCmd,
                 takeBreaks: boolOr(b.takeBreaks, true),
@@ -241,7 +246,7 @@ async function syncBotsFromPanel() {
                 host: pb.host || globalConfig.host,
                 port: pb.port || globalConfig.port,
                 proxy: pb.proxy || '',
-                version: pb.version !== undefined ? pb.version : globalConfig.version,
+                version: pb.version || globalConfig.version,
                 autoPassword: pb.autoPassword == null ? globalConfig.autoPassword : pb.autoPassword,
                 autoSubServerCmd: pb.autoSubServerCmd == null ? globalConfig.autoSubServerCmd : pb.autoSubServerCmd,
                 takeBreaks: boolOr(pb.takeBreaks, true),
@@ -555,7 +560,7 @@ function setupCustomPacketHandler(client, botId) {
                     if (Array.isArray(data.items)) {
                         data.items.forEach((item, index) => {
                             if (item && item.present !== false && item.itemId !== undefined && item.itemId !== -1) {
-                                const details = getItemDetails(botData.version !== undefined ? botData.version : globalConfig.version, item.itemId);
+                                const details = getItemDetails(botData.version || globalConfig.version, item.itemId);
                                 botData.inventory[index] = { slot: index, id: item.itemId, name: details ? details.name : 'unknown', displayName: details ? details.displayName : `ID: ${item.itemId}`, count: item.itemCount || 1 };
                             }
                         });
@@ -567,7 +572,7 @@ function setupCustomPacketHandler(client, botId) {
                     if (Array.isArray(data.items)) {
                         data.items.forEach((item, index) => {
                             if (item && item.present !== false && item.itemId !== undefined && item.itemId !== -1) {
-                                const details = getItemDetails(botData.version !== undefined ? botData.version : globalConfig.version, item.itemId);
+                                const details = getItemDetails(botData.version || globalConfig.version, item.itemId);
                                 windowItems[index] = { slot: index, id: item.itemId, name: details ? details.name : 'unknown', displayName: details ? details.displayName : `ID: ${item.itemId}`, count: item.itemCount || 1 };
                             }
                         });
@@ -615,7 +620,7 @@ function setupCustomPacketHandler(client, botId) {
                     const item = data.item;
                     if (!item || item.present === false || item.itemId === undefined || item.itemId === -1) delete botData.inventory[data.slot];
                     else {
-                        const details = getItemDetails(botData.version !== undefined ? botData.version : globalConfig.version, item.itemId);
+                        const details = getItemDetails(botData.version || globalConfig.version, item.itemId);
                         botData.inventory[data.slot] = { slot: data.slot, id: item.itemId, name: details ? details.name : 'unknown', displayName: details ? details.displayName : `ID: ${item.itemId}`, count: item.itemCount || 1 };
                     }
                     broadcastInventory(botId);
@@ -623,7 +628,7 @@ function setupCustomPacketHandler(client, botId) {
                     const item = data.item;
                     if (!item || item.present === false || item.itemId === undefined || item.itemId === -1) delete botData.activeWindowItems[data.slot];
                     else {
-                        const details = getItemDetails(botData.version !== undefined ? botData.version : globalConfig.version, item.itemId);
+                        const details = getItemDetails(botData.version || globalConfig.version, item.itemId);
                         botData.activeWindowItems[data.slot] = { slot: data.slot, id: item.itemId, name: details ? details.name : 'unknown', displayName: details ? details.displayName : `ID: ${item.itemId}`, count: item.itemCount || 1 };
                     }
                     io.emit('bot-window-items', { botId, windowId: data.windowId, items: botData.activeWindowItems });
@@ -841,7 +846,7 @@ function startBotInstance(botId) {
     botData.isManualStop = false;
     const host = botData.host || globalConfig.host;
     const port = Number(botData.port || globalConfig.port);
-    const version = (botData.version !== undefined && botData.version !== '') ? botData.version : globalConfig.version;
+    const version = botData.version || globalConfig.version || '1.20.1';
     const proxyUrl = botData.proxy;
 
     generateAutomaticProxy(botId);
@@ -854,8 +859,13 @@ function startBotInstance(botId) {
 
     try {
         const clientOptions = {
-            host, port, username: botData.username, version,
-            checkTimeoutInterval: 60000, keepAlive: true
+            host,
+            port,
+            username: botData.username,
+            version: version,
+            checkTimeoutInterval: 60000,
+            keepAlive: true,
+            skipValidation: true // 👈 Bilinmeyen veya değişen paket türlerinin uygulamayı çökertmesini engeller
         };
 
         if (proxyUrl && proxyUrl.trim() !== '') {
@@ -864,7 +874,8 @@ function startBotInstance(botId) {
                 const u = new URL(formattedUrl);
                 const socksOptions = {
                     proxy: { host: u.hostname, port: Number(u.port) || 1080, type: 5 },
-                    destination: { host, port }, command: 'connect'
+                    destination: { host, port },
+                    command: 'connect'
                 };
                 if (u.username) {
                     socksOptions.proxy.userId = decodeURIComponent(u.username);
@@ -872,7 +883,10 @@ function startBotInstance(botId) {
                 }
                 clientOptions.connect = (client) => {
                     SocksClient.createConnection(socksOptions, (err, info) => {
-                        if (err) { client.emit('error', err); return; }
+                        if (err) {
+                            if (client) client.emit('error', err);
+                            return;
+                        }
                         client.setSocket(info.socket);
                     });
                 };
@@ -906,9 +920,18 @@ function startBotInstance(botId) {
             }, 2000);
         });
 
+        // 🛡️ Protokol/Paket hatalarının sunucuyu/web sitesini kapatmasını engelleyen hata yakalayıcı
+        client.on('error', (err) => {
+            const errorMsg = err.message || String(err);
+            if (errorMsg.includes('registryEntryHolder') || errorMsg.includes('Deserialization')) {
+                broadcastLog(botId, `⚠️ Protokol uyarısı atlandı: ${errorMsg}`, 'warn');
+            } else {
+                cleanupBot(botId, `Hata: ${errorMsg}`);
+            }
+        });
+
         client.on('kick_disconnect', (packet) => cleanupBot(botId, `Atıldı: ${packet.reason}`));
         client.on('disconnect', (packet) => cleanupBot(botId, `Bağlantı Kesildi: ${packet.reason}`));
-        client.on('error', (err) => cleanupBot(botId, `Hata: ${err.message}`));
         client.on('end', () => cleanupBot(botId, `Bağlantı sonlandı.`));
     } catch (err) {
         cleanupBot(botId, `Başlatılamadı: ${err.message}`);

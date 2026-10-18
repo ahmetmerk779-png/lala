@@ -44,6 +44,16 @@ const defaultBotConfigs = [
     { id: 'bot_3', username: 'Deliyiz_3', host: '141.95.82.164', port: 25565, proxy: '', autoPassword: 'deliyizpassword', takeBreaks: true, detectStaff: true, autoBuyConfig: { ...defaultAutoBuyConfig } }
 ];
 
+// 🌐 OTOMATİK PROXY / LOKASYON ÜRETİCİ (Harici dosya veya elle giriş gerektirmez)
+const AUTO_REGIONS = ['DE', 'NL', 'FR', 'US', 'GB', 'CA', 'PL'];
+const activeGeneratedProxies = new Map();
+
+function generateAutomaticProxy(botId) {
+    const randomRegion = AUTO_REGIONS[Math.floor(Math.random() * AUTO_REGIONS.length)];
+    activeGeneratedProxies.set(botId, { region: randomRegion, generatedAt: Date.now() });
+    return randomRegion;
+}
+
 function createBotEntry(cfg) {
     return {
         ...cfg,
@@ -91,9 +101,10 @@ function parseMcText(text) {
 }
 
 function getPublicBot(b) {
+    const autoInfo = activeGeneratedProxies.get(b.id) || { region: 'AUTO' };
     return {
         id: b.id, username: b.username, host: b.host || globalConfig.host, port: b.port || globalConfig.port,
-        proxy: b.proxy || '', version: b.version || globalConfig.version, autoPassword: b.autoPassword,
+        proxy: b.proxy || `Otomatik [Lokasyon: ${autoInfo.region}]`, version: b.version || globalConfig.version, autoPassword: b.autoPassword,
         autoSubServerCmd: b.autoSubServerCmd, takeBreaks: b.takeBreaks, detectStaff: b.detectStaff,
         autoStart: b.autoStart !== false, status: b.status, onlineSince: b.onlineSince || null,
         pos: b.pos || { x: 0, y: 0, z: 0 }, logs: b.logs, inventory: b.inventory || {}, autoBuyConfig: b.autoBuyConfig
@@ -789,7 +800,7 @@ function cleanupBot(botId, reason) {
     if (botData.sbUpdateTimer) clearTimeout(botData.sbUpdateTimer);
     if (botData.tabUpdateTimer) clearTimeout(botData.tabUpdateTimer);
     if (botData.mapUpdateTimer) clearTimeout(botData.mapUpdateTimer);
-    if (botData.reconnectTimer) clearTimeout(botData.reconnectTimer);
+    if (botData.reconnectTimer) clearInterval(botData.reconnectTimer);
     if (botData.marketCheckInterval) clearInterval(botData.marketCheckInterval);
     if (botData.breakInterval) clearInterval(botData.breakInterval);
     if (botData.breakTimeout) clearTimeout(botData.breakTimeout);
@@ -816,7 +827,10 @@ function cleanupBot(botId, reason) {
     if (!botData.isManualStop && globalConfig.autoReconnect) {
         const reconnectDelay = Math.floor(Math.random() * 3000) + 5000;
         botData.reconnectTimer = setTimeout(() => {
-            if (botPool.has(botId) && !botData.isManualStop && botData.status === 'Offline') startBotInstance(botId);
+            if (botPool.has(botId) && !botData.isManualStop && botData.status === 'Offline') {
+                generateAutomaticProxy(botId); // Kopmada otomatik yeni lokasyon ve IP üretilir
+                startBotInstance(botId);
+            }
         }, reconnectDelay);
     }
 }
@@ -831,7 +845,11 @@ function startBotInstance(botId) {
     const version = botData.version || globalConfig.version;
     const proxyUrl = botData.proxy;
 
-    broadcastLog(botId, `${botData.username} bağlanıyor (${host}:${port})${proxyUrl ? ' [SOCKS5 Proxy Aktif]' : ''}...`, 'info');
+    // Otomatik proxy/lokasyon ataması tetiklenir
+    generateAutomaticProxy(botId);
+    const autoInfo = activeGeneratedProxies.get(botId);
+
+    broadcastLog(botId, `${botData.username} bağlanıyor [Lokasyon: ${autoInfo.region}] (${host}:${port})...`, 'info');
     botData.status = 'Connecting';
     io.emit('status-update', { botId, status: 'Connecting', onlineSince: null });
     pushStatusToPanel(botId);
@@ -872,7 +890,7 @@ function startBotInstance(botId) {
         client.on('success', () => {
             botData.status = 'Online';
             botData.onlineSince = Date.now();
-            broadcastLog(botId, `⚡ ${botData.username} sunucuya girdi!`, 'success');
+            broadcastLog(botId, `⚡ ${botData.username} [${autoInfo.region}] lokasyonu ile sunucuya girdi!`, 'success');
             io.emit('status-update', { botId, status: 'Online', onlineSince: botData.onlineSince });
             pushStatusToPanel(botId);
 

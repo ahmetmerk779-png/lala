@@ -1,0 +1,32 @@
+name: Minecraft Bot Matrix
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 */6 * * *' # Her 6 saatte bir IP tazelemek için otomatik tetiklenme
+
+jobs:
+  start-bots:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      matrix:
+        bot_id: [1, 2, 3] # Panelindeki bot ID sıralaması (Bot sayına göre artırabilirsin)
+
+    steps:
+      - name: Projeyi Kopyala
+        uses: actions/checkout@v4
+
+      - name: Node.js Kurulumu
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Bağımlılıkları Yükle
+        run: npm install
+
+      - name: Botu Başlat (Matrix IP Modu)
+        env:
+          BOT_INDEX: ${{ matrix.bot_id }}
+        run: node server.js

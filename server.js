@@ -23,7 +23,7 @@ const botPool = new Map();
 let globalConfig = {
     host: '141.95.82.164',
     port: 25565,
-    version: '1.20.1',
+    version: false, // 👈 Otomatik sürüm tespiti için false yapıldı (RegistryEntryHolder hatasını önler)
     autoPassword: 'deliyizpassword',
     autoSubServerCmd: '/gir asmp',
     autoSubServerDelay: 4,
@@ -44,7 +44,6 @@ const defaultBotConfigs = [
     { id: 'bot_3', username: 'Deliyiz_3', host: '141.95.82.164', port: 25565, proxy: '', autoPassword: 'deliyizpassword', takeBreaks: true, detectStaff: true, autoBuyConfig: { ...defaultAutoBuyConfig } }
 ];
 
-// 🌐 OTOMATİK PROXY / LOKASYON ÜRETİCİ (Harici dosya veya elle giriş gerektirmez)
 const AUTO_REGIONS = ['DE', 'NL', 'FR', 'US', 'GB', 'CA', 'PL'];
 const activeGeneratedProxies = new Map();
 
@@ -104,7 +103,7 @@ function getPublicBot(b) {
     const autoInfo = activeGeneratedProxies.get(b.id) || { region: 'AUTO' };
     return {
         id: b.id, username: b.username, host: b.host || globalConfig.host, port: b.port || globalConfig.port,
-        proxy: b.proxy || `Otomatik [Lokasyon: ${autoInfo.region}]`, version: b.version || globalConfig.version, autoPassword: b.autoPassword,
+        proxy: b.proxy || `Otomatik [Lokasyon: ${autoInfo.region}]`, version: b.version !== undefined ? b.version : globalConfig.version, autoPassword: b.autoPassword,
         autoSubServerCmd: b.autoSubServerCmd, takeBreaks: b.takeBreaks, detectStaff: b.detectStaff,
         autoStart: b.autoStart !== false, status: b.status, onlineSince: b.onlineSince || null,
         pos: b.pos || { x: 0, y: 0, z: 0 }, logs: b.logs, inventory: b.inventory || {}, autoBuyConfig: b.autoBuyConfig
@@ -170,7 +169,7 @@ async function loadBotsFromPanel() {
         const gc = data.globalConfig || {};
         if (gc.host) globalConfig.host = gc.host;
         if (gc.port) globalConfig.port = gc.port;
-        if (gc.version) globalConfig.version = gc.version;
+        if (gc.version !== undefined) globalConfig.version = gc.version;
         if (gc.autoPassword) globalConfig.autoPassword = gc.autoPassword;
         if (gc.autoSubServerCmd) globalConfig.autoSubServerCmd = gc.autoSubServerCmd;
 
@@ -186,7 +185,7 @@ async function loadBotsFromPanel() {
                 host: b.host || globalConfig.host,
                 port: b.port || globalConfig.port,
                 proxy: b.proxy || '',
-                version: b.version || globalConfig.version,
+                version: b.version !== undefined ? b.version : globalConfig.version,
                 autoPassword: b.autoPassword == null ? globalConfig.autoPassword : b.autoPassword,
                 autoSubServerCmd: b.autoSubServerCmd == null ? globalConfig.autoSubServerCmd : b.autoSubServerCmd,
                 takeBreaks: boolOr(b.takeBreaks, true),
@@ -242,7 +241,7 @@ async function syncBotsFromPanel() {
                 host: pb.host || globalConfig.host,
                 port: pb.port || globalConfig.port,
                 proxy: pb.proxy || '',
-                version: pb.version || globalConfig.version,
+                version: pb.version !== undefined ? pb.version : globalConfig.version,
                 autoPassword: pb.autoPassword == null ? globalConfig.autoPassword : pb.autoPassword,
                 autoSubServerCmd: pb.autoSubServerCmd == null ? globalConfig.autoSubServerCmd : pb.autoSubServerCmd,
                 takeBreaks: boolOr(pb.takeBreaks, true),
@@ -556,7 +555,7 @@ function setupCustomPacketHandler(client, botId) {
                     if (Array.isArray(data.items)) {
                         data.items.forEach((item, index) => {
                             if (item && item.present !== false && item.itemId !== undefined && item.itemId !== -1) {
-                                const details = getItemDetails(botData.version || globalConfig.version, item.itemId);
+                                const details = getItemDetails(botData.version !== undefined ? botData.version : globalConfig.version, item.itemId);
                                 botData.inventory[index] = { slot: index, id: item.itemId, name: details ? details.name : 'unknown', displayName: details ? details.displayName : `ID: ${item.itemId}`, count: item.itemCount || 1 };
                             }
                         });
@@ -568,7 +567,7 @@ function setupCustomPacketHandler(client, botId) {
                     if (Array.isArray(data.items)) {
                         data.items.forEach((item, index) => {
                             if (item && item.present !== false && item.itemId !== undefined && item.itemId !== -1) {
-                                const details = getItemDetails(botData.version || globalConfig.version, item.itemId);
+                                const details = getItemDetails(botData.version !== undefined ? botData.version : globalConfig.version, item.itemId);
                                 windowItems[index] = { slot: index, id: item.itemId, name: details ? details.name : 'unknown', displayName: details ? details.displayName : `ID: ${item.itemId}`, count: item.itemCount || 1 };
                             }
                         });
@@ -616,7 +615,7 @@ function setupCustomPacketHandler(client, botId) {
                     const item = data.item;
                     if (!item || item.present === false || item.itemId === undefined || item.itemId === -1) delete botData.inventory[data.slot];
                     else {
-                        const details = getItemDetails(botData.version || globalConfig.version, item.itemId);
+                        const details = getItemDetails(botData.version !== undefined ? botData.version : globalConfig.version, item.itemId);
                         botData.inventory[data.slot] = { slot: data.slot, id: item.itemId, name: details ? details.name : 'unknown', displayName: details ? details.displayName : `ID: ${item.itemId}`, count: item.itemCount || 1 };
                     }
                     broadcastInventory(botId);
@@ -624,7 +623,7 @@ function setupCustomPacketHandler(client, botId) {
                     const item = data.item;
                     if (!item || item.present === false || item.itemId === undefined || item.itemId === -1) delete botData.activeWindowItems[data.slot];
                     else {
-                        const details = getItemDetails(botData.version || globalConfig.version, item.itemId);
+                        const details = getItemDetails(botData.version !== undefined ? botData.version : globalConfig.version, item.itemId);
                         botData.activeWindowItems[data.slot] = { slot: data.slot, id: item.itemId, name: details ? details.name : 'unknown', displayName: details ? details.displayName : `ID: ${item.itemId}`, count: item.itemCount || 1 };
                     }
                     io.emit('bot-window-items', { botId, windowId: data.windowId, items: botData.activeWindowItems });
@@ -828,7 +827,7 @@ function cleanupBot(botId, reason) {
         const reconnectDelay = Math.floor(Math.random() * 3000) + 5000;
         botData.reconnectTimer = setTimeout(() => {
             if (botPool.has(botId) && !botData.isManualStop && botData.status === 'Offline') {
-                generateAutomaticProxy(botId); // Kopmada otomatik yeni lokasyon ve IP üretilir
+                generateAutomaticProxy(botId);
                 startBotInstance(botId);
             }
         }, reconnectDelay);
@@ -842,10 +841,9 @@ function startBotInstance(botId) {
     botData.isManualStop = false;
     const host = botData.host || globalConfig.host;
     const port = Number(botData.port || globalConfig.port);
-    const version = botData.version || globalConfig.version;
+    const version = (botData.version !== undefined && botData.version !== '') ? botData.version : globalConfig.version;
     const proxyUrl = botData.proxy;
 
-    // Otomatik proxy/lokasyon ataması tetiklenir
     generateAutomaticProxy(botId);
     const autoInfo = activeGeneratedProxies.get(botId);
 
@@ -856,7 +854,7 @@ function startBotInstance(botId) {
 
     try {
         const clientOptions = {
-            host, port, username: botData.username, version: version || '1.20.1',
+            host, port, username: botData.username, version,
             checkTimeoutInterval: 60000, keepAlive: true
         };
 
@@ -1033,9 +1031,6 @@ io.on('connection', (socket) => {
     });
 });
 
-// ==========================================
-// GITHUB ACTIONS MATRIX MODU KONTROLÜ
-// ==========================================
 const matrixBotIndex = process.env.BOT_INDEX;
 
 if (matrixBotIndex) {
@@ -1054,7 +1049,6 @@ if (matrixBotIndex) {
         }
     }, 2000);
 } else {
-    // RENDER / YEREL PANEL MODU
     const PORT = process.env.PORT || 3000;
 
     async function bootstrap() {

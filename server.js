@@ -1033,19 +1033,42 @@ io.on('connection', (socket) => {
     });
 });
 
-const PORT = process.env.PORT || 3000;
+// ==========================================
+// GITHUB ACTIONS MATRIX MODU KONTROLÜ
+// ==========================================
+const matrixBotIndex = process.env.BOT_INDEX;
 
-async function bootstrap() {
+if (matrixBotIndex) {
     loadSavedData();
-    await loadBotsFromPanel();
-    try { const c = await panelRequest('check'); lastUpdated = c && c.updated ? c.updated : null; } catch {}
+    const botKeys = Array.from(botPool.keys());
+    const targetId = botKeys[Number(matrixBotIndex) - 1] || `bot_${matrixBotIndex}`;
+    
+    console.log(`[GitHub Actions Matrix] Matrix Tetiklendi! Index: ${matrixBotIndex}, Hedef Bot ID: ${targetId}`);
+    
+    setTimeout(() => {
+        if (botPool.has(targetId)) {
+            startBotInstance(targetId);
+        } else {
+            const firstId = botKeys[0];
+            if (firstId) startBotInstance(firstId);
+        }
+    }, 2000);
+} else {
+    // RENDER / YEREL PANEL MODU
+    const PORT = process.env.PORT || 3000;
 
-    server.listen(PORT, '0.0.0.0', () => {
-        console.log(`Panel http://127.0.0.1:${PORT} adresinde aktif.`);
-        setTimeout(() => startAllBots(true), 5000);
-        setInterval(checkPanel, 2000);
-        setInterval(() => panelRequest('pruneLogs').catch(() => {}), 10 * 60 * 1000);
-    });
+    async function bootstrap() {
+        loadSavedData();
+        await loadBotsFromPanel();
+        try { const c = await panelRequest('check'); lastUpdated = c && c.updated ? c.updated : null; } catch {}
+
+        server.listen(PORT, '0.0.0.0', () => {
+            console.log(`Panel http://127.0.0.1:${PORT} adresinde aktif.`);
+            setTimeout(() => startAllBots(true), 5000);
+            setInterval(checkPanel, 2000);
+            setInterval(() => panelRequest('pruneLogs').catch(() => {}), 10 * 60 * 1000);
+        });
+    }
+
+    bootstrap();
 }
-
-bootstrap();

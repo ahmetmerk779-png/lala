@@ -14,13 +14,8 @@ const io = new Server(server);
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
 
-// 🛡️ Web sitesinin ve uygulamanın çökmesini kesin olarak engelleyen global yakalayıcılar
-process.on('uncaughtException', (err) => {
-    console.error('[Çökme Engellendi - Uncaught Exception]:', err.stack || err.message);
-});
-process.on('unhandledRejection', (reason) => {
-    console.error('[Çökme Engellendi - Unhandled Rejection]:', reason);
-});
+process.on('uncaughtException', (err) => console.error('[Hata Engellendi]:', err.stack || err.message));
+process.on('unhandledRejection', (reason) => console.error('[Söz Rejeksiyonu]:', reason));
 
 const DATA_FILE = path.join(__dirname, 'bots.json');
 const botPool = new Map();
@@ -28,7 +23,7 @@ const botPool = new Map();
 let globalConfig = {
     host: '141.95.82.164',
     port: 25565,
-    version: '1.20.1', // Protokol kararlılığı için sabit sürüm
+    version: '1.20.1',
     autoPassword: 'deliyizpassword',
     autoSubServerCmd: '/gir asmp',
     autoSubServerDelay: 4,
@@ -49,6 +44,7 @@ const defaultBotConfigs = [
     { id: 'bot_3', username: 'Deliyiz_3', host: '141.95.82.164', port: 25565, proxy: '', autoPassword: 'deliyizpassword', takeBreaks: true, detectStaff: true, autoBuyConfig: { ...defaultAutoBuyConfig } }
 ];
 
+// 🌐 OTOMATİK PROXY / LOKASYON ÜRETİCİ (Harici dosya veya elle giriş gerektirmez)
 const AUTO_REGIONS = ['DE', 'NL', 'FR', 'US', 'GB', 'CA', 'PL'];
 const activeGeneratedProxies = new Map();
 
@@ -829,10 +825,11 @@ function cleanupBot(botId, reason) {
     io.emit('bot-map-update', { botId, pos: { x: 0, y: 0, z: 0 }, entities: [] });
 
     if (!botData.isManualStop && globalConfig.autoReconnect) {
-        const reconnectDelay = Math.floor(Math.random() * 3000) + 5000;
+        botData.failCount = (botData.failCount || 0) + 1;
+        const reconnectDelay = Math.min(5000 * Math.pow(2, Math.min(botData.failCount - 1, 5)), 120000) + Math.floor(Math.random() * 3000);
         botData.reconnectTimer = setTimeout(() => {
             if (botPool.has(botId) && !botData.isManualStop && botData.status === 'Offline') {
-                generateAutomaticProxy(botId);
+                generateAutomaticProxy(botId); // Kopmada otomatik yeni lokasyon ve IP üretilir
                 startBotInstance(botId);
             }
         }, reconnectDelay);
@@ -846,9 +843,10 @@ function startBotInstance(botId) {
     botData.isManualStop = false;
     const host = botData.host || globalConfig.host;
     const port = Number(botData.port || globalConfig.port);
-    const version = botData.version || globalConfig.version || '1.20.1';
+    const version = botData.version || globalConfig.version;
     const proxyUrl = botData.proxy;
 
+    // Otomatik proxy/lokasyon ataması tetiklenir
     generateAutomaticProxy(botId);
     const autoInfo = activeGeneratedProxies.get(botId);
 
@@ -859,13 +857,8 @@ function startBotInstance(botId) {
 
     try {
         const clientOptions = {
-            host,
-            port,
-            username: botData.username,
-            version: version,
-            checkTimeoutInterval: 60000,
-            keepAlive: true,
-            skipValidation: true // 👈 Bilinmeyen veya değişen paket türlerinin uygulamayı çökertmesini engeller
+            host, port, username: botData.username, version: version || '1.20.1',
+            checkTimeoutInterval: 60000, keepAlive: true
         };
 
         if (proxyUrl && proxyUrl.trim() !== '') {
@@ -874,8 +867,7 @@ function startBotInstance(botId) {
                 const u = new URL(formattedUrl);
                 const socksOptions = {
                     proxy: { host: u.hostname, port: Number(u.port) || 1080, type: 5 },
-                    destination: { host, port },
-                    command: 'connect'
+                    destination: { host, port }, command: 'connect'
                 };
                 if (u.username) {
                     socksOptions.proxy.userId = decodeURIComponent(u.username);
@@ -883,10 +875,7 @@ function startBotInstance(botId) {
                 }
                 clientOptions.connect = (client) => {
                     SocksClient.createConnection(socksOptions, (err, info) => {
-                        if (err) {
-                            if (client) client.emit('error', err);
-                            return;
-                        }
+                        if (err) { client.emit('error', err); return; }
                         client.setSocket(info.socket);
                     });
                 };
@@ -900,6 +889,7 @@ function startBotInstance(botId) {
         setupCustomPacketHandler(client, botId);
 
         client.on('success', () => {
+            botData.failCount = 0;
             botData.status = 'Online';
             botData.onlineSince = Date.now();
             broadcastLog(botId, `⚡ ${botData.username} [${autoInfo.region}] lokasyonu ile sunucuya girdi!`, 'success');
@@ -920,20 +910,17 @@ function startBotInstance(botId) {
             }, 2000);
         });
 
-        // 🛡️ Protokol/Paket hatalarının sunucuyu/web sitesini kapatmasını engelleyen hata yakalayıcı
-        client.on('error', (err) => {
-            const errorMsg = err.message || String(err);
-            if (errorMsg.includes('registryEntryHolder') || errorMsg.includes('Deserialization')) {
-                broadcastLog(botId, `⚠️ Protokol uyarısı atlandı: ${errorMsg}`, 'warn');
-            } else {
-                cleanupBot(botId, `Hata: ${errorMsg}`);
-            }
-        });
-
         client.on('kick_disconnect', (packet) => cleanupBot(botId, `Atıldı: ${packet.reason}`));
         client.on('disconnect', (packet) => cleanupBot(botId, `Bağlantı Kesildi: ${packet.reason}`));
+        client.on('error', (err) => cleanupBot(botId, `Hata: ${err.message}`));
         client.on('end', () => cleanupBot(botId, `Bağlantı sonlandı.`));
     } catch (err) {
+        const fatal = /unknown parameter type|registryEntryHolder|unsupported protocol|not supported|Unknown (switch|type)/i.test(err.message || '');
+        if (fatal) {
+            // Kalıcı hata: tekrar denemek sonsuz döngü yaratır
+            botData.isManualStop = true;
+            broadcastLog(botId, `⚠️ Protokol/sürüm hatası. "npm install minecraft-protocol@latest minecraft-data@latest" çalıştırın ya da bot ayarlarından sürümü (örn. 1.20.1) elle seçin. Otomatik yeniden deneme durduruldu.`, 'error');
+        }
         cleanupBot(botId, `Başlatılamadı: ${err.message}`);
     }
 }
@@ -1054,6 +1041,9 @@ io.on('connection', (socket) => {
     });
 });
 
+// ==========================================
+// GITHUB ACTIONS MATRIX MODU KONTROLÜ
+// ==========================================
 const matrixBotIndex = process.env.BOT_INDEX;
 
 if (matrixBotIndex) {
@@ -1072,6 +1062,7 @@ if (matrixBotIndex) {
         }
     }, 2000);
 } else {
+    // RENDER / YEREL PANEL MODU
     const PORT = process.env.PORT || 3000;
 
     async function bootstrap() {

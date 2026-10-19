@@ -1,6 +1,6 @@
 {
   "name": "mc-bot-manager",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Minecraft Bot Control Dashboard",
   "main": "server.js",
   "scripts": {
@@ -17,5 +17,9 @@
     "socket.io": "^4.7.5",
     "socks": "^2.8.3",
     "socks-proxy-agent": "^8.0.3"
+  },
+  "resolutions": {
+    "minecraft-data": "3.117.0",
+    "minecraft-protocol": "1.68.0"
   }
 }

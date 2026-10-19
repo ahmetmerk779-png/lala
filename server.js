@@ -70,6 +70,12 @@ function createBotEntry(cfg) {
     };
 }
 
+try {
+    const pv = require('minecraft-protocol/package.json').version;
+    const dv = require('minecraft-data/package.json').version;
+    console.log(`📦 Kurulu sürümler -> minecraft-protocol: ${pv} | minecraft-data: ${dv}`);
+} catch (e) {}
+
 const mcDataCache = {};
 function getMcData(version) {
     const verStr = (version || '1.20.1').toString().trim();
@@ -124,7 +130,8 @@ function loadSavedData() {
         if (!rawData) { initDefaultBots(); return; }
         const parsed = JSON.parse(rawData);
         if (parsed.globalConfig) globalConfig = { ...globalConfig, ...parsed.globalConfig };
-        if (Array.isArray(parsed.bots) && parsed.bots.length > 0) {
+        if (Array.isArray(parsed.bots)) {
+            // Liste boş olsa bile varsayılan botları geri getirme (silinen botlar geri gelmesin)
             botPool.clear();
             parsed.bots.forEach(b => botPool.set(b.id, createBotEntry(b)));
         } else initDefaultBots();
@@ -850,7 +857,9 @@ function startBotInstance(botId) {
     generateAutomaticProxy(botId);
     const autoInfo = activeGeneratedProxies.get(botId);
 
-    broadcastLog(botId, `${botData.username} bağlanıyor [Lokasyon: ${autoInfo.region}] (${host}:${port})...`, 'info');
+    let pvInfo = '?';
+    try { pvInfo = require('minecraft-protocol/package.json').version; } catch (e) {}
+    broadcastLog(botId, `${botData.username} bağlanıyor [Lokasyon: ${autoInfo.region}] (${host}:${port}) | MC sürümü: ${version || '1.20.1'} | protocol lib: ${pvInfo}`, 'info');
     botData.status = 'Connecting';
     io.emit('status-update', { botId, status: 'Connecting', onlineSince: null });
     pushStatusToPanel(botId);

@@ -131,7 +131,6 @@ function loadSavedData() {
         const parsed = JSON.parse(rawData);
         if (parsed.globalConfig) globalConfig = { ...globalConfig, ...parsed.globalConfig };
         if (Array.isArray(parsed.bots)) {
-            // Liste boş olsa bile varsayılan botları geri getirme (silinen botlar geri gelmesin)
             botPool.clear();
             parsed.bots.forEach(b => botPool.set(b.id, createBotEntry(b)));
         } else initDefaultBots();
@@ -804,9 +803,9 @@ function cleanupBot(botId, reason) {
     if (botData.subCmdInterval) clearInterval(botData.subCmdInterval);
     if (botData.afkTimer) clearTimeout(botData.afkTimer);
     if (botData.afkRetryTimer) clearTimeout(botData.afkRetryTimer);
-    if (botData.sbUpdateTimer) clearTimeout(botData.sbUpdateTimer);
-    if (botData.tabUpdateTimer) clearTimeout(botData.tabUpdateTimer);
-    if (botData.mapUpdateTimer) clearTimeout(botData.mapUpdateTimer);
+    if (botData.sbUpdateTimer) clearInterval(botData.sbUpdateTimer);
+    if (botData.tabUpdateTimer) clearInterval(botData.tabUpdateTimer);
+    if (botData.mapUpdateTimer) clearInterval(botData.mapUpdateTimer);
     if (botData.reconnectTimer) clearInterval(botData.reconnectTimer);
     if (botData.marketCheckInterval) clearInterval(botData.marketCheckInterval);
     if (botData.breakInterval) clearInterval(botData.breakInterval);
@@ -836,7 +835,7 @@ function cleanupBot(botId, reason) {
         const reconnectDelay = Math.min(5000 * Math.pow(2, Math.min(botData.failCount - 1, 5)), 120000) + Math.floor(Math.random() * 3000);
         botData.reconnectTimer = setTimeout(() => {
             if (botPool.has(botId) && !botData.isManualStop && botData.status === 'Offline') {
-                generateAutomaticProxy(botId); // Kopmada otomatik yeni lokasyon ve IP üretilir
+                generateAutomaticProxy(botId);
                 startBotInstance(botId);
             }
         }, reconnectDelay);
@@ -853,7 +852,6 @@ function startBotInstance(botId) {
     const version = botData.version || globalConfig.version;
     const proxyUrl = botData.proxy;
 
-    // Otomatik proxy/lokasyon ataması tetiklenir
     generateAutomaticProxy(botId);
     const autoInfo = activeGeneratedProxies.get(botId);
 
@@ -926,7 +924,6 @@ function startBotInstance(botId) {
     } catch (err) {
         const fatal = /unknown parameter type|registryEntryHolder|unsupported protocol|not supported|Unknown (switch|type)/i.test(err.message || '');
         if (fatal) {
-            // Kalıcı hata: tekrar denemek sonsuz döngü yaratır
             botData.isManualStop = true;
             broadcastLog(botId, `⚠️ Protokol/sürüm hatası. "npm install minecraft-protocol@latest minecraft-data@latest" çalıştırın ya da bot ayarlarından sürümü (örn. 1.20.1) elle seçin. Otomatik yeniden deneme durduruldu.`, 'error');
         }
@@ -1051,7 +1048,7 @@ io.on('connection', (socket) => {
 });
 
 // ==========================================
-// GITHUB ACTIONS MATRIX MODU KONTROLÜ
+// GITHUB ACTIONS MATRIX MODU VEYA ABASHTAN PORT DÜZELTMELİ BAŞLANGIÇ
 // ==========================================
 const matrixBotIndex = process.env.BOT_INDEX;
 
@@ -1071,21 +1068,24 @@ if (matrixBotIndex) {
         }
     }, 2000);
 } else {
-    // RENDER / YEREL PANEL MODU
+    // ABASHTAN / RENDER / YEREL PANEL MODU
     const PORT = process.env.PORT || 3000;
 
-    async function bootstrap() {
+    // 1. KRİTİK DÜZELTME: Abasthan'ın zaman aşımına düşmemesi için portu HEMEN açıyoruz
+    server.listen(PORT, '0.0.0.0', () => {
+        console.log(`🚀 Web sunucusu http://127.0.0.1:${PORT} adresinde anında aktif edildi.`);
+        
+        // 2. ADIM: Botlar ve arka plan servisleri eşzamanlı olarak yükleniyor
+        bootstrapBackground();
+    });
+
+    async function bootstrapBackground() {
         loadSavedData();
         await loadBotsFromPanel();
         try { const c = await panelRequest('check'); lastUpdated = c && c.updated ? c.updated : null; } catch {}
 
-        server.listen(PORT, '0.0.0.0', () => {
-            console.log(`Panel http://127.0.0.1:${PORT} adresinde aktif.`);
-            setTimeout(() => startAllBots(true), 5000);
-            setInterval(checkPanel, 2000);
-            setInterval(() => panelRequest('pruneLogs').catch(() => {}), 10 * 60 * 1000);
-        });
+        setTimeout(() => startAllBots(true), 5000);
+        setInterval(checkPanel, 2000);
+        setInterval(() => panelRequest('pruneLogs').catch(() => {}), 10 * 60 * 1000);
     }
-
-    bootstrap();
 }

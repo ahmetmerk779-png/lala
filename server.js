@@ -5,7 +5,7 @@ const mc = require('minecraft-protocol');
 const mcData = require('minecraft-data');
 const { SocksClient } = require('socks');
 const path = require('path');
-const fs = require('fs');
+const mongoose = require('mongoose');
 
 const app = express();
 const server = http.createServer(app);
@@ -17,7 +17,50 @@ app.use(express.json());
 process.on('uncaughtException', (err) => console.error('[Hata Engellendi]:', err.stack || err.message));
 process.on('unhandledRejection', (reason) => console.error('[Söz Rejeksiyonu]:', reason));
 
-const DATA_FILE = path.join(__dirname, 'bots.json');
+// --- MONGODB BAĞLANTISI VE ŞEMALARI ---
+const MONGODB_URI = process.env.MONGODB_URI;
+
+if (!MONGODB_URI) {
+    console.error('❌ MONGODB_URI çevre değişkeni tanımlı değil! Render environment ayarlarını kontrol edin.');
+}
+
+mongoose.connect(MONGODB_URI, {
+    useNewUrlParser: true,
+    useUnifiedTopology: true
+}).then(() => {
+    console.log('✅ MongoDB veritabanına başarıyla bağlanıldı.');
+}).catch(err => {
+    console.error('❌ MongoDB bağlantı hatası:', err.message);
+});
+
+const BotConfigSchema = new mongoose.Schema({
+    id: { type: String, required: true, unique: true },
+    username: String,
+    host: String,
+    port: Number,
+    proxy: String,
+    version: String,
+    autoPassword: String,
+    autoSubServerCmd: String,
+    takeBreaks: Boolean,
+    detectStaff: Boolean,
+    autoStart: Boolean,
+    autoBuyConfig: Object
+});
+
+const GlobalConfigSchema = new mongoose.Schema({
+    key: { type: String, default: 'main' },
+    host: String,
+    port: Number,
+    version: String,
+    autoPassword: String,
+    autoSubServerCmd: String
+});
+
+const BotModel = mongoose.model('BotConfig', BotConfigSchema);
+const GlobalModel = mongoose.model('GlobalConfig', GlobalConfigSchema);
+// ---------------------------------------
+
 const botPool = new Map();
 
 let globalConfig = {
@@ -117,217 +160,63 @@ function getPublicBot(b) {
     };
 }
 
-function initDefaultBots() {
+async function initDefaultBots() {
     botPool.clear();
     defaultBotConfigs.forEach(cfg => botPool.set(cfg.id, createBotEntry(cfg)));
-    saveDataToFile();
+    await saveDataToDb();
 }
 
-function loadSavedData() {
-    if (!fs.existsSync(DATA_FILE)) { initDefaultBots(); return; }
+async function loadSavedData() {
     try {
-        const rawData = fs.readFileSync(DATA_FILE, 'utf8').trim();
-        if (!rawData) { initDefaultBots(); return; }
-        const parsed = JSON.parse(rawData);
-        if (parsed.globalConfig) globalConfig = { ...globalConfig, ...parsed.globalConfig };
-        if (Array.isArray(parsed.bots)) {
+        const savedGlobal = await GlobalModel.findOne({ key: 'main' });
+        if (savedGlobal) {
+            globalConfig = {
+                ...globalConfig,
+                host: savedGlobal.host || globalConfig.host,
+                port: savedGlobal.port || globalConfig.port,
+                version: savedGlobal.version || globalConfig.version,
+                autoPassword: savedGlobal.autoPassword || globalConfig.autoPassword,
+                autoSubServerCmd: savedGlobal.autoSubServerCmd || globalConfig.autoSubServerCmd
+            };
+        }
+
+        const savedBots = await BotModel.find({});
+        if (savedBots && savedBots.length > 0) {
             botPool.clear();
-            parsed.bots.forEach(b => botPool.set(b.id, createBotEntry(b)));
-        } else initDefaultBots();
-    } catch (err) { initDefaultBots(); }
-}
-
-function saveDataToFile() {
-    try {
-        const botList = Array.from(botPool.values()).map(b => ({
-            id: b.id, username: b.username, host: b.host, port: b.port, proxy: b.proxy || '',
-            version: b.version, autoPassword: b.autoPassword, autoSubServerCmd: b.autoSubServerCmd,
-            autoSubServerDelay: b.autoSubServerDelay, takeBreaks: b.takeBreaks, detectStaff: b.detectStaff,
-            autoStart: b.autoStart !== false, autoBuyConfig: b.autoBuyConfig
-        }));
-        fs.writeFileSync(DATA_FILE, JSON.stringify({ globalConfig, bots: botList }, null, 2), 'utf8');
-    } catch (err) {}
-}
-
-const MC_SYNC_URL = (process.env.MC_SYNC_URL || '').trim();
-const MC_SYNC_KEY = (process.env.MC_SYNC_KEY || '').trim();
-
-function boolOr(value, fallback) { return typeof value === 'boolean' ? value : fallback; }
-
-async function panelRequest(action, extra = {}) {
-    if (!MC_SYNC_URL || !MC_SYNC_KEY) return null;
-    const res = await fetch(MC_SYNC_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-sync-key': MC_SYNC_KEY },
-        body: JSON.stringify({ action, key: MC_SYNC_KEY, ...extra })
-    });
-    if (!res.ok) throw new Error(`Panel yanıtı: ${res.status}`);
-    return await res.json();
-}
-
-async function loadBotsFromPanel() {
-    if (!MC_SYNC_URL || !MC_SYNC_KEY) {
-        console.log('⚠️ MC_SYNC_URL / MC_SYNC_KEY tanımlı değil — yerel bots.json kullanılıyor.');
-        return false;
-    }
-    try {
-        const data = await panelRequest('pull');
-        const bots = Array.isArray(data.bots) ? data.bots : [];
-        const gc = data.globalConfig || {};
-        if (gc.host) globalConfig.host = gc.host;
-        if (gc.port) globalConfig.port = gc.port;
-        if (gc.version) globalConfig.version = gc.version;
-        if (gc.autoPassword) globalConfig.autoPassword = gc.autoPassword;
-        if (gc.autoSubServerCmd) globalConfig.autoSubServerCmd = gc.autoSubServerCmd;
-
-        if (bots.length === 0) {
-            console.log(`ℹ️ Panelde "${data.site}" sitesine kayıtlı bot yok — mevcut liste korunuyor.`);
-            return false;
+            savedBots.forEach(b => botPool.set(b.id, createBotEntry(b.toObject())));
+            console.log(`📥 MongoDB'den ${botPool.size} bot yüklendi.`);
+        } else {
+            await initDefaultBots();
         }
-        botPool.clear();
-        bots.forEach((b, index) => {
-            const cfg = {
-                id: b.id || `panel_bot_${index + 1}`,
-                username: b.username,
-                host: b.host || globalConfig.host,
-                port: b.port || globalConfig.port,
-                proxy: b.proxy || '',
-                version: b.version || globalConfig.version,
-                autoPassword: b.autoPassword == null ? globalConfig.autoPassword : b.autoPassword,
-                autoSubServerCmd: b.autoSubServerCmd == null ? globalConfig.autoSubServerCmd : b.autoSubServerCmd,
-                takeBreaks: boolOr(b.takeBreaks, true),
-                detectStaff: boolOr(b.detectStaff, true),
-                autoStart: b.autoStart !== false,
-                fromPanel: true,
-                autoBuyConfig: b.autoBuyConfig || { ...defaultAutoBuyConfig }
-            };
-            if (!cfg.username) return;
-            botPool.set(cfg.id, createBotEntry(cfg));
-        });
-        saveDataToFile();
-        console.log(`✅ Panelden ${botPool.size} bot geri kuruldu (site: ${data.site}).`);
-        return true;
     } catch (err) {
-        console.log('⚠️ Panelden bot listesi alınamadı, yerel bots.json kullanılıyor:', err.message);
-        return false;
+        console.log('⚠️ MongoDB\'den yüklenirken hata oluştu, varsayılanlar kullanılıyor:', err.message);
+        await initDefaultBots();
     }
 }
 
-async function pushBotToPanel(bot) {
-    if (!bot || !bot.username) return false;
+async function saveDataToDb() {
     try {
-        await panelRequest('upsertBot', {
-            bot: {
-                username: bot.username, host: bot.host, port: bot.port, proxy: bot.proxy || '',
-                version: bot.version, autoPassword: bot.autoPassword, autoSubServerCmd: bot.autoSubServerCmd,
-                takeBreaks: bot.takeBreaks, detectStaff: bot.detectStaff, autoStart: bot.autoStart !== false,
-                autoBuyConfig: bot.autoBuyConfig
-            }
-        });
-        return true;
-    } catch (err) { return false; }
-}
+        await GlobalModel.findOneAndUpdate(
+            { key: 'main' },
+            { key: 'main', ...globalConfig },
+            { upsert: true, new: true }
+        );
 
-async function removeBotFromPanel(username) {
-    if (!username) return false;
-    try { await panelRequest('deleteBot', { username }); return true; } catch (err) { return false; }
-}
-
-async function syncBotsFromPanel() {
-    if (!MC_SYNC_URL || !MC_SYNC_KEY) return;
-    try {
-        const data = await panelRequest('pull');
-        const panelBots = Array.isArray(data.bots) ? data.bots : [];
-        const panelByUser = new Map();
-        panelBots.forEach(b => { if (b.username) panelByUser.set(b.username, b); });
-
-        for (const [username, pb] of panelByUser) {
-            let local = null;
-            for (const bd of botPool.values()) { if (bd.username === username) { local = bd; break; } }
-            const cfg = {
-                host: pb.host || globalConfig.host,
-                port: pb.port || globalConfig.port,
-                proxy: pb.proxy || '',
-                version: pb.version || globalConfig.version,
-                autoPassword: pb.autoPassword == null ? globalConfig.autoPassword : pb.autoPassword,
-                autoSubServerCmd: pb.autoSubServerCmd == null ? globalConfig.autoSubServerCmd : pb.autoSubServerCmd,
-                takeBreaks: boolOr(pb.takeBreaks, true),
-                detectStaff: boolOr(pb.detectStaff, true),
-                autoStart: pb.autoStart !== false,
-                autoBuyConfig: pb.autoBuyConfig || (local ? local.autoBuyConfig : { ...defaultAutoBuyConfig })
-            };
-
-            if (local) {
-                local.fromPanel = true;
-                const connFields = ['host', 'port', 'version', 'proxy', 'autoPassword', 'autoSubServerCmd'];
-                const connChanged = connFields.some(f => String(local[f] ?? '') !== String(cfg[f] ?? ''));
-                const softChanged = boolOr(local.takeBreaks, true) !== cfg.takeBreaks
-                    || boolOr(local.detectStaff, true) !== cfg.detectStaff
-                    || (local.autoStart !== false) !== cfg.autoStart
-                    || JSON.stringify(local.autoBuyConfig || {}) !== JSON.stringify(cfg.autoBuyConfig || {});
-                if (!connChanged && !softChanged) continue;
-
-                Object.assign(local, cfg);
-                saveDataToFile();
-                io.emit('bot-updated', { botId: local.id, config: getPublicBot(local) });
-                broadcastLog(local.id, `🔄 Panel güncellemesi uygulandı: ${username}`, 'info');
-
-                const wasRunning = local.status === 'Online' || local.status === 'Connecting';
-                if (wasRunning && connChanged) {
-                    broadcastLog(local.id, '🔁 Sunucu bilgileri değişti, yeniden bağlanılıyor...', 'warn');
-                    local.isManualStop = true;
-                    stopBotInstance(local.id);
-                    local.isManualStop = false;
-                    if (local.autoStart !== false) setTimeout(() => startBotInstance(local.id), 1500);
-                }
-            } else {
-                const newBot = createBotEntry({ id: pb.id || `panel_${Date.now()}`, username, fromPanel: true, ...cfg });
-                botPool.set(newBot.id, newBot);
-                saveDataToFile();
-                io.emit('bot-added', getPublicBot(newBot));
-                broadcastLog(newBot.id, `➕ Panelde yeni bot: ${username}`, 'info');
-                if (newBot.autoStart !== false) setTimeout(() => startBotInstance(newBot.id), 2000);
-            }
+        for (const [id, b] of botPool.entries()) {
+            await BotModel.findOneAndUpdate(
+                { id: id },
+                {
+                    id: b.id, username: b.username, host: b.host, port: b.port, proxy: b.proxy || '',
+                    version: b.version, autoPassword: b.autoPassword, autoSubServerCmd: b.autoSubServerCmd,
+                    takeBreaks: b.takeBreaks, detectStaff: b.detectStaff, autoStart: b.autoStart !== false,
+                    autoBuyConfig: b.autoBuyConfig
+                },
+                { upsert: true, new: true }
+            );
         }
-
-        for (const [id, bd] of Array.from(botPool.entries())) {
-            if (bd.fromPanel && !panelByUser.has(bd.username)) {
-                broadcastLog(id, `🗑️ Panelden silinmiş, kaldırılıyor: ${bd.username}`, 'warn');
-                stopBotInstance(id);
-                botPool.delete(id);
-                saveDataToFile();
-                io.emit('bot-deleted', id);
-            }
-        }
-    } catch (err) {}
-}
-
-let lastUpdated = null;
-async function checkPanel() {
-    if (!MC_SYNC_URL || !MC_SYNC_KEY) return;
-    try {
-        const data = await panelRequest('check');
-        const updated = data && data.updated ? data.updated : null;
-        if (updated !== lastUpdated) {
-            lastUpdated = updated;
-            await syncBotsFromPanel();
-        }
-    } catch (err) {}
-}
-
-const lastLogPush = new Map();
-function pushLogToPanel(username, text, type) {
-    if (!MC_SYNC_URL || !MC_SYNC_KEY || !username || !text) return;
-    const key = username + '|' + text;
-    const now = Date.now();
-    if (lastLogPush.has(key) && now - lastLogPush.get(key) < 5000) return;
-    lastLogPush.set(key, now);
-    panelRequest('pushLog', { username, text: String(text).slice(0, 500), type }).catch(() => {});
-}
-
-function pushStatusToPanel(botId) {
-    const bd = botPool.get(botId);
-    if (bd && bd.username) pushLogToPanel(bd.username, bd.status, 'status');
+    } catch (err) {
+        console.error('❌ MongoDB\'ye kaydetme hatası:', err.message);
+    }
 }
 
 function broadcastLog(botId, text, type = 'info') {
@@ -340,10 +229,6 @@ function broadcastLog(botId, text, type = 'info') {
         if (botData.logs.length > 20) botData.logs.shift();
     }
     io.emit('bot-log', logEntry);
-    if (type === 'error' || type === 'warn') {
-        const bd = botPool.get(botId);
-        if (bd && bd.username) pushLogToPanel(bd.username, text, type);
-    }
 }
 
 function broadcastInventory(botId) {
@@ -525,11 +410,22 @@ function setupCustomPacketHandler(client, botId) {
     botData.triggerAfk = triggerAfkWithRetry;
 
     client.on('packet', (data, meta) => {
+        if (!meta || !meta.name) return;
+
+        // KEEP_ALIVE PAKET YANITLAYICISI (Timeout Engelleyici)
+        if (meta.name === 'keep_alive') {
+            try {
+                client.write('keep_alive', { 
+                    keepAliveId: data.keepAliveId !== undefined ? data.keepAliveId : data.id 
+                });
+            } catch (e) {
+                try { client.write('keep_alive', data); } catch (err) {}
+            }
+            return;
+        }
+
         if (meta.state !== 'play') return;
         switch (meta.name) {
-            case 'keep_alive':
-                try { client.write('keep_alive', { keepAliveId: data.keepAliveId }); } catch (e) {}
-                break;
             case 'update_health':
                 if (data.health <= 0) {
                     broadcastLog(botId, '☠️ Bot öldü! Otomatik Respawn gönderiliyor...', 'error');
@@ -548,7 +444,6 @@ function setupCustomPacketHandler(client, botId) {
                         sendChat(client, subCmd);
                         broadcastLog(botId, `🚀 Alt sunucu komutu tekrar gönderildi: ${subCmd}`, 'success');
                         
-                        // İSTEDİĞİNİZ SETINTERVAL DÖNGÜSÜ KORUNDU
                         if (!botData.subCmdInterval) {
                             botData.subCmdInterval = setInterval(() => {
                                 if (botData.client && botData.status === 'Online') {
@@ -816,10 +711,10 @@ function cleanupBot(botId, reason) {
     if (botData.subCmdInterval) clearInterval(botData.subCmdInterval);
     if (botData.afkTimer) clearTimeout(botData.afkTimer);
     if (botData.afkRetryTimer) clearTimeout(botData.afkRetryTimer);
-    if (botData.sbUpdateTimer) clearInterval(botData.sbUpdateTimer);
-    if (botData.tabUpdateTimer) clearInterval(botData.tabUpdateTimer);
-    if (botData.mapUpdateTimer) clearInterval(botData.mapUpdateTimer);
-    if (botData.reconnectTimer) clearInterval(botData.reconnectTimer);
+    if (botData.sbUpdateTimer) clearTimeout(botData.sbUpdateTimer);
+    if (botData.tabUpdateTimer) clearTimeout(botData.tabUpdateTimer);
+    if (botData.mapUpdateTimer) clearTimeout(botData.mapUpdateTimer);
+    if (botData.reconnectTimer) clearTimeout(botData.reconnectTimer);
     if (botData.marketCheckInterval) clearInterval(botData.marketCheckInterval);
     if (botData.breakInterval) clearInterval(botData.breakInterval);
     if (botData.breakTimeout) clearTimeout(botData.breakTimeout);
@@ -833,8 +728,6 @@ function cleanupBot(botId, reason) {
     botData.onlineSince = null;
     botData.inventory = {}; botData.scoreboard = null; botData.tabList = {}; botData.entities = {};
     botData.pos = { x: 0, y: 0, z: 0 }; botData.isBuying = false; botData.shopStep = 0; botData.isTakingBreak = false;
-
-    pushStatusToPanel(botId);
 
     const cleanReason = parseMcText(reason) || 'Bağlantı kesildi';
     broadcastLog(botId, `🔴 ${cleanReason}`, 'error');
@@ -873,12 +766,12 @@ function startBotInstance(botId) {
     broadcastLog(botId, `${botData.username} bağlanıyor [Lokasyon: ${autoInfo.region}] (${host}:${port}) | MC sürümü: ${version || '1.20.1'} | protocol lib: ${pvInfo}`, 'info');
     botData.status = 'Connecting';
     io.emit('status-update', { botId, status: 'Connecting', onlineSince: null });
-    pushStatusToPanel(botId);
 
     try {
         const clientOptions = {
             host, port, username: botData.username, version: version || '1.20.1',
-            checkTimeoutInterval: 60000, keepAlive: true
+            checkTimeoutInterval: 120000, // ZAMAN AŞIMI SÜRESİ 120s'ye YÜKSELTİLDİ
+            keepAlive: true
         };
 
         if (proxyUrl && proxyUrl.trim() !== '') {
@@ -914,7 +807,6 @@ function startBotInstance(botId) {
             botData.onlineSince = Date.now();
             broadcastLog(botId, `⚡ ${botData.username} [${autoInfo.region}] lokasyonu ile sunucuya girdi!`, 'success');
             io.emit('status-update', { botId, status: 'Online', onlineSince: botData.onlineSince });
-            pushStatusToPanel(botId);
 
             if (botData.keepAliveInterval) clearInterval(botData.keepAliveInterval);
             let currentYaw = 0;
@@ -962,20 +854,19 @@ io.on('connection', (socket) => {
     const botList = Array.from(botPool.values()).map(b => getPublicBot(b));
     socket.emit('init-data', { botList, globalConfig });
 
-    socket.on('update-config', (newConfig) => {
+    socket.on('update-config', async (newConfig) => {
         globalConfig = { ...globalConfig, ...newConfig };
-        saveDataToFile();
+        await saveDataToDb();
         io.emit('config-updated', globalConfig);
     });
 
-    socket.on('update-bot-config', ({ botId, config }) => {
+    socket.on('update-bot-config', async ({ botId, config }) => {
         if (!botPool.has(botId)) return;
         const botData = botPool.get(botId);
         const allowedKeys = ['host', 'port', 'proxy', 'version', 'autoPassword', 'autoSubServerCmd', 'takeBreaks', 'detectStaff', 'autoBuyConfig', 'autoStart'];
         allowedKeys.forEach(k => { if (config[k] !== undefined) botData[k] = config[k]; });
-        saveDataToFile();
+        await saveDataToDb();
         io.emit('bot-updated', { botId, config: getPublicBot(botData) });
-        pushBotToPanel(botData);
     });
 
     socket.on('start-bot', (botId) => startBotInstance(botId));
@@ -983,7 +874,7 @@ io.on('connection', (socket) => {
     socket.on('start-all', () => startAllBots());
     socket.on('stop-all', () => { for (const id of botPool.keys()) stopBotInstance(id); });
 
-    socket.on('add-bot', (data) => {
+    socket.on('add-bot', async (data) => {
         const username = typeof data === 'string' ? data : data.username;
         if (!username) return;
         const id = 'bot_' + Date.now();
@@ -994,19 +885,15 @@ io.on('connection', (socket) => {
             takeBreaks: true, detectStaff: true, autoBuyConfig: { ...defaultAutoBuyConfig }
         });
         botPool.set(id, newBot);
-        saveDataToFile();
+        await saveDataToDb();
         io.emit('bot-added', getPublicBot(newBot));
-        pushBotToPanel(newBot);
     });
 
-    socket.on('delete-bot', (botId) => {
-        const existing = botPool.get(botId);
-        const username = existing ? existing.username : null;
+    socket.on('delete-bot', async (botId) => {
         stopBotInstance(botId);
         botPool.delete(botId);
-        saveDataToFile();
+        await saveDataToDb();
         io.emit('bot-deleted', botId);
-        if (username) removeBotFromPanel(username);
     });
 
     socket.on('send-command', ({ targetBotId, command }) => {
@@ -1081,12 +968,7 @@ if (matrixBotIndex) {
     });
 
     async function bootstrapBackground() {
-        loadSavedData();
-        await loadBotsFromPanel();
-        try { const c = await panelRequest('check'); lastUpdated = c && c.updated ? c.updated : null; } catch {}
-
+        await loadSavedData();
         setTimeout(() => startAllBots(true), 5000);
-        setInterval(checkPanel, 2000);
-        setInterval(() => panelRequest('pruneLogs').catch(() => {}), 10 * 60 * 1000);
     }
 }

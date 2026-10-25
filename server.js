@@ -44,7 +44,7 @@ const defaultBotConfigs = [
     { id: 'bot_3', username: 'Deliyiz_3', host: '141.95.82.164', port: 25565, proxy: '', autoPassword: 'deliyizpassword', takeBreaks: true, detectStaff: true, autoBuyConfig: { ...defaultAutoBuyConfig } }
 ];
 
-// 🌐 OTOMATİK PROXY / LOKASYON ÜRETİCİ (Harici dosya veya elle giriş gerektirmez)
+// 🌐 OTOMATİK PROXY / LOKASYON ÜRETİCİ
 const AUTO_REGIONS = ['DE', 'NL', 'FR', 'US', 'GB', 'CA', 'PL'];
 const activeGeneratedProxies = new Map();
 
@@ -527,6 +527,9 @@ function setupCustomPacketHandler(client, botId) {
     client.on('packet', (data, meta) => {
         if (meta.state !== 'play') return;
         switch (meta.name) {
+            case 'keep_alive':
+                try { client.write('keep_alive', { keepAliveId: data.keepAliveId }); } catch (e) {}
+                break;
             case 'update_health':
                 if (data.health <= 0) {
                     broadcastLog(botId, '☠️ Bot öldü! Otomatik Respawn gönderiliyor...', 'error');
@@ -544,6 +547,16 @@ function setupCustomPacketHandler(client, botId) {
                     if (subCmd && subCmd.trim() !== '') {
                         sendChat(client, subCmd);
                         broadcastLog(botId, `🚀 Alt sunucu komutu tekrar gönderildi: ${subCmd}`, 'success');
+                        
+                        // İSTEDİĞİNİZ SETINTERVAL DÖNGÜSÜ KORUNDU
+                        if (!botData.subCmdInterval) {
+                            botData.subCmdInterval = setInterval(() => {
+                                if (botData.client && botData.status === 'Online') {
+                                    sendChat(client, subCmd);
+                                    broadcastLog(botId, `🚀 Alt sunucu komutu tekrar deneniyor: ${subCmd}`, 'info');
+                                } else { clearInterval(botData.subCmdInterval); botData.subCmdInterval = null; }
+                            }, 5000);
+                        }
                     }
                     botData.afkTimer = setTimeout(() => triggerAfkWithRetry(), 5000);
                     startMarketChecker();
@@ -654,7 +667,7 @@ function setupCustomPacketHandler(client, botId) {
                             botData.subCmdInterval = setInterval(() => {
                                 if (botData.client && botData.status === 'Online') {
                                     sendChat(client, subCmd);
-                                    broadcastLog(botId, `🚀 Alt sunucu komutu tekrar deneniyor: ${subCmd}`, 'info');
+                                    broadcastLog(botId, `🚀 Alt sunucu komutu periyodik deneniyor: ${subCmd}`, 'info');
                                 } else { clearInterval(botData.subCmdInterval); botData.subCmdInterval = null; }
                             }, 5000);
                             botData.afkTimer = setTimeout(() => triggerAfkWithRetry(), 10000);
@@ -922,11 +935,6 @@ function startBotInstance(botId) {
         client.on('error', (err) => cleanupBot(botId, `Hata: ${err.message}`));
         client.on('end', () => cleanupBot(botId, `Bağlantı sonlandı.`));
     } catch (err) {
-        const fatal = /unknown parameter type|registryEntryHolder|unsupported protocol|not supported|Unknown (switch|type)/i.test(err.message || '');
-        if (fatal) {
-            botData.isManualStop = true;
-            broadcastLog(botId, `⚠️ Protokol/sürüm hatası. "npm install minecraft-protocol@latest minecraft-data@latest" çalıştırın ya da bot ayarlarından sürümü (örn. 1.20.1) elle seçin. Otomatik yeniden deneme durduruldu.`, 'error');
-        }
         cleanupBot(botId, `Başlatılamadı: ${err.message}`);
     }
 }
@@ -1047,9 +1055,6 @@ io.on('connection', (socket) => {
     });
 });
 
-// ==========================================
-// GITHUB ACTIONS MATRIX MODU VEYA ABASHTAN PORT DÜZELTMELİ BAŞLANGIÇ
-// ==========================================
 const matrixBotIndex = process.env.BOT_INDEX;
 
 if (matrixBotIndex) {
@@ -1068,14 +1073,10 @@ if (matrixBotIndex) {
         }
     }, 2000);
 } else {
-    // ABASHTAN / RENDER / YEREL PANEL MODU
     const PORT = process.env.PORT || 3000;
 
-    // 1. KRİTİK DÜZELTME: Abasthan'ın zaman aşımına düşmemesi için portu HEMEN açıyoruz
     server.listen(PORT, '0.0.0.0', () => {
         console.log(`🚀 Web sunucusu http://127.0.0.1:${PORT} adresinde anında aktif edildi.`);
-        
-        // 2. ADIM: Botlar ve arka plan servisleri eşzamanlı olarak yükleniyor
         bootstrapBackground();
     });
 

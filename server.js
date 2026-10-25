@@ -5,7 +5,7 @@ const mc = require('minecraft-protocol');
 const mcData = require('minecraft-data');
 const { SocksClient } = require('socks');
 const path = require('path');
-const mongoose = require('mongoose');
+const fs = require('fs');
 
 const app = express();
 const server = http.createServer(app);
@@ -17,49 +17,8 @@ app.use(express.json());
 process.on('uncaughtException', (err) => console.error('[Hata Engellendi]:', err.stack || err.message));
 process.on('unhandledRejection', (reason) => console.error('[Söz Rejeksiyonu]:', reason));
 
-// --- MONGODB BAĞLANTISI VE ŞEMALARI ---
-const MONGODB_URI = process.env.MONGODB_URI;
-
-if (!MONGODB_URI) {
-    console.error('❌ MONGODB_URI çevre değişkeni tanımlı değil! Render environment ayarlarını kontrol edin.');
-}
-
-mongoose.connect(MONGODB_URI, {
-    useNewUrlParser: true,
-    useUnifiedTopology: true
-}).then(() => {
-    console.log('✅ MongoDB veritabanına başarıyla bağlanıldı.');
-}).catch(err => {
-    console.error('❌ MongoDB bağlantı hatası:', err.message);
-});
-
-const BotConfigSchema = new mongoose.Schema({
-    id: { type: String, required: true, unique: true },
-    username: String,
-    host: String,
-    port: Number,
-    proxy: String,
-    version: String,
-    autoPassword: String,
-    autoSubServerCmd: String,
-    takeBreaks: Boolean,
-    detectStaff: Boolean,
-    autoStart: Boolean,
-    autoBuyConfig: Object
-});
-
-const GlobalConfigSchema = new mongoose.Schema({
-    key: { type: String, default: 'main' },
-    host: String,
-    port: Number,
-    version: String,
-    autoPassword: String,
-    autoSubServerCmd: String
-});
-
-const BotModel = mongoose.model('BotConfig', BotConfigSchema);
-const GlobalModel = mongoose.model('GlobalConfig', GlobalConfigSchema);
-// ---------------------------------------
+// --- HARİCİ DEPOLAMA API / RENDER STORAGE SERVİSİ ---
+const STORAGE_API_URL = (process.env.STORAGE_API_URL || '').trim();
 
 const botPool = new Map();
 
@@ -160,63 +119,234 @@ function getPublicBot(b) {
     };
 }
 
-async function initDefaultBots() {
+function initDefaultBots() {
     botPool.clear();
     defaultBotConfigs.forEach(cfg => botPool.set(cfg.id, createBotEntry(cfg)));
-    await saveDataToDb();
+    saveDataToAPI();
 }
 
 async function loadSavedData() {
+    if (!STORAGE_API_URL) {
+        console.log('⚠️ STORAGE_API_URL tanımlı değil, varsayılan botlar yükleniyor.');
+        initDefaultBots();
+        return;
+    }
     try {
-        const savedGlobal = await GlobalModel.findOne({ key: 'main' });
-        if (savedGlobal) {
-            globalConfig = {
-                ...globalConfig,
-                host: savedGlobal.host || globalConfig.host,
-                port: savedGlobal.port || globalConfig.port,
-                version: savedGlobal.version || globalConfig.version,
-                autoPassword: savedGlobal.autoPassword || globalConfig.autoPassword,
-                autoSubServerCmd: savedGlobal.autoSubServerCmd || globalConfig.autoSubServerCmd
-            };
-        }
-
-        const savedBots = await BotModel.find({});
-        if (savedBots && savedBots.length > 0) {
+        const res = await fetch(`${STORAGE_API_URL}/data`);
+        if (!res.ok) throw new Error(`API yanıt vermedi: ${res.status}`);
+        const parsed = await res.json();
+        if (parsed.globalConfig) globalConfig = { ...globalConfig, ...parsed.globalConfig };
+        if (Array.isArray(parsed.bots) && parsed.bots.length > 0) {
             botPool.clear();
-            savedBots.forEach(b => botPool.set(b.id, createBotEntry(b.toObject())));
-            console.log(`📥 MongoDB'den ${botPool.size} bot yüklendi.`);
+            parsed.bots.forEach(b => botPool.set(b.id, createBotEntry(b)));
+            console.log(`📥 Depolama API'sinden ${botPool.size} bot yüklendi.`);
         } else {
-            await initDefaultBots();
+            initDefaultBots();
         }
     } catch (err) {
-        console.log('⚠️ MongoDB\'den yüklenirken hata oluştu, varsayılanlar kullanılıyor:', err.message);
-        await initDefaultBots();
+        console.log('⚠️ Depolama API\'sinden veri alınamadı, varsayılanlar kullanılıyor:', err.message);
+        initDefaultBots();
     }
 }
 
-async function saveDataToDb() {
+async function saveDataToAPI() {
+    if (!STORAGE_API_URL) return;
     try {
-        await GlobalModel.findOneAndUpdate(
-            { key: 'main' },
-            { key: 'main', ...globalConfig },
-            { upsert: true, new: true }
-        );
-
-        for (const [id, b] of botPool.entries()) {
-            await BotModel.findOneAndUpdate(
-                { id: id },
-                {
-                    id: b.id, username: b.username, host: b.host, port: b.port, proxy: b.proxy || '',
-                    version: b.version, autoPassword: b.autoPassword, autoSubServerCmd: b.autoSubServerCmd,
-                    takeBreaks: b.takeBreaks, detectStaff: b.detectStaff, autoStart: b.autoStart !== false,
-                    autoBuyConfig: b.autoBuyConfig
-                },
-                { upsert: true, new: true }
-            );
-        }
+        const botList = Array.from(botPool.values()).map(b => ({
+            id: b.id, username: b.username, host: b.host, port: b.port, proxy: b.proxy || '',
+            version: b.version, autoPassword: b.autoPassword, autoSubServerCmd: b.autoSubServerCmd,
+            autoSubServerDelay: b.autoSubServerDelay, takeBreaks: b.takeBreaks, detectStaff: b.detectStaff,
+            autoStart: b.autoStart !== false, autoBuyConfig: b.autoBuyConfig
+        }));
+        await fetch(`${STORAGE_API_URL}/data`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ globalConfig, bots: botList })
+        });
     } catch (err) {
-        console.error('❌ MongoDB\'ye kaydetme hatası:', err.message);
+        console.error('❌ Depolama API\'sine kaydetme hatası:', err.message);
     }
+}
+
+const MC_SYNC_URL = (process.env.MC_SYNC_URL || '').trim();
+const MC_SYNC_KEY = (process.env.MC_SYNC_KEY || '').trim();
+
+function boolOr(value, fallback) { return typeof value === 'boolean' ? value : fallback; }
+
+async function panelRequest(action, extra = {}) {
+    if (!MC_SYNC_URL || !MC_SYNC_KEY) return null;
+    const res = await fetch(MC_SYNC_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-sync-key': MC_SYNC_KEY },
+        body: JSON.stringify({ action, key: MC_SYNC_KEY, ...extra })
+    });
+    if (!res.ok) throw new Error(`Panel yanıtı: ${res.status}`);
+    return await res.json();
+}
+
+async function loadBotsFromPanel() {
+    if (!MC_SYNC_URL || !MC_SYNC_KEY) {
+        console.log('⚠️ MC_SYNC_URL / MC_SYNC_KEY tanımlı değil — yerel/API bot listesi kullanılıyor.');
+        return false;
+    }
+    try {
+        const data = await panelRequest('pull');
+        const bots = Array.isArray(data.bots) ? data.bots : [];
+        const gc = data.globalConfig || {};
+        if (gc.host) globalConfig.host = gc.host;
+        if (gc.port) globalConfig.port = gc.port;
+        if (gc.version) globalConfig.version = gc.version;
+        if (gc.autoPassword) globalConfig.autoPassword = gc.autoPassword;
+        if (gc.autoSubServerCmd) globalConfig.autoSubServerCmd = gc.autoSubServerCmd;
+
+        if (bots.length === 0) {
+            console.log(`ℹ️ Panelde "${data.site}" sitesine kayıtlı bot yok — mevcut liste korunuyor.`);
+            return false;
+        }
+        botPool.clear();
+        bots.forEach((b, index) => {
+            const cfg = {
+                id: b.id || `panel_bot_${index + 1}`,
+                username: b.username,
+                host: b.host || globalConfig.host,
+                port: b.port || globalConfig.port,
+                proxy: b.proxy || '',
+                version: b.version || globalConfig.version,
+                autoPassword: b.autoPassword == null ? globalConfig.autoPassword : b.autoPassword,
+                autoSubServerCmd: b.autoSubServerCmd == null ? globalConfig.autoSubServerCmd : b.autoSubServerCmd,
+                takeBreaks: boolOr(b.takeBreaks, true),
+                detectStaff: boolOr(b.detectStaff, true),
+                autoStart: b.autoStart !== false,
+                fromPanel: true,
+                autoBuyConfig: b.autoBuyConfig || { ...defaultAutoBuyConfig }
+            };
+            if (!cfg.username) return;
+            botPool.set(cfg.id, createBotEntry(cfg));
+        });
+        saveDataToAPI();
+        console.log(`✅ Panelden ${botPool.size} bot geri kuruldu (site: ${data.site}).`);
+        return true;
+    } catch (err) {
+        console.log('⚠️ Panelden bot listesi alınamadı, API/varsayılanlar kullanılıyor:', err.message);
+        return false;
+    }
+}
+
+async function pushBotToPanel(bot) {
+    if (!bot || !bot.username) return false;
+    try {
+        await panelRequest('upsertBot', {
+            bot: {
+                username: bot.username, host: bot.host, port: bot.port, proxy: bot.proxy || '',
+                version: bot.version, autoPassword: bot.autoPassword, autoSubServerCmd: bot.autoSubServerCmd,
+                takeBreaks: bot.takeBreaks, detectStaff: bot.detectStaff, autoStart: bot.autoStart !== false,
+                autoBuyConfig: bot.autoBuyConfig
+            }
+        });
+        return true;
+    } catch (err) { return false; }
+}
+
+async function removeBotFromPanel(username) {
+    if (!username) return false;
+    try { await panelRequest('deleteBot', { username }); return true; } catch (err) { return false; }
+}
+
+async function syncBotsFromPanel() {
+    if (!MC_SYNC_URL || !MC_SYNC_KEY) return;
+    try {
+        const data = await panelRequest('pull');
+        const panelBots = Array.isArray(data.bots) ? data.bots : [];
+        const panelByUser = new Map();
+        panelBots.forEach(b => { if (b.username) panelByUser.set(b.username, b); });
+
+        for (const [username, pb] of panelByUser) {
+            let local = null;
+            for (const bd of botPool.values()) { if (bd.username === username) { local = bd; break; } }
+            const cfg = {
+                host: pb.host || globalConfig.host,
+                port: pb.port || globalConfig.port,
+                proxy: pb.proxy || '',
+                version: pb.version || globalConfig.version,
+                autoPassword: pb.autoPassword == null ? globalConfig.autoPassword : pb.autoPassword,
+                autoSubServerCmd: pb.autoSubServerCmd == null ? globalConfig.autoSubServerCmd : pb.autoSubServerCmd,
+                takeBreaks: boolOr(pb.takeBreaks, true),
+                detectStaff: boolOr(pb.detectStaff, true),
+                autoStart: pb.autoStart !== false,
+                autoBuyConfig: pb.autoBuyConfig || (local ? local.autoBuyConfig : { ...defaultAutoBuyConfig })
+            };
+
+            if (local) {
+                local.fromPanel = true;
+                const connFields = ['host', 'port', 'version', 'proxy', 'autoPassword', 'autoSubServerCmd'];
+                const connChanged = connFields.some(f => String(local[f] ?? '') !== String(cfg[f] ?? ''));
+                const softChanged = boolOr(local.takeBreaks, true) !== cfg.takeBreaks
+                    || boolOr(local.detectStaff, true) !== cfg.detectStaff
+                    || (local.autoStart !== false) !== cfg.autoStart
+                    || JSON.stringify(local.autoBuyConfig || {}) !== JSON.stringify(cfg.autoBuyConfig || {});
+                if (!connChanged && !softChanged) continue;
+
+                Object.assign(local, cfg);
+                saveDataToAPI();
+                io.emit('bot-updated', { botId: local.id, config: getPublicBot(local) });
+                broadcastLog(local.id, `🔄 Panel güncellemesi uygulandı: ${username}`, 'info');
+
+                const wasRunning = local.status === 'Online' || local.status === 'Connecting';
+                if (wasRunning && connChanged) {
+                    broadcastLog(local.id, '🔁 Sunucu bilgileri değişti, yeniden bağlanılıyor...', 'warn');
+                    local.isManualStop = true;
+                    stopBotInstance(local.id);
+                    local.isManualStop = false;
+                    if (local.autoStart !== false) setTimeout(() => startBotInstance(local.id), 1500);
+                }
+            } else {
+                const newBot = createBotEntry({ id: pb.id || `panel_${Date.now()}`, username, fromPanel: true, ...cfg });
+                botPool.set(newBot.id, newBot);
+                saveDataToAPI();
+                io.emit('bot-added', getPublicBot(newBot));
+                broadcastLog(newBot.id, `➕ Panelde yeni bot: ${username}`, 'info');
+                if (newBot.autoStart !== false) setTimeout(() => startBotInstance(newBot.id), 2000);
+            }
+        }
+
+        for (const [id, bd] of Array.from(botPool.entries())) {
+            if (bd.fromPanel && !panelByUser.has(bd.username)) {
+                broadcastLog(id, `🗑️ Panelden silinmiş, kaldırılıyor: ${bd.username}`, 'warn');
+                stopBotInstance(id);
+                botPool.delete(id);
+                saveDataToAPI();
+                io.emit('bot-deleted', id);
+            }
+        }
+    } catch (err) {}
+}
+
+let lastUpdated = null;
+async function checkPanel() {
+    if (!MC_SYNC_URL || !MC_SYNC_KEY) return;
+    try {
+        const data = await panelRequest('check');
+        const updated = data && data.updated ? data.updated : null;
+        if (updated !== lastUpdated) {
+            lastUpdated = updated;
+            await syncBotsFromPanel();
+        }
+    } catch (err) {}
+}
+
+const lastLogPush = new Map();
+function pushLogToPanel(username, text, type) {
+    if (!MC_SYNC_URL || !MC_SYNC_KEY || !username || !text) return;
+    const key = username + '|' + text;
+    const now = Date.now();
+    if (lastLogPush.has(key) && now - lastLogPush.get(key) < 5000) return;
+    lastLogPush.set(key, now);
+    panelRequest('pushLog', { username, text: String(text).slice(0, 500), type }).catch(() => {});
+}
+
+function pushStatusToPanel(botId) {
+    const bd = botPool.get(botId);
+    if (bd && bd.username) pushLogToPanel(bd.username, bd.status, 'status');
 }
 
 function broadcastLog(botId, text, type = 'info') {
@@ -229,6 +359,10 @@ function broadcastLog(botId, text, type = 'info') {
         if (botData.logs.length > 20) botData.logs.shift();
     }
     io.emit('bot-log', logEntry);
+    if (type === 'error' || type === 'warn') {
+        const bd = botPool.get(botId);
+        if (bd && bd.username) pushLogToPanel(bd.username, text, type);
+    }
 }
 
 function broadcastInventory(botId) {
@@ -729,6 +863,8 @@ function cleanupBot(botId, reason) {
     botData.inventory = {}; botData.scoreboard = null; botData.tabList = {}; botData.entities = {};
     botData.pos = { x: 0, y: 0, z: 0 }; botData.isBuying = false; botData.shopStep = 0; botData.isTakingBreak = false;
 
+    pushStatusToPanel(botId);
+
     const cleanReason = parseMcText(reason) || 'Bağlantı kesildi';
     broadcastLog(botId, `🔴 ${cleanReason}`, 'error');
     io.emit('status-update', { botId, status: 'Offline', onlineSince: null });
@@ -766,11 +902,12 @@ function startBotInstance(botId) {
     broadcastLog(botId, `${botData.username} bağlanıyor [Lokasyon: ${autoInfo.region}] (${host}:${port}) | MC sürümü: ${version || '1.20.1'} | protocol lib: ${pvInfo}`, 'info');
     botData.status = 'Connecting';
     io.emit('status-update', { botId, status: 'Connecting', onlineSince: null });
+    pushStatusToPanel(botId);
 
     try {
         const clientOptions = {
             host, port, username: botData.username, version: version || '1.20.1',
-            checkTimeoutInterval: 120000, // ZAMAN AŞIMI SÜRESİ 120s'ye YÜKSELTİLDİ
+            checkTimeoutInterval: 120000,
             keepAlive: true
         };
 
@@ -807,6 +944,7 @@ function startBotInstance(botId) {
             botData.onlineSince = Date.now();
             broadcastLog(botId, `⚡ ${botData.username} [${autoInfo.region}] lokasyonu ile sunucuya girdi!`, 'success');
             io.emit('status-update', { botId, status: 'Online', onlineSince: botData.onlineSince });
+            pushStatusToPanel(botId);
 
             if (botData.keepAliveInterval) clearInterval(botData.keepAliveInterval);
             let currentYaw = 0;
@@ -856,7 +994,7 @@ io.on('connection', (socket) => {
 
     socket.on('update-config', async (newConfig) => {
         globalConfig = { ...globalConfig, ...newConfig };
-        await saveDataToDb();
+        await saveDataToAPI();
         io.emit('config-updated', globalConfig);
     });
 
@@ -865,8 +1003,9 @@ io.on('connection', (socket) => {
         const botData = botPool.get(botId);
         const allowedKeys = ['host', 'port', 'proxy', 'version', 'autoPassword', 'autoSubServerCmd', 'takeBreaks', 'detectStaff', 'autoBuyConfig', 'autoStart'];
         allowedKeys.forEach(k => { if (config[k] !== undefined) botData[k] = config[k]; });
-        await saveDataToDb();
+        await saveDataToAPI();
         io.emit('bot-updated', { botId, config: getPublicBot(botData) });
+        pushBotToPanel(botData);
     });
 
     socket.on('start-bot', (botId) => startBotInstance(botId));
@@ -885,15 +1024,19 @@ io.on('connection', (socket) => {
             takeBreaks: true, detectStaff: true, autoBuyConfig: { ...defaultAutoBuyConfig }
         });
         botPool.set(id, newBot);
-        await saveDataToDb();
+        await saveDataToAPI();
         io.emit('bot-added', getPublicBot(newBot));
+        pushBotToPanel(newBot);
     });
 
     socket.on('delete-bot', async (botId) => {
+        const existing = botPool.get(botId);
+        const username = existing ? existing.username : null;
         stopBotInstance(botId);
         botPool.delete(botId);
-        await saveDataToDb();
+        await saveDataToAPI();
         io.emit('bot-deleted', botId);
+        if (username) removeBotFromPanel(username);
     });
 
     socket.on('send-command', ({ targetBotId, command }) => {
@@ -931,7 +1074,7 @@ io.on('connection', (socket) => {
             const windowId = 0;
             const stateId = botData.currentStateId || 0;
             if (action === 'drop') {
-                client.write('window_click', { windowId, stateId, slot: Number(slot), mouseButton: 0, mode: 4, changedSlots: [], cursorItem: { present: false } });
+                client.write('window_click', { windowId, stateId, slot: Number(slot), mode: 4, changedSlots: [], cursorItem: { present: false } });
                 broadcastLog(botId, `🗑️ Slot ${slot} eşyası yere atıldı.`, 'success');
             } else if (action === 'move') {
                 client.write('window_click', { windowId, stateId, slot: Number(slot), mouseButton: 0, mode: 0, changedSlots: [], cursorItem: { present: false } });
@@ -969,6 +1112,11 @@ if (matrixBotIndex) {
 
     async function bootstrapBackground() {
         await loadSavedData();
+        await loadBotsFromPanel();
+        try { const c = await panelRequest('check'); lastUpdated = c && c.updated ? c.updated : null; } catch {}
+
         setTimeout(() => startAllBots(true), 5000);
+        setInterval(checkPanel, 2000);
+        setInterval(() => panelRequest('pruneLogs').catch(() => {}), 10 * 60 * 1000);
     }
 }

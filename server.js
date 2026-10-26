@@ -20,7 +20,10 @@ process.on('unhandledRejection', (reason) => console.error('[Söz Rejeksiyonu]:'
 // --- YARDIMCI GECİKME (SLEEP) FONKSİYONU ---
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-// --- HARİCİ DEPOLAMA API / RENDER STORAGE SERVİSİ ---
+// --- RENDER SERVİSİNE ÖZEL MANUEL SİTE / SERVİS ADI ---
+const SITE_NAME = (process.env.SITE_NAME || 'default_site').trim();
+
+// --- HARİCİ DEPOLAMA API / MC-STORAGE SERVİSİ ---
 const STORAGE_API_URL = (process.env.STORAGE_API_URL || '').trim();
 
 const botPool = new Map();
@@ -79,7 +82,7 @@ function createBotEntry(cfg) {
 try {
     const pv = require('minecraft-protocol/package.json').version;
     const dv = require('minecraft-data/package.json').version;
-    console.log(`📦 Kurulu sürümler -> minecraft-protocol: ${pv} | minecraft-data: ${dv}`);
+    console.log(`📦 Sürümler -> protocol: ${pv} | data: ${dv} | Aktif Site Depolama Adı: ${SITE_NAME}`);
 } catch (e) {}
 
 const mcDataCache = {};
@@ -126,9 +129,9 @@ function getPublicBot(b) {
 function initDefaultBots() {
     botPool.clear();
     defaultBotConfigs.forEach(cfg => botPool.set(cfg.id, createBotEntry(cfg)));
-    saveDataToAPI();
 }
 
+// 📥 MC-STORAGE ÜZERİNDEN VERİ ÇEKME (Sildiğin botlar asla geri gelmez)
 async function loadSavedData() {
     if (!STORAGE_API_URL) {
         console.log('⚠️ STORAGE_API_URL tanımlı değil, varsayılan botlar yükleniyor.');
@@ -136,23 +139,31 @@ async function loadSavedData() {
         return;
     }
     try {
-        const res = await fetch(`${STORAGE_API_URL}/data`);
-        if (!res.ok) throw new Error(`API yanıt vermedi: ${res.status}`);
+        const res = await fetch(`${STORAGE_API_URL}/data/${SITE_NAME}`);
+        if (!res.ok) {
+            if (res.status === 404) {
+                initDefaultBots();
+                await saveDataToAPI();
+                return;
+            }
+            throw new Error(`API yanıt vermedi: ${res.status}`);
+        }
         const parsed = await res.json();
         if (parsed.globalConfig) globalConfig = { ...globalConfig, ...parsed.globalConfig };
-        if (Array.isArray(parsed.bots) && parsed.bots.length > 0) {
-            botPool.clear();
+        
+        botPool.clear();
+        if (Array.isArray(parsed.bots)) {
             parsed.bots.forEach(b => botPool.set(b.id, createBotEntry(b)));
-            console.log(`📥 Depolama API'sinden ${botPool.size} bot yüklendi.`);
+            console.log(`📥 [Depolama] Site (${SITE_NAME}) için ${botPool.size} bot yüklendi.`);
         } else {
             initDefaultBots();
         }
     } catch (err) {
-        console.log('⚠️ Depolama API\'sinden veri alınamadı, varsayılanlar kullanılıyor:', err.message);
-        initDefaultBots();
+        console.log(`⚠️ [Depolama] Veri alınamadı, mevcut liste korunuyor:`, err.message);
     }
 }
 
+// 💾 MC-STORAGE ÜZERİNE KAYDETME
 async function saveDataToAPI() {
     if (!STORAGE_API_URL) return;
     try {
@@ -162,195 +173,14 @@ async function saveDataToAPI() {
             autoSubServerDelay: b.autoSubServerDelay, takeBreaks: b.takeBreaks, detectStaff: b.detectStaff,
             autoStart: b.autoStart !== false, autoBuyConfig: b.autoBuyConfig
         }));
-        await fetch(`${STORAGE_API_URL}/data`, {
+        await fetch(`${STORAGE_API_URL}/data/${SITE_NAME}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ globalConfig, bots: botList })
         });
     } catch (err) {
-        console.error('❌ Depolama API\'sine kaydetme hatası:', err.message);
+        console.error(`❌ Depolama API'sine kaydetme hatası:`, err.message);
     }
-}
-
-const MC_SYNC_URL = (process.env.MC_SYNC_URL || '').trim();
-const MC_SYNC_KEY = (process.env.MC_SYNC_KEY || '').trim();
-
-function boolOr(value, fallback) { return typeof value === 'boolean' ? value : fallback; }
-
-async function panelRequest(action, extra = {}) {
-    if (!MC_SYNC_URL || !MC_SYNC_KEY) return null;
-    const res = await fetch(MC_SYNC_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-sync-key': MC_SYNC_KEY },
-        body: JSON.stringify({ action, key: MC_SYNC_KEY, ...extra })
-    });
-    if (!res.ok) throw new Error(`Panel yanıtı: ${res.status}`);
-    return await res.json();
-}
-
-async function loadBotsFromPanel() {
-    if (!MC_SYNC_URL || !MC_SYNC_KEY) {
-        console.log('⚠️ MC_SYNC_URL / MC_SYNC_KEY tanımlı değil — yerel/API bot listesi kullanılıyor.');
-        return false;
-    }
-    try {
-        const data = await panelRequest('pull');
-        const bots = Array.isArray(data.bots) ? data.bots : [];
-        const gc = data.globalConfig || {};
-        if (gc.host) globalConfig.host = gc.host;
-        if (gc.port) globalConfig.port = gc.port;
-        if (gc.version) globalConfig.version = gc.version;
-        if (gc.autoPassword) globalConfig.autoPassword = gc.autoPassword;
-        if (gc.autoSubServerCmd) globalConfig.autoSubServerCmd = gc.autoSubServerCmd;
-
-        if (bots.length === 0) {
-            console.log(`ℹ️ Panelde "${data.site}" sitesine kayıtlı bot yok — mevcut liste korunuyor.`);
-            return false;
-        }
-        botPool.clear();
-        bots.forEach((b, index) => {
-            const cfg = {
-                id: b.id || `panel_bot_${index + 1}`,
-                username: b.username,
-                host: b.host || globalConfig.host,
-                port: b.port || globalConfig.port,
-                proxy: b.proxy || '',
-                version: b.version || globalConfig.version,
-                autoPassword: b.autoPassword == null ? globalConfig.autoPassword : b.autoPassword,
-                autoSubServerCmd: b.autoSubServerCmd == null ? globalConfig.autoSubServerCmd : b.autoSubServerCmd,
-                takeBreaks: boolOr(b.takeBreaks, true),
-                detectStaff: boolOr(b.detectStaff, true),
-                autoStart: b.autoStart !== false,
-                fromPanel: true,
-                autoBuyConfig: b.autoBuyConfig || { ...defaultAutoBuyConfig }
-            };
-            if (!cfg.username) return;
-            botPool.set(cfg.id, createBotEntry(cfg));
-        });
-        saveDataToAPI();
-        console.log(`✅ Panelden ${botPool.size} bot geri kuruldu (site: ${data.site}).`);
-        return true;
-    } catch (err) {
-        console.log('⚠️ Panelden bot listesi alınamadı, API/varsayılanlar kullanılıyor:', err.message);
-        return false;
-    }
-}
-
-async function pushBotToPanel(bot) {
-    if (!bot || !bot.username) return false;
-    try {
-        await panelRequest('upsertBot', {
-            bot: {
-                username: bot.username, host: bot.host, port: bot.port, proxy: bot.proxy || '',
-                version: bot.version, autoPassword: bot.autoPassword, autoSubServerCmd: bot.autoSubServerCmd,
-                takeBreaks: bot.takeBreaks, detectStaff: bot.detectStaff, autoStart: bot.autoStart !== false,
-                autoBuyConfig: bot.autoBuyConfig
-            }
-        });
-        return true;
-    } catch (err) { return false; }
-}
-
-async function removeBotFromPanel(username) {
-    if (!username) return false;
-    try { await panelRequest('deleteBot', { username }); return true; } catch (err) { return false; }
-}
-
-async function syncBotsFromPanel() {
-    if (!MC_SYNC_URL || !MC_SYNC_KEY) return;
-    try {
-        const data = await panelRequest('pull');
-        const panelBots = Array.isArray(data.bots) ? data.bots : [];
-        const panelByUser = new Map();
-        panelBots.forEach(b => { if (b.username) panelByUser.set(b.username, b); });
-
-        for (const [username, pb] of panelByUser) {
-            let local = null;
-            for (const bd of botPool.values()) { if (bd.username === username) { local = bd; break; } }
-            const cfg = {
-                host: pb.host || globalConfig.host,
-                port: pb.port || globalConfig.port,
-                proxy: pb.proxy || '',
-                version: pb.version || globalConfig.version,
-                autoPassword: pb.autoPassword == null ? globalConfig.autoPassword : pb.autoPassword,
-                autoSubServerCmd: pb.autoSubServerCmd == null ? globalConfig.autoSubServerCmd : pb.autoSubServerCmd,
-                takeBreaks: boolOr(pb.takeBreaks, true),
-                detectStaff: boolOr(pb.detectStaff, true),
-                autoStart: pb.autoStart !== false,
-                autoBuyConfig: pb.autoBuyConfig || (local ? local.autoBuyConfig : { ...defaultAutoBuyConfig })
-            };
-
-            if (local) {
-                local.fromPanel = true;
-                const connFields = ['host', 'port', 'version', 'proxy', 'autoPassword', 'autoSubServerCmd'];
-                const connChanged = connFields.some(f => String(local[f] ?? '') !== String(cfg[f] ?? ''));
-                const softChanged = boolOr(local.takeBreaks, true) !== cfg.takeBreaks
-                    || boolOr(local.detectStaff, true) !== cfg.detectStaff
-                    || (local.autoStart !== false) !== cfg.autoStart
-                    || JSON.stringify(local.autoBuyConfig || {}) !== JSON.stringify(cfg.autoBuyConfig || {});
-                if (!connChanged && !softChanged) continue;
-
-                Object.assign(local, cfg);
-                saveDataToAPI();
-                io.emit('bot-updated', { botId: local.id, config: getPublicBot(local) });
-                broadcastLog(local.id, `🔄 Panel güncellemesi uygulandı: ${username}`, 'info');
-
-                const wasRunning = local.status === 'Online' || local.status === 'Connecting';
-                if (wasRunning && connChanged) {
-                    broadcastLog(local.id, '🔁 Sunucu bilgileri değişti, yeniden bağlanılıyor...', 'warn');
-                    local.isManualStop = true;
-                    stopBotInstance(local.id);
-                    local.isManualStop = false;
-                    if (local.autoStart !== false) setTimeout(() => startBotInstance(local.id), 1500);
-                }
-            } else {
-                const newBot = createBotEntry({ id: pb.id || `panel_${Date.now()}`, username, fromPanel: true, ...cfg });
-                botPool.set(newBot.id, newBot);
-                saveDataToAPI();
-                io.emit('bot-added', getPublicBot(newBot));
-                broadcastLog(newBot.id, `➕ Panelde yeni bot: ${username}`, 'info');
-                if (newBot.autoStart !== false) setTimeout(() => startBotInstance(newBot.id), 2000);
-            }
-        }
-
-        for (const [id, bd] of Array.from(botPool.entries())) {
-            if (bd.fromPanel && !panelByUser.has(bd.username)) {
-                broadcastLog(id, `🗑️ Panelden silinmiş, kaldırılıyor: ${bd.username}`, 'warn');
-                stopBotInstance(id);
-                botPool.delete(id);
-                saveDataToAPI();
-                io.emit('bot-deleted', id);
-            }
-        }
-    } catch (err) {}
-}
-
-let lastUpdated = null;
-async function checkPanel() {
-    if (!MC_SYNC_URL || !MC_SYNC_KEY) return;
-    try {
-        const data = await panelRequest('check');
-        const updated = data && data.updated ? data.updated : null;
-        if (updated !== lastUpdated) {
-            lastUpdated = updated;
-            await syncBotsFromPanel();
-        }
-    } catch (err) {}
-}
-
-const lastLogPush = new Map();
-function pushLogToPanel(username, text, type) {
-    if (!MC_SYNC_URL || !MC_SYNC_KEY || !username || !text) return;
-    const key = username + '|' + text;
-    const now = Date.now();
-    if (lastLogPush.has(key) && now - lastLogPush.get(key) < 5000) return;
-    lastLogPush.set(key, now);
-    panelRequest('pushLog', { username, text: String(text).slice(0, 500), type }).catch(() => {});
-}
-
-function pushStatusToPanel(botId) {
-    const bd = botPool.get(botId);
-    if (bd && bd.username) pushLogToPanel(bd.username, bd.status, 'status');
 }
 
 function broadcastLog(botId, text, type = 'info') {
@@ -363,10 +193,6 @@ function broadcastLog(botId, text, type = 'info') {
         if (botData.logs.length > 20) botData.logs.shift();
     }
     io.emit('bot-log', logEntry);
-    if (type === 'error' || type === 'warn') {
-        const bd = botPool.get(botId);
-        if (bd && bd.username) pushLogToPanel(bd.username, text, type);
-    }
 }
 
 function broadcastInventory(botId) {
@@ -550,7 +376,6 @@ function setupCustomPacketHandler(client, botId) {
     client.on('packet', (data, meta) => {
         if (!meta || !meta.name) return;
 
-        // KEEP_ALIVE PAKET YANITLAYICISI (Timeout Engelleyici)
         if (meta.name === 'keep_alive') {
             try {
                 client.write('keep_alive', { 
@@ -572,7 +397,7 @@ function setupCustomPacketHandler(client, botId) {
                 break;
             case 'respawn':
                 botData.waitingForAfkGui = false; botData.entities = {}; afkFailCount = 0;
-                botData.currentWindowId = 0; // Geçiş anında menü sıfırlanır
+                botData.currentWindowId = 0;
                 broadcastLog(botId, '🔄 Bot yeniden doğdu/boyut değişti. Alt sunucu komutu tekrar hazırlanıyor...', 'warn');
                 if (botData.subCmdInterval) clearInterval(botData.subCmdInterval);
                 botData.subCmdInterval = null;
@@ -598,14 +423,14 @@ function setupCustomPacketHandler(client, botId) {
                 break;
             case 'open_window':
                 if (botData.subCmdInterval) { clearInterval(botData.subCmdInterval); botData.subCmdInterval = null; }
-                botData.currentWindowId = data.windowId; // Menü açıldı! Hareket/look paketleri otomatik kilitlenir.
+                botData.currentWindowId = data.windowId;
                 botData.windowTitle = parseMcText(data.title || data.windowTitle || 'Sunucu Menüsü');
                 botData.activeWindowItems = {};
                 io.emit('bot-open-window', { botId, windowId: data.windowId, title: botData.windowTitle, slots: data.slots || 54 });
                 break;
             case 'window_items':
                 if (data.windowId === 0) {
-                    botData.currentWindowId = 0; // Ana envanter (Dünya içi)
+                    botData.currentWindowId = 0;
                     botData.inventory = {};
                     if (Array.isArray(data.items)) {
                         data.items.forEach((item, index) => {
@@ -666,7 +491,7 @@ function setupCustomPacketHandler(client, botId) {
                 }
                 break;
             case 'close_window':
-                botData.currentWindowId = 0; // Menü kapandı, normal oyun dünyasına dönüldü.
+                botData.currentWindowId = 0;
                 break;
             case 'set_slot':
                 if (data.windowId === 0) {
@@ -688,7 +513,6 @@ function setupCustomPacketHandler(client, botId) {
                 }
                 break;
 
-            // ASYNC / SÜRELİ GÜVENLİ KOMUT AKIŞI VE TELEPORT ONAYI
             case 'position':
                 try { if (data.teleportId !== undefined) client.write('teleport_confirm', { teleportId: data.teleportId }); } catch (e) {}
                 botData.pos = { x: Math.round(data.x * 10) / 10, y: Math.round(data.y * 10) / 10, z: Math.round(data.z * 10) / 10 };
@@ -879,7 +703,6 @@ function cleanupBot(botId, reason) {
     if (botData.breakInterval) clearInterval(botData.breakInterval);
     if (botData.breakTimeout) clearTimeout(botData.breakTimeout);
 
-    // Bellek sızıntısını önlemek için tüm dinleyicileri tamamen temizle[cite: 5]
     if (botData.client) {
         try { botData.client.removeAllListeners(); botData.client.end(); } catch (e) {}
         botData.client = null;
@@ -889,9 +712,6 @@ function cleanupBot(botId, reason) {
     botData.onlineSince = null;
     botData.inventory = {}; botData.scoreboard = null; botData.tabList = {}; botData.entities = {};
     botData.pos = { x: 0, y: 0, z: 0 }; botData.isBuying = false; botData.shopStep = 0; botData.isTakingBreak = false;
-    botData.currentWindowId = 0;
-
-    pushStatusToPanel(botId);
 
     const cleanReason = parseMcText(reason) || 'Bağlantı kesildi';
     broadcastLog(botId, `🔴 ${cleanReason}`, 'error');
@@ -939,12 +759,11 @@ function startBotInstance(botId) {
     broadcastLog(botId, `${botData.username} bağlanıyor [Lokasyon: ${autoInfo.region}] (${host}:${port}) | MC sürümü: ${version || '1.20.1'} | protocol lib: ${pvInfo}`, 'info');
     botData.status = 'Connecting';
     io.emit('status-update', { botId, status: 'Connecting', onlineSince: null });
-    pushStatusToPanel(botId);
 
     try {
         const clientOptions = {
             host, port, username: botData.username, version: version || '1.20.1',
-            checkTimeoutInterval: 240000, // Zaman aşımı 4 dakikaya çıkarıldı
+            checkTimeoutInterval: 240000,
             keepAlive: true
         };
 
@@ -981,12 +800,9 @@ function startBotInstance(botId) {
             botData.onlineSince = Date.now();
             broadcastLog(botId, `⚡ ${botData.username} [${autoInfo.region}] lokasyonu ile sunucuya girdi!`, 'success');
             io.emit('status-update', { botId, status: 'Online', onlineSince: botData.onlineSince });
-            pushStatusToPanel(botId);
 
             if (botData.keepAliveInterval) clearInterval(botData.keepAliveInterval);
             let currentYaw = 0;
-            
-            // SIKI FİZİK VE GÜVENLİK KİLİDİ (Menü Açıkken/Geçişte Look Paketleri Engellenir)
             botData.keepAliveInterval = setInterval(() => {
                 if (
                     botData.client && 
@@ -1000,9 +816,10 @@ function startBotInstance(botId) {
                         currentYaw = (currentYaw + (Math.floor(Math.random() * 30) + 15)) % 360;
                         const pitch = Math.floor(Math.random() * 20) - 10;
                         client.write('look', { yaw: currentYaw, pitch, onGround: true });
+                        client.write('arm_animation', { hand: 0 });
                     } catch (e) {}
                 }
-            }, 5500 + Math.floor(Math.random() * 1000)); // Jittering destekli güvenli periyot
+            }, 2000);
         });
 
         client.on('kick_disconnect', (packet) => cleanupBot(botId, `Atıldı: ${packet.reason}`));
@@ -1056,7 +873,6 @@ io.on('connection', (socket) => {
         allowedKeys.forEach(k => { if (config[k] !== undefined) botData[k] = config[k]; });
         await saveDataToAPI();
         io.emit('bot-updated', { botId, config: getPublicBot(botData) });
-        pushBotToPanel(botData);
     });
 
     socket.on('start-bot', (botId) => startBotInstance(botId));
@@ -1077,17 +893,13 @@ io.on('connection', (socket) => {
         botPool.set(id, newBot);
         await saveDataToAPI();
         io.emit('bot-added', getPublicBot(newBot));
-        pushBotToPanel(newBot);
     });
 
     socket.on('delete-bot', async (botId) => {
-        const existing = botPool.get(botId);
-        const username = existing ? existing.username : null;
         stopBotInstance(botId);
         botPool.delete(botId);
         await saveDataToAPI();
         io.emit('bot-deleted', botId);
-        if (username) removeBotFromPanel(username);
     });
 
     socket.on('send-command', ({ targetBotId, command }) => {
@@ -1145,35 +957,29 @@ setInterval(() => {
 const matrixBotIndex = process.env.BOT_INDEX;
 
 if (matrixBotIndex) {
-    loadSavedData();
-    const botKeys = Array.from(botPool.keys());
-    const targetId = botKeys[Number(matrixBotIndex) - 1] || `bot_${matrixBotIndex}`;
-    
-    console.log(`[GitHub Actions Matrix] Matrix Tetiklendi! Index: ${matrixBotIndex}, Hedef Bot ID: ${targetId}`);
-    
-    setTimeout(() => {
-        if (botPool.has(targetId)) {
-            startBotInstance(targetId);
-        } else {
-            const firstId = botKeys[0];
-            if (firstId) startBotInstance(firstId);
-        }
-    }, 2000);
+    loadSavedData().then(() => {
+        const botKeys = Array.from(botPool.keys());
+        const targetId = botKeys[Number(matrixBotIndex) - 1] || `bot_${matrixBotIndex}`;
+        console.log(`[GitHub Actions Matrix] Matrix Tetiklendi! Index: ${matrixBotIndex}, Hedef Bot ID: ${targetId}`);
+        setTimeout(() => {
+            if (botPool.has(targetId)) {
+                startBotInstance(targetId);
+            } else {
+                const firstId = botKeys[0];
+                if (firstId) startBotInstance(firstId);
+            }
+        }, 2000);
+    });
 } else {
     const PORT = process.env.PORT || 3000;
 
     server.listen(PORT, '0.0.0.0', () => {
-        console.log(`🚀 Web sunucusu http://127.0.0.1:${PORT} adresinde anında aktif edildi.`);
+        console.log(`🚀 Web sunucusu http://127.0.0.1:${PORT} adresinde aktif.`);
         bootstrapBackground();
     });
 
     async function bootstrapBackground() {
         await loadSavedData();
-        await loadBotsFromPanel();
-        try { const c = await panelRequest('check'); lastUpdated = c && c.updated ? c.updated : null; } catch {}
-
         setTimeout(() => startAllBots(true), 5000);
-        setInterval(checkPanel, 2000);
-        setInterval(() => panelRequest('pruneLogs').catch(() => {}), 10 * 60 * 1000);
     }
 }

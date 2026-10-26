@@ -1,27 +1,18 @@
 {
-  "name": "mc-bot-manager",
-  "version": "1.0.3",
-  "description": "Minecraft Bot Control Dashboard",
+  "name": "minecraft-bot-panel",
+  "version": "1.0.0",
+  "description": "Multi-bot Minecraft management panel with site isolation",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
-  "engines": {
-    "node": ">=18"
-  },
   "dependencies": {
-    "axios": "^1.7.9",
     "express": "^4.19.2",
-    "minecraft-data": "3.117.0",
-    "minecraft-protocol": "1.54.0",
-    "mongoose": "^8.3.0",
-    "socket.io": "^4.7.5",
-    "socks": "^2.8.3",
-    "socks-proxy-agent": "^8.0.3"
+    "minecraft-data": "^3.118.0",
+    "minecraft-protocol": "^1.54.0",
+    "socket.io": "^4.7.5"
   },
-  "resolutions": {
-    "minecraft-data": "3.117.0",
-    "minecraft-protocol": "1.54.0"
-  },
-  "license": "MIT"
+  "engines": {
+    "node": ">=18.0.0"
+  }
 }

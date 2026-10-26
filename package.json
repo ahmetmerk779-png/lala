@@ -7,10 +7,10 @@
     "start": "node server.js"
   },
   "dependencies": {
-    "express": "^4.19.2",
+    "express": "latest",
     "minecraft-data": "latest",
-    "minecraft-protocol": "1.45.0",
-    "socket.io": "^4.7.5"
+    "minecraft-protocol": "latest",
+    "socket.io": "latest"
   },
   "engines": {
     "node": ">=18.0.0"

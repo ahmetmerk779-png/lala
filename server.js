@@ -705,7 +705,6 @@ function cleanupBot(botId, reason) {
     io.emit('bot-tablist', { botId, players: [] });
     io.emit('bot-map-update', { botId, pos: { x: 0, y: 0, z: 0 }, entities: [] });
 
-    // KADEMELİ VE JITTER KORUMALI YENİDEN BAĞLANMA
     if (!botData.isManualStop && globalConfig.autoReconnect) {
         botData.failCount = (botData.failCount || 0) + 1;
         if (botData.failCount <= 10) {
@@ -744,7 +743,8 @@ function startBotInstance(botId) {
         const clientOptions = {
             host, port, username: botData.username, version: version || '1.20.1',
             checkTimeoutInterval: 240000,
-            keepAlive: true
+            keepAlive: true,
+            skipValidation: true
         };
 
         const client = mc.createClient(clientOptions);

@@ -3,7 +3,6 @@ const http = require('http');
 const { Server } = require('socket.io');
 const mc = require('minecraft-protocol');
 const mcData = require('minecraft-data');
-const { SocksClient } = require('socks');
 const path = require('path');
 const fs = require('fs');
 
@@ -47,25 +46,14 @@ const defaultAutoBuyConfig = {
 };
 
 const defaultBotConfigs = [
-    { id: 'bot_1', username: 'Deliyiz_1', host: '141.95.82.164', port: 25565, proxy: '', autoPassword: 'deliyizpassword', takeBreaks: true, detectStaff: true, autoBuyConfig: { ...defaultAutoBuyConfig } },
-    { id: 'bot_2', username: 'Deliyiz_2', host: '141.95.82.164', port: 25565, proxy: '', autoPassword: 'deliyizpassword', takeBreaks: true, detectStaff: true, autoBuyConfig: { ...defaultAutoBuyConfig } },
-    { id: 'bot_3', username: 'Deliyiz_3', host: '141.95.82.164', port: 25565, proxy: '', autoPassword: 'deliyizpassword', takeBreaks: true, detectStaff: true, autoBuyConfig: { ...defaultAutoBuyConfig } }
+    { id: 'bot_1', username: 'Deliyiz_1', host: '141.95.82.164', port: 25565, autoPassword: 'deliyizpassword', takeBreaks: true, detectStaff: true, autoBuyConfig: { ...defaultAutoBuyConfig } },
+    { id: 'bot_2', username: 'Deliyiz_2', host: '141.95.82.164', port: 25565, autoPassword: 'deliyizpassword', takeBreaks: true, detectStaff: true, autoBuyConfig: { ...defaultAutoBuyConfig } },
+    { id: 'bot_3', username: 'Deliyiz_3', host: '141.95.82.164', port: 25565, autoPassword: 'deliyizpassword', takeBreaks: true, detectStaff: true, autoBuyConfig: { ...defaultAutoBuyConfig } }
 ];
-
-// 🌐 OTOMATİK PROXY / LOKASYON ÜRETİCİ
-const AUTO_REGIONS = ['DE', 'NL', 'FR', 'US', 'GB', 'CA', 'PL'];
-const activeGeneratedProxies = new Map();
-
-function generateAutomaticProxy(botId) {
-    const randomRegion = AUTO_REGIONS[Math.floor(Math.random() * AUTO_REGIONS.length)];
-    activeGeneratedProxies.set(botId, { region: randomRegion, generatedAt: Date.now() });
-    return randomRegion;
-}
 
 function createBotEntry(cfg) {
     return {
         ...cfg,
-        proxy: cfg.proxy || '',
         takeBreaks: cfg.takeBreaks !== undefined ? cfg.takeBreaks : true,
         detectStaff: cfg.detectStaff !== undefined ? cfg.detectStaff : true,
         autoStart: cfg.autoStart !== false,
@@ -116,10 +104,9 @@ function parseMcText(text) {
 }
 
 function getPublicBot(b) {
-    const autoInfo = activeGeneratedProxies.get(b.id) || { region: 'AUTO' };
     return {
         id: b.id, username: b.username, host: b.host || globalConfig.host, port: b.port || globalConfig.port,
-        proxy: b.proxy || `Otomatik [Lokasyon: ${autoInfo.region}]`, version: b.version || globalConfig.version, autoPassword: b.autoPassword,
+        proxy: 'Direkt Bağlantı', version: b.version || globalConfig.version, autoPassword: b.autoPassword,
         autoSubServerCmd: b.autoSubServerCmd, takeBreaks: b.takeBreaks, detectStaff: b.detectStaff,
         autoStart: b.autoStart !== false, status: b.status, onlineSince: b.onlineSince || null,
         pos: b.pos || { x: 0, y: 0, z: 0 }, logs: b.logs, inventory: b.inventory || {}, autoBuyConfig: b.autoBuyConfig
@@ -131,7 +118,6 @@ function initDefaultBots() {
     defaultBotConfigs.forEach(cfg => botPool.set(cfg.id, createBotEntry(cfg)));
 }
 
-// 📥 MC-STORAGE ÜZERİNDEN VERİ ÇEKME (Sildiğin botlar asla geri gelmez)
 async function loadSavedData() {
     if (!STORAGE_API_URL) {
         console.log('⚠️ STORAGE_API_URL tanımlı değil, varsayılan botlar yükleniyor.');
@@ -163,12 +149,11 @@ async function loadSavedData() {
     }
 }
 
-// 💾 MC-STORAGE ÜZERİNE KAYDETME
 async function saveDataToAPI() {
     if (!STORAGE_API_URL) return;
     try {
         const botList = Array.from(botPool.values()).map(b => ({
-            id: b.id, username: b.username, host: b.host, port: b.port, proxy: b.proxy || '',
+            id: b.id, username: b.username, host: b.host, port: b.port,
             version: b.version, autoPassword: b.autoPassword, autoSubServerCmd: b.autoSubServerCmd,
             autoSubServerDelay: b.autoSubServerDelay, takeBreaks: b.takeBreaks, detectStaff: b.detectStaff,
             autoStart: b.autoStart !== false, autoBuyConfig: b.autoBuyConfig
@@ -731,7 +716,6 @@ function cleanupBot(botId, reason) {
             broadcastLog(botId, `⏳ Yeniden bağlanma bekleniyor (${Math.round(reconnectDelay / 1000)}s)...`, 'warn');
             botData.reconnectTimer = setTimeout(() => {
                 if (botPool.has(botId) && !botData.isManualStop && botData.status === 'Offline') {
-                    generateAutomaticProxy(botId);
                     startBotInstance(botId);
                 }
             }, reconnectDelay);
@@ -749,14 +733,10 @@ function startBotInstance(botId) {
     const host = botData.host || globalConfig.host;
     const port = Number(botData.port || globalConfig.port);
     const version = botData.version || globalConfig.version;
-    const proxyUrl = botData.proxy;
-
-    generateAutomaticProxy(botId);
-    const autoInfo = activeGeneratedProxies.get(botId);
 
     let pvInfo = '?';
     try { pvInfo = require('minecraft-protocol/package.json').version; } catch (e) {}
-    broadcastLog(botId, `${botData.username} bağlanıyor [Lokasyon: ${autoInfo.region}] (${host}:${port}) | MC sürümü: ${version || '1.20.1'} | protocol lib: ${pvInfo}`, 'info');
+    broadcastLog(botId, `${botData.username} direkt bağlanıyor (${host}:${port}) | MC sürümü: ${version || '1.20.1'} | protocol lib: ${pvInfo}`, 'info');
     botData.status = 'Connecting';
     io.emit('status-update', { botId, status: 'Connecting', onlineSince: null });
 
@@ -767,29 +747,6 @@ function startBotInstance(botId) {
             keepAlive: true
         };
 
-        if (proxyUrl && proxyUrl.trim() !== '') {
-            try {
-                const formattedUrl = proxyUrl.includes('://') ? proxyUrl : `socks5://${proxyUrl}`;
-                const u = new URL(formattedUrl);
-                const socksOptions = {
-                    proxy: { host: u.hostname, port: Number(u.port) || 1080, type: 5 },
-                    destination: { host, port }, command: 'connect'
-                };
-                if (u.username) {
-                    socksOptions.proxy.userId = decodeURIComponent(u.username);
-                    socksOptions.proxy.password = decodeURIComponent(u.password);
-                }
-                clientOptions.connect = (client) => {
-                    SocksClient.createConnection(socksOptions, (err, info) => {
-                        if (err) { client.emit('error', err); return; }
-                        client.setSocket(info.socket);
-                    });
-                };
-            } catch (errProxy) {
-                broadcastLog(botId, `Proxy ayrıştırma hatası: ${errProxy.message}`, 'error');
-            }
-        }
-
         const client = mc.createClient(clientOptions);
         botData.client = client;
         setupCustomPacketHandler(client, botId);
@@ -798,7 +755,7 @@ function startBotInstance(botId) {
             botData.failCount = 0;
             botData.status = 'Online';
             botData.onlineSince = Date.now();
-            broadcastLog(botId, `⚡ ${botData.username} [${autoInfo.region}] lokasyonu ile sunucuya girdi!`, 'success');
+            broadcastLog(botId, `⚡ ${botData.username} doğrudan sunucuya girdi!`, 'success');
             io.emit('status-update', { botId, status: 'Online', onlineSince: botData.onlineSince });
 
             if (botData.keepAliveInterval) clearInterval(botData.keepAliveInterval);
@@ -839,7 +796,6 @@ function stopBotInstance(botId) {
     }
 }
 
-// BÜTÜN BOTLARIN RASTGELE JITTER GECİKMESİYLE SIRAYLA BAŞLATILMASI
 function startAllBots(onlyAutoStart = false) {
     let delay = 1000;
     for (const [id, botData] of botPool.entries()) {
@@ -869,7 +825,7 @@ io.on('connection', (socket) => {
     socket.on('update-bot-config', async ({ botId, config }) => {
         if (!botPool.has(botId)) return;
         const botData = botPool.get(botId);
-        const allowedKeys = ['host', 'port', 'proxy', 'version', 'autoPassword', 'autoSubServerCmd', 'takeBreaks', 'detectStaff', 'autoBuyConfig', 'autoStart'];
+        const allowedKeys = ['host', 'port', 'version', 'autoPassword', 'autoSubServerCmd', 'takeBreaks', 'detectStaff', 'autoBuyConfig', 'autoStart'];
         allowedKeys.forEach(k => { if (config[k] !== undefined) botData[k] = config[k]; });
         await saveDataToAPI();
         io.emit('bot-updated', { botId, config: getPublicBot(botData) });
@@ -886,7 +842,7 @@ io.on('connection', (socket) => {
         const id = 'bot_' + Date.now();
         const newBot = createBotEntry({
             id, username,
-            host: globalConfig.host, port: globalConfig.port, proxy: '', version: globalConfig.version,
+            host: globalConfig.host, port: globalConfig.port, version: globalConfig.version,
             autoPassword: globalConfig.autoPassword, autoSubServerCmd: globalConfig.autoSubServerCmd,
             takeBreaks: true, detectStaff: true, autoBuyConfig: { ...defaultAutoBuyConfig }
         });
@@ -948,7 +904,6 @@ io.on('connection', (socket) => {
     });
 });
 
-// RENDER UYKU MODUNU ÖNLEYEN DAHİLİ KEEPALIVE PING
 setInterval(() => {
     const port = process.env.PORT || 3000;
     fetch(`http://127.0.0.1:${port}/`).catch(() => {});
